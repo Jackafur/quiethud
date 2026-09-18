@@ -94,6 +94,7 @@ local minimapShown = true
 local chatList = {}
 local barHover, discovered = {}, {}
 local debugOn = false
+local armEntry
 
 local function discoverBars()
 	discovered = {}
@@ -253,6 +254,7 @@ local function restoreFromStore()
 	end
 	rebuildLists()
 	if onRestored then onRestored() end
+	if armEntry then armEntry() end
 end
 
 local function initDB()
@@ -557,6 +559,7 @@ local function makeCheck(parent, y, label, key)
 		DB[key] = not DB[key]
 		self:SetChecked(DB[key] and true or false)
 		persistSoon()
+		if armEntry then armEntry() end
 	end)
 	local text = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 	text:SetPoint("LEFT", check, "RIGHT", 4, 0)
@@ -648,6 +651,7 @@ local function resetDefaults()
 	for _, f in ipairs(FIELDS) do DB[f.key] = f.def end
 	persistSoon()
 	syncControls()
+	if armEntry then armEntry() end
 end
 
 local function buildConfig()
@@ -874,6 +878,15 @@ targetButton:SetAttribute("type", "macro")
 targetButton:SetAttribute("macrotext", "")
 targetButton:RegisterForClicks("AnyDown", "AnyUp")
 
+-- The game locks addon changes to secure buttons during combat, so the button is kept armed with a plain Tab
+-- and the skull (when the feature is on). Out of combat every press replaces it with the smart quest chain.
+local COMBAT_MACRO = "/targetenemy\n/tm 0\n/tm " .. SKULL
+armEntry = function()
+	if InCombatLockdown() then return end
+	targetButton:SetAttribute("macrotext", DB.questTarget and COMBAT_MACRO or "")
+end
+armEntry()
+
 local function isActionClick(down)
 	local useDown = GetCVarBool and GetCVarBool("ActionButtonUseKeyDown") and true or false
 	return (down and true or false) == useDown
@@ -886,7 +899,10 @@ targetButton:SetScript("PreClick", function(self, _, down)
 		return
 	end
 	if InCombatLockdown() then
-		print("QuietHUD: quest targeting does not work in combat")
+		if not run.combatWarned then
+			run.combatWarned = true
+			print("QuietHUD: in combat the key works as a plain Tab, because the game locks addon changes in combat")
+		end
 		return
 	end
 	local ok, names, needles = pcall(questNames, highlightedQuestID())
@@ -904,11 +920,11 @@ end)
 
 targetButton:SetScript("PostClick", function(self, _, down)
 	if not InCombatLockdown() then
-		self:SetAttribute("macrotext", "")
 		for i = 1, STEP_MAX do
 			local s = _G["QuietHUDStep" .. i]
 			if s then s:SetAttribute("macrotext", "") end
 		end
+		armEntry()
 	end
 	if isActionClick(down) and run.depth > 0 then
 		if run.found then
@@ -1017,6 +1033,7 @@ ev:SetScript("OnEvent", function(_, event, arg1)
 		QuietHUDDB = DB
 	elseif event == "PLAYER_LOGIN" then
 		initDB()
+		armEntry()
 		if C_Timer and C_Timer.NewTicker then
 			C_Timer.NewTicker(1, function() restoreFromStore() end, 60)
 		end
@@ -1031,6 +1048,8 @@ ev:SetScript("OnEvent", function(_, event, arg1)
 		if DB.inCombat then drawn = true end
 	elseif event == "PLAYER_REGEN_ENABLED" then
 		combatEnd = GetTime() + (DB.linger or 4)
+		run.combatWarned = false
+		armEntry()
 	elseif kindOf[event] == "quest" then
 		questUntil = GetTime() + (DB.questSeconds or 10)
 	elseif kindOf[event] == "map" then

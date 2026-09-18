@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.1
+
+- The quest-mob targeting key now works in combat. The game locks addon changes to secure buttons in
+  combat, so there it falls back to a plain Tab plus the skull marker, without the quest check.
+  Out of combat it behaves as before.
+
 ## 1.0.0
 
 First release, for the Forever (Classic beta) client, build 1.60.1.

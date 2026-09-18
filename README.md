@@ -75,8 +75,11 @@ This is a "Tab, but only for the mobs my quest needs" key. Here is how to use it
    marker on it. Press it again and it moves on to the next one, and the skull moves with it.
 
 What counts as a quest mob: for "kill X" objectives, mobs with that name. For objectives such as "collect
-X", mobs whose tooltip mentions the quest or the item. It skips mobs that another player has already tagged,
-and it does nothing in combat.
+X", mobs whose tooltip mentions the quest or the item. It skips mobs that another player has already tagged.
+
+In combat the key still works, but as a plain Tab plus the skull marker. The game locks addon changes to
+secure buttons during combat, so the addon cannot look at the mobs and pick a quest mob there. It goes back
+to the full quest-aware behavior as soon as combat ends.
 
 How it works: the game does not let addons change your target, does not cycle `/target name` through
 several mobs with the same name, and does not let commands target nameplate unit IDs. So the addon
@@ -112,7 +115,7 @@ the feature on, "Target highlighted quest mob".
 - WoW does not expose whether your weapon is sheathed, so the addon follows the Toggle Sheath key and
   assumes the weapon is drawn when combat starts. If it drifts, use `/qhud toggle`.
 - Hidden frames still work with their keybinds.
-- Quest-mob targeting does nothing in combat and is experimental.
+- Quest-mob targeting is experimental, and in combat it is only a plain Tab plus the skull.
 
 ## Settings on the Forever beta
 
