@@ -1,0 +1,6 @@
+<Bindings>
+	<Binding name="QUIETHUD_TOGGLE" header="QUIETHUD" category="ADDONS">
+		SlashCmdList["QUIETHUD"]("toggle")
+	</Binding>
+	<Binding name="CLICK QuietHUDTargetButton:LeftButton" category="ADDONS"></Binding>
+</Bindings>

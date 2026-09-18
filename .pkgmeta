@@ -1,0 +1,10 @@
+package-as: QuietHUD
+
+move-folders:
+  QuietHUD/QuietHUD: QuietHUD
+
+ignore:
+  - install.ps1
+  - assets
+  - CHANGELOG.md
+  - README.md
