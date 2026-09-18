@@ -899,6 +899,27 @@ local function isQuestUnit(unit, names, needles)
 	return false
 end
 
+-- Looks through the visible enemy nameplates for a quest mob before any Tab is pressed, so nothing is targeted
+-- or marked when there is none. Returns true or false, or nil when there are no nameplates to look at (for
+-- example when enemy nameplates are turned off), in which case the caller just runs the Tab chain.
+local function questMobNearby(names, needles)
+	if not (C_NamePlate and C_NamePlate.GetNamePlates) then return nil end
+	local ok, plates = pcall(C_NamePlate.GetNamePlates)
+	if not ok or type(plates) ~= "table" or #plates == 0 then return nil end
+	for _, plate in ipairs(plates) do
+		local unit = plate.namePlateUnitToken or (plate.UnitFrame and plate.UnitFrame.unit)
+		if unit then
+			local okUnit, mob = pcall(function()
+				if not UnitCanAttack("player", unit) or UnitIsDead(unit) then return false end
+				if UnitIsTapDenied and UnitIsTapDenied(unit) then return false end
+				return isQuestUnit(unit, names, needles)
+			end)
+			if okUnit and mob then return true end
+		end
+	end
+	return false
+end
+
 -- Quest-mob targeting works like Tab, restricted to quest mobs. Addons cannot change the target, and the
 -- unit IDs of nameplates cannot be targeted by commands, so a key press clicks a secure button that presses
 -- Tab (/targetenemy) and then clicks a chain of secure step buttons. The PreClick of each step checks the new
@@ -999,7 +1020,13 @@ targetButton:SetScript("PreClick", function(self, _, down)
 	end
 	local ok, names, needles = pcall(questNames, highlightedQuestID())
 	if not ok then
+		self:SetAttribute("macrotext", "")
 		print("QuietHUD: could not read your quests just now")
+		return
+	end
+	if questMobNearby(names, needles) == false then
+		self:SetAttribute("macrotext", "")
+		print("QuietHUD: no quest mob found among the nearby enemies")
 		return
 	end
 	run.active, run.depth, run.found = true, 0, nil

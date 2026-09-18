@@ -81,11 +81,14 @@ by default, and bug reports are welcome. Here is how to use it.
 1. **Turn it on.** Open `/qhud`, go to the **Extras** page, and tick "Enable quest-mob targeting key".
 2. **Bind a key.** Esc, Options, Keybindings, AddOns, QuietHUD, "Target highlighted quest mob". (In a
    macro, `/click QuietHUDTargetButton` does the same.)
-3. **Turn on enemy nameplates** if they are off. The addon reads the mobs' nameplate information.
-4. **Optionally, select the quest.** In the objective tracker, click the quest you are working on so it is
-   the highlighted (tracked) quest. Its icon gets a glow, and the key then only looks for mobs that quest
-   needs. The game often highlights a quest for you. If no quest is highlighted, the key checks every quest in
-   your log the same way, so it can land on a mob for any of them.
+3. **Turn on enemy nameplates** if they are off. Before it presses Tab, the key looks at the nearby enemy
+   nameplates for a quest mob. If there is none, it just says so and changes nothing: no target change and
+   no skull. With nameplates off it cannot look ahead, so it Tabs anyway and may stop on a mob that is not a
+   quest mob.
+4. **Select the quest.** In the objective tracker, click the quest you are working on so it is the
+   highlighted (tracked) quest. Its icon gets a glow, and the key then only looks for mobs that quest needs.
+   This works for both "kill X" and item-drop quests. If no quest is highlighted, the key tries every quest in
+   your log, but that is less tested, so clicking the quest is the reliable way.
 5. **Stand near the mobs and press the key.** It targets the next mob the quest needs and puts the skull
    marker on it. Press it again and it moves on to the next one, and the skull moves with it.
 

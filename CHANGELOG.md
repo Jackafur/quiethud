@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.1
+
+- Quest targeting now checks the nearby enemy nameplates for a quest mob before it presses Tab. If there is
+  none it does nothing, instead of targeting and skull-marking a mob that is not a quest mob.
+
 ## 1.1.0
 
 Known limits: the dungeon and raid option has not been tested inside an actual instance yet, and quest-mob
