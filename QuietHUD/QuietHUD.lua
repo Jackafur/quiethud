@@ -8,6 +8,7 @@ local FIELDS = {
 	{ key = "inCombat", code = "k", kind = "bool", def = true },
 	{ key = "sheathShows", code = "w", kind = "bool", def = true },
 	{ key = "showOnTarget", code = "t", kind = "bool", def = false },
+	{ key = "inInstance", code = "ii", kind = "bool", def = false },
 	{ key = "barsMouseover", code = "o", kind = "bool", def = true },
 	{ key = "linger", code = "l", kind = "num", def = 4 },
 	{ key = "fadeBars", code = "fb", kind = "bool", def = true },
@@ -15,6 +16,8 @@ local FIELDS = {
 	{ key = "fadeUnits", code = "fu", kind = "bool", def = true },
 	{ key = "fadeMinimap", code = "fm", kind = "bool", def = true },
 	{ key = "minimapMoving", code = "m", kind = "bool", def = true },
+	{ key = "minimapDim", code = "md", kind = "bool", def = false },
+	{ key = "mapDimOpacity", code = "mo", kind = "num", def = 0.3 },
 	{ key = "fadeTracker", code = "fq", kind = "bool", def = true },
 	{ key = "fadeChat", code = "fc", kind = "bool", def = true },
 	{ key = "chatDim", code = "cd", kind = "bool", def = false },
@@ -94,6 +97,7 @@ local minimapShown = true
 local chatList = {}
 local barHover, discovered = {}, {}
 local debugOn = false
+local lastActive = false
 local armEntry
 
 local function discoverBars()
@@ -393,14 +397,28 @@ end
 -- Main loop
 local TEXT_SPECS = { { "HotKey", "barHotkeys" }, { "Name", "barNames" } }
 local hotkeyClock = 0
+-- Any instance that is not PvP counts, so instance types this client adds or names differently still work.
+-- The whole check is in a pcall and skips secret values, so it can never break the fade loop.
+local function inDungeonOrRaid()
+	if not IsInInstance then return false end
+	local ok, result = pcall(function()
+		local inside, kind = IsInInstance()
+		if issecretvalue and (issecretvalue(inside) or issecretvalue(kind)) then return false end
+		return inside and kind ~= "pvp" and kind ~= "arena"
+	end)
+	return ok and result and true or false
+end
+
 local function update(dt)
 	local now = GetTime()
 	local edit = EditModeManagerFrame and EditModeManagerFrame:IsShown() or false
 	local combat = UnitAffectingCombat("player") and true or false
 	local enabled = DB.enabled
 
+	local instanceOn = DB.inInstance and inDungeonOrRaid()
 	local active = edit or (DB.inCombat and (combat or now < combatEnd)) or (DB.sheathShows and drawn)
-		or (DB.showOnTarget and UnitExists("target"))
+		or (DB.showOnTarget and UnitExists("target")) or instanceOn
+	lastActive = active and true or false
 	local okMove, moving = pcall(isMoving)
 	if okMove and moving then moveUntil = now + MOVE_LINGER end
 
@@ -409,8 +427,10 @@ local function update(dt)
 	vis.player = active
 	vis.hud = active
 	vis.quest = active or now < questUntil or hovered(_G.ObjectiveTrackerFrame)
-	local mapShow = now < mapUntil or hovered(_G.MinimapCluster)
-	if DB.minimapMoving then
+	local mapShow = now < mapUntil or hovered(_G.MinimapCluster) or instanceOn
+	if DB.minimapDim then
+		mapShow = mapShow or active or now < moveUntil
+	elseif DB.minimapMoving then
 		mapShow = mapShow or now < moveUntil
 	else
 		mapShow = mapShow or active
@@ -432,7 +452,9 @@ local function update(dt)
 			cur[g] = step(cur[g], vis[g] and 1 or 0, dt)
 			local peak = DB.base or 0.6
 			if edit or (g == "chat" and not DB.chatDim) then peak = 1 end
-			local low = math.min(idle, peak)
+			local floor = idle
+			if g == "map" and DB.minimapDim then floor = DB.mapDimOpacity or 0.3 end
+			local low = math.min(floor, peak)
 			local a = low + (peak - low) * cur[g]
 			if g == "chat" then
 				applyChat(a)
@@ -513,11 +535,12 @@ end)
 local PAGES = {
 	{ title = "Show when", items = {
 		{ "check", "enabled", "Enable QuietHUD" },
-		{ "slider", "base", "HUD opacity when shown", 0.1, 1, 0.05, "%.2f" },
-		{ "slider", "idle", "Opacity when idle (0 = hidden)", 0, 0.5, 0.05, "%.2f" },
+		{ "slider", "base", "Opacity when active (combat, target...)", 0.1, 1, 0.05, "%.2f" },
+		{ "slider", "idle", "Opacity when idle (0 = fully hidden)", 0, 1, 0.05, "%.2f" },
 		{ "check", "inCombat", "Show in combat" },
 		{ "check", "sheathShows", "Show while my weapon is drawn" },
 		{ "check", "showOnTarget", "Show while I have a target" },
+		{ "check", "inInstance", "Always show in dungeons and raids" },
 		{ "check", "barsMouseover", "Show action bars on mouse over" },
 		{ "slider", "linger", "Stay visible after combat (seconds)", 0, 15, 1, "%.0f" },
 	} },
@@ -525,11 +548,10 @@ local PAGES = {
 		{ "check", "fadeBars", "Fade action bars" },
 		{ "check", "fadePlayer", "Fade player frame" },
 		{ "check", "fadeUnits", "Fade target, party, raid frames and buffs" },
-		{ "check", "fadeMinimap", "Fade minimap" },
-		{ "check", "minimapMoving", "Minimap shows only while I am moving" },
 		{ "check", "fadeTracker", "Fade objective tracker" },
 		{ "check", "fadeChat", "Fade chat" },
-		{ "check", "chatDim", "Chat uses the HUD opacity when shown" },
+		{ "check", "chatDim", "Chat uses the HUD opacity when active" },
+		{ "minimap" },
 	} },
 	{ title = "Bars", items = {
 		{ "bargrid" },
@@ -593,7 +615,15 @@ local function makeSlider(parent, y, label, key, minV, maxV, stepV, fmt)
 		val = math.floor(val / stepV + 0.5) * stepV
 		DB[key] = val
 		readout:SetText(string.format(fmt, val))
+		-- Idle can never be brighter than shown: dragging one past the other carries the other with it.
+		local carried = false
+		if key == "idle" and val > (DB.base or 0) + 0.001 then
+			DB.base, carried = val, true
+		elseif key == "base" and val < (DB.idle or 0) - 0.001 then
+			DB.idle, carried = val, true
+		end
 		persistSoon()
+		if carried then syncControls() end
 	end)
 	controls[#controls + 1] = function()
 		local v = DB[key]
@@ -640,6 +670,53 @@ local function makeBarGrid(parent, y)
 	end
 end
 
+-- One button instead of overlapping checkboxes. Each mode: name, fadeMinimap, minimapMoving, minimapDim, description.
+local MINIMAP_MODES = {
+	{ "follows the HUD", true, false, false, "Fades with everything else." },
+	{ "only while I am moving", true, true, false, "Hidden while you stand still, shown when you move or change zone." },
+	{ "always shown", false, false, false, "Never fades." },
+	{ "always on, dimmed", true, false, true, "Stays faintly visible and brightens when you move or the HUD wakes." },
+}
+
+local function minimapMode()
+	if not DB.fadeMinimap then return 3 end
+	if DB.minimapDim then return 4 end
+	return DB.minimapMoving and 2 or 1
+end
+
+-- A "Minimap" row (label + mode button), a line describing the current mode, and the dimmed-opacity
+-- slider, which only shows in the dimmed mode. Takes 108 px of the page.
+local function makeMinimapMode(parent, y)
+	local label = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	label:SetPoint("TOPLEFT", 16, y - 5)
+	label:SetText("Minimap")
+	local button = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+	button:SetPoint("TOPLEFT", 84, y)
+	button:SetSize(250, 22)
+	local hint = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	hint:SetPoint("TOPLEFT", 16, y - 28)
+	hint:SetWidth(318)
+	hint:SetJustifyH("LEFT")
+	local dimBox = CreateFrame("Frame", nil, parent)
+	dimBox:SetPoint("TOPLEFT", 0, y - 60)
+	dimBox:SetSize(340, 46)
+	makeSlider(dimBox, 0, "Minimap opacity when dimmed", "mapDimOpacity", 0.05, 1, 0.05, "%.2f")
+	local function refresh()
+		local mode = minimapMode()
+		button:SetText(MINIMAP_MODES[mode][1])
+		hint:SetText(MINIMAP_MODES[mode][5])
+		dimBox:SetShown(mode == 4)
+	end
+	button:SetScript("OnClick", function()
+		local nextMode = MINIMAP_MODES[minimapMode() % #MINIMAP_MODES + 1]
+		DB.fadeMinimap, DB.minimapMoving, DB.minimapDim = nextMode[2], nextMode[3], nextMode[4]
+		persistSoon()
+		refresh()
+	end)
+	controls[#controls + 1] = refresh
+	refresh()
+end
+
 local function showPage(index)
 	for i, frame in ipairs(pages) do
 		frame:SetShown(i == index)
@@ -656,7 +733,7 @@ end
 
 local function buildConfig()
 	config = CreateFrame("Frame", "QuietHUDConfig", UIParent)
-	config:SetSize(360, 392)
+	config:SetSize(360, 418)
 	config:SetPoint("CENTER")
 	config:SetFrameStrata("DIALOG")
 	config:SetMovable(true)
@@ -682,6 +759,9 @@ local function buildConfig()
 			if item[1] == "check" then
 				makeCheck(frame, y, item[3], item[2])
 				y = y - 26
+			elseif item[1] == "minimap" then
+				makeMinimapMode(frame, y - 8)
+				y = y - 116
 			elseif item[1] == "bargrid" then
 				makeBarGrid(frame, y)
 				y = y - 220
@@ -747,9 +827,13 @@ local function highlightedQuestID()
 	if id and id ~= 0 then return id end
 end
 
+-- Adds the open objectives of one quest to names (kill objectives) and needles (everything else, matched
+-- against the mob's tooltip). Returns how many open objectives the quest has.
 local function collectNames(names, needles, questID)
+	local open = 0
 	for _, o in ipairs(C_QuestLog.GetQuestObjectives(questID) or {}) do
 		if not o.finished and o.text then
+			open = open + 1
 			local n = objectiveName(o.text)
 			if o.type == "monster" then
 				names[singular(n)] = true
@@ -758,6 +842,7 @@ local function collectNames(names, needles, questID)
 			end
 		end
 	end
+	return open
 end
 
 local function questNames(questID)
@@ -768,9 +853,16 @@ local function questNames(questID)
 		local title = C_QuestLog.GetTitleForQuestID and C_QuestLog.GetTitleForQuestID(questID)
 		if title and title ~= "" then needles[#needles + 1] = title end
 	elseif C_QuestLog.GetNumQuestLogEntries and C_QuestLog.GetInfo then
+		-- No quest highlighted: every quest with open objectives, checked the same way as a highlighted one.
 		for i = 1, C_QuestLog.GetNumQuestLogEntries() do
 			local info = C_QuestLog.GetInfo(i)
-			if info and not info.isHeader and info.questID then collectNames(names, {}, info.questID) end
+			if info and not info.isHeader and info.questID and collectNames(names, needles, info.questID) > 0 then
+				local title = info.title
+				if (not title or title == "") and C_QuestLog.GetTitleForQuestID then
+					title = C_QuestLog.GetTitleForQuestID(info.questID)
+				end
+				if title and title ~= "" then needles[#needles + 1] = title end
+			end
 		end
 	end
 	return names, needles
@@ -796,13 +888,13 @@ end
 local function isQuestUnit(unit, names, needles)
 	local n = UnitName(unit)
 	if n and names[singular(n)] then return true end
-	if #needles > 0 and C_TooltipInfo and C_TooltipInfo.GetUnit then
-		return tooltipMentions(unit, needles)
+	if C_TooltipInfo and C_TooltipInfo.GetUnit then
+		return #needles > 0 and tooltipMentions(unit, needles) and true or false
 	end
-	if next(names) then return false end
+	-- Only clients without the tooltip API fall back to the game's looser "related to a quest" flag.
 	if C_QuestLog and C_QuestLog.UnitIsRelatedToActiveQuest then
 		local ok, related = pcall(C_QuestLog.UnitIsRelatedToActiveQuest, unit)
-		if ok then return related end
+		return ok and related and true or false
 	end
 	return false
 end
@@ -1086,6 +1178,28 @@ SlashCmdList["QUIETHUD"] = function(msg)
 		debugOn = not debugOn
 		print("QuietHUD debug " .. (debugOn and "on" or "off") .. ", ToggleSheath hooked: " .. tostring(hooked)
 			.. ", sheath key: " .. tostring((GetBindingKey("TOGGLESHEATH"))) .. ", HUD drawn state: " .. tostring(drawn))
+	elseif cmd == "state" then
+		local ok, err = pcall(function()
+			local function alpha(name)
+				local f = _G[name]
+				return (f and f.GetAlpha) and string.format("%.2f", f:GetAlpha()) or "none"
+			end
+			print(string.format("QuietHUD state: enabled=%s, shown opacity=%.2f, idle opacity=%.2f, HUD active=%s",
+				tostring(DB.enabled and true or false), DB.base or 0, DB.idle or 0, tostring(lastActive)))
+			print(string.format("QuietHUD triggers: in combat=%s, after-combat linger=%s, weapon drawn=%s, has target=%s",
+				tostring(UnitAffectingCombat("player") and true or false), tostring(GetTime() < combatEnd),
+				tostring(drawn), tostring(UnitExists("target") and true or false)))
+			print("QuietHUD alpha now: PlayerFrame=" .. alpha("PlayerFrame") .. ", MainActionBar=" .. alpha("MainActionBar")
+				.. ", TargetFrame=" .. alpha("TargetFrame") .. ", MinimapCluster=" .. alpha("MinimapCluster"))
+		end)
+		if not ok then print("QuietHUD: could not read the state (" .. tostring(err) .. ")") end
+	elseif cmd == "instance" then
+		local ok, line = pcall(function()
+			local inside, kind = IsInInstance()
+			return "IsInInstance = " .. tostring(inside) .. ", " .. tostring(kind) .. ", option on: "
+				.. tostring(DB.inInstance and true or false) .. ", HUD forced on: " .. tostring(inDungeonOrRaid())
+		end)
+		print("QuietHUD: " .. (ok and line or "could not read the instance state"))
 	elseif cmd == "bars" then
 		print("QuietHUD action bar frames found: " .. table.concat(discovered, ", "))
 	elseif cmd == "where" then
@@ -1112,6 +1226,6 @@ SlashCmdList["QUIETHUD"] = function(msg)
 			print("QuietHUD " .. g .. " extras: " .. table.concat(DB.extra[g] or {}, ", "))
 		end
 	else
-		print("QuietHUD: /qhud (menu), toggle, reset, target, quest, map, chat, bars, debug, where, add <group>, remove <name>, list")
+		print("QuietHUD: /qhud (menu), toggle, reset, target, quest, map, chat, bars, instance, state, debug, where, add <group>, remove <name>, list")
 	end
 end

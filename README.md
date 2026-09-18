@@ -9,13 +9,16 @@ optional, and nothing is hidden unless you turn it on.
 Open the settings with `/qhud`. There are four pages.
 
 **Show when** (what brings the HUD back)
-- Master on/off switch, opacity when shown, and opacity when idle (0 hides it completely).
-- Show in combat, while your weapon is drawn, or while you have a target.
+- Master on/off switch, opacity when active (something woke the HUD), and opacity when idle (nothing is
+  going on, 0 hides it completely). Both apply to everything that fades, not just one element.
+- Show in combat, while your weapon is drawn, while you have a target, or always in dungeons and raids.
 - Show the action bars on mouse over, and how long the HUD stays after combat.
 
 **Elements** (what fades, each one optional)
 - Action bars, player frame, target/party/raid frames and buffs, minimap, objective tracker, chat.
-- Minimap can show only while you are moving. Chat can either stay fully opaque or use the HUD opacity.
+- The minimap has its own row with a button that cycles four modes: follows the HUD (fades with everything
+  else), only while you are moving, always shown, or always on but dimmed. Chat can either stay fully opaque
+  or use the HUD opacity.
 
 **Bars** (per action bar, Action Bars 1 to 8)
 - Whether each bar fades, and whether to hide its hotkey text or its macro names.
@@ -23,7 +26,7 @@ Open the settings with `/qhud`. There are four pages.
 **Extras**
 - How long chat and the tracker/minimap stay after new activity.
 - Optional hiding of the bags bar, the menu bar and the beta Issue Reporter.
-- The experimental quest-mob targeting key, off by default.
+- The quest-mob targeting key (work in progress), off by default.
 - Reset to defaults.
 
 Chat comes back on a new message, when you press Enter, or when the mouse is over it. The objective
@@ -43,7 +46,8 @@ hotkeys. Each of the 8 bars is separate, so you can hide it only where it bother
 have "Fade" unticked on the Bars page while the rest still fade.
 
 **Opacity when idle.** Zero hides an element completely. A small value like 0.2 leaves a faint ghost of
-it, which is handy if you sometimes need to find a button without waking the whole HUD.
+it, which is handy if you sometimes need to find a button without waking the whole HUD. Idle can never be
+brighter than the "active" opacity, so if you drag one slider past the other, the other one moves with it.
 
 **Show while my weapon is drawn.** WoW cannot tell an addon whether your weapon is out, so this follows
 your Toggle Sheath key. Draw your weapon to bring the HUD up, sheathe it to send it away.
@@ -51,8 +55,16 @@ your Toggle Sheath key. Draw your weapon to bring the HUD up, sheathe it to send
 **Show while I have a target.** For people who want the HUD whenever they are interacting with something,
 whether or not it is a fight.
 
-**Minimap only while I am moving.** The minimap is only really useful while you are travelling. With this
-on it fades out the moment you stand still, and comes back when you move or change zone.
+**Always show in dungeons and raids.** Inside a dungeon or raid instance (any instance except battlegrounds
+and arenas) the HUD stays fully shown, including the minimap even if it is set to show only while moving,
+and fades again when you leave. Chat still follows its own rules. If it does not seem to work, run
+`/qhud instance` inside the instance and report what it prints.
+
+**Minimap mode.** Click the button on the Elements page to cycle. "Follows the HUD" treats the minimap like
+every other element. "Only while I am moving" fades it out the moment you stand still and brings it back when
+you move or change zone, which suits a minimap that is only really useful while travelling. "Always shown"
+never fades it. "Always on, dimmed" keeps it faintly visible at its own opacity (a slider appears when you pick
+this mode) and brightens it when you move or the rest of the HUD wakes up.
 
 **Chat uses the HUD opacity.** By default chat is fully opaque when it appears, so it stays readable.
 Tick this if you want it dimmed to the same level as everything else.
@@ -60,17 +72,20 @@ Tick this if you want it dimmed to the same level as everything else.
 **Hide bags, menu bar, Issue Reporter.** These sit on screen permanently and burn in fastest. Hiding them
 does not disable them: their keybinds still work.
 
-## Quest-mob targeting (experimental)
+## Quest-mob targeting (work in progress)
 
-This is a "Tab, but only for the mobs my quest needs" key. Here is how to use it.
+This is a "Tab, but only for the mobs my quest needs" key. **It is a work in progress**: it can miss a quest
+mob or stop on a mob that is not one, and it depends on how the beta reports quest and tooltip data. It is off
+by default, and bug reports are welcome. Here is how to use it.
 
 1. **Turn it on.** Open `/qhud`, go to the **Extras** page, and tick "Enable quest-mob targeting key".
 2. **Bind a key.** Esc, Options, Keybindings, AddOns, QuietHUD, "Target highlighted quest mob". (In a
    macro, `/click QuietHUDTargetButton` does the same.)
 3. **Turn on enemy nameplates** if they are off. The addon reads the mobs' nameplate information.
-4. **Select the quest.** In the objective tracker, click the quest you are working on so it is the
-   highlighted (tracked) quest. Its icon gets a glow. The key only looks for mobs that quest needs. If no
-   quest is highlighted it uses all of your quests.
+4. **Optionally, select the quest.** In the objective tracker, click the quest you are working on so it is
+   the highlighted (tracked) quest. Its icon gets a glow, and the key then only looks for mobs that quest
+   needs. The game often highlights a quest for you. If no quest is highlighted, the key checks every quest in
+   your log the same way, so it can land on a mob for any of them.
 5. **Stand near the mobs and press the key.** It targets the next mob the quest needs and puts the skull
    marker on it. Press it again and it moves on to the next one, and the skull moves with it.
 
@@ -99,6 +114,8 @@ Tab targets. The message "quest targeting is off" means the Extras checkbox is n
 | `/qhud reset` | Reset all settings to defaults |
 | `/qhud quest`, `/qhud map`, `/qhud chat` | Show that element for a few seconds |
 | `/qhud bars` | List the action bar frames the addon found |
+| `/qhud state` | Print whether the HUD is currently active or idle, what triggered it, and the real opacity of a few frames |
+| `/qhud instance` | Print what the game says about your instance, and whether the HUD is being held on |
 | `/qhud where` | Print the name of the frame under the mouse |
 | `/qhud add bars\|player\|hud\|quest\|map\|hidden` | Put the frame under the mouse into a group (saved) |
 | `/qhud remove <name>`, `/qhud list` | Take a frame you added back out, or list them |
@@ -115,7 +132,7 @@ the feature on, "Target highlighted quest mob".
 - WoW does not expose whether your weapon is sheathed, so the addon follows the Toggle Sheath key and
   assumes the weapon is drawn when combat starts. If it drifts, use `/qhud toggle`.
 - Hidden frames still work with their keybinds.
-- Quest-mob targeting is experimental, and in combat it is only a plain Tab plus the skull.
+- Quest-mob targeting is a work in progress, and in combat it is only a plain Tab plus the skull.
 
 ## Settings on the Forever beta
 
