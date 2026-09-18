@@ -8,7 +8,7 @@
 
 ## 1.0.0
 
-First release, for the Forever (Classic beta) client, build 1.60.1.
+First release, for the Forever (Classic+ beta) client, build 1.60.1.
 
 - Fades the HUD when idle and brings it back on combat, weapon drawn, a target, mouse over, chat
   activity, quest progress, zone changes and movement. Every element and trigger is a toggle.

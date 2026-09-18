@@ -1,7 +1,7 @@
 # QuietHUD
 
 A World of Warcraft addon that fades the HUD out when idle, to protect OLED panels. Built for the
-Forever (Classic beta) client, interface 16001, no dependencies. Every element and every trigger is
+Forever (Classic+ beta) client, interface 16001, no dependencies. Every element and every trigger is
 optional, and nothing is hidden unless you turn it on.
 
 ## What it does
@@ -131,6 +131,12 @@ manifest.
 Run `.\install.ps1`, or copy the `QuietHUD` folder into
 `World of Warcraft\_classic_beta_\Interface\AddOns\` yourself, then fully restart the client (it only
 reads addon manifests at startup).
+
+## About this addon
+
+QuietHUD was built with AI assistance (Claude Code) and tested in game by the author. It has only been
+tested on one setup so far, so expect some rough edges. Bug reports are welcome on GitHub:
+https://github.com/Jackafur/quiethud/issues
 
 ## License
 
