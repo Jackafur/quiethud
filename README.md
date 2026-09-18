@@ -74,39 +74,41 @@ does not disable them: their keybinds still work.
 
 ## Quest-mob targeting (work in progress)
 
-This is a "Tab, but only for the mobs my quest needs" key. **It is a work in progress**: it can miss a quest
-mob or stop on a mob that is not one, and it depends on how the beta reports quest and tooltip data. It is off
-by default, and bug reports are welcome. Here is how to use it.
+A key that targets a mob your quest needs and puts the skull marker on it. **It is a work in progress**: it
+depends on how the beta reports quest and tooltip data, and it cannot do everything a Tab key can (see below).
+It is off by default, and bug reports are welcome. Here is how to use it.
 
 1. **Turn it on.** Open `/qhud`, go to the **Extras** page, and tick "Enable quest-mob targeting key".
 2. **Bind a key.** Esc, Options, Keybindings, AddOns, QuietHUD, "Target highlighted quest mob". (In a
    macro, `/click QuietHUDTargetButton` does the same.)
-3. **Turn on enemy nameplates** if they are off. Before it presses Tab, the key looks at the nearby enemy
-   nameplates for a quest mob. If there is none, it just says so and changes nothing: no target change and
-   no skull. With nameplates off it cannot look ahead, so it Tabs anyway and may stop on a mob that is not a
-   quest mob.
+3. **Turn on enemy nameplates.** The key reads the nameplates of the enemies around you to find quest mobs.
+   With nameplates off it tells you so and does nothing. If no nearby enemy is a quest mob it also does
+   nothing: no target change and no skull.
 4. **Select the quest.** In the objective tracker, click the quest you are working on so it is the
    highlighted (tracked) quest. Its icon gets a glow, and the key then only looks for mobs that quest needs.
    This works for both "kill X" and item-drop quests. If no quest is highlighted, the key tries every quest in
    your log, but that is less tested, so clicking the quest is the reliable way.
-5. **Stand near the mobs and press the key.** It targets the next mob the quest needs and puts the skull
-   marker on it. Press it again and it moves on to the next one, and the skull moves with it.
+5. **Stand near the mobs and press the key.** It targets the nearest mob the quest needs and puts the skull on
+   it. It never targets a mob that is not a quest mob. Press it again and it moves to a different kind of
+   quest mob if there is one.
 
 What counts as a quest mob: for "kill X" objectives, mobs with that name. For objectives such as "collect
 X", mobs whose tooltip mentions the quest or the item. It skips mobs that another player has already tagged.
+
+What it cannot do: pick one mob out of several that share the same name. It targets by name, so with a pack
+of identical mobs it goes to the nearest one. Kill it and press again for the next. This is a limit of the
+game, which lets an addon change the target only once per key press, so it cannot press Tab repeatedly until
+it reaches a quest mob. Pressing Tab yourself has the same problem, because it cycles through every enemy.
 
 In combat the key still works, but as a plain Tab plus the skull marker. The game locks addon changes to
 secure buttons during combat, so the addon cannot look at the mobs and pick a quest mob there. It goes back
 to the full quest-aware behavior as soon as combat ends.
 
-How it works: the game does not let addons change your target, does not cycle `/target name` through
-several mobs with the same name, and does not let commands target nameplate unit IDs. So the addon
-chains secure buttons that each press Tab, look at the result, and keep going (up to 16 presses) until
-they land on a quest mob, all inside one key press. `/qhud debug` prints each step.
-
-Troubleshooting: "no quest mob found among the nearby enemies" means Tab reached no mob the highlighted
-quest needs. Check that the right quest is highlighted and that you are close enough for the mobs to be
-Tab targets. The message "quest targeting is off" means the Extras checkbox is not ticked.
+Troubleshooting: "no quest mob found among the nearby enemies" means none of the enemies with a nameplate
+matches the highlighted quest. Check that the right quest is highlighted and that you are close enough for
+the nameplates to show. The message "quest targeting is off" means the Extras checkbox is not ticked.
+`/qhud debug` prints what the key sees and decides, and saves it so a bug report can include it (type
+`/reload` afterwards and look in the addon's saved-variables file).
 
 ## Commands
 

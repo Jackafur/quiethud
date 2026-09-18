@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.1.2
+
+- Quest targeting reworked. The game lets an addon change the target only once per key press, so the old idea
+  of pressing Tab repeatedly until a quest mob turned up could not work, and it kept stopping on mobs that were
+  not quest mobs and skull-marking them. The key now reads the enemy nameplates, picks the nearest quest mob
+  and targets it by name, with the skull. It never targets a mob that is not a quest mob. The limit is that a
+  pack of identically named mobs is always entered at its nearest one: kill it and press again for the next.
+- With enemy nameplates off the key now says so and does nothing, instead of pressing Tab blindly.
+- `/qhud debug` for the quest key now prints the quest it is using, the words it looks for, every nameplate and
+  why each counted or not, and what it decided, and it keeps this in the addon's saved-variables file (written
+  on `/reload`) so a report can include it.
+
 ## 1.1.1
 
 - Quest targeting now checks the nearby enemy nameplates for a quest mob before it presses Tab. If there is

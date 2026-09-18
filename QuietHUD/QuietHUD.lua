@@ -98,6 +98,15 @@ local chatList = {}
 local barHover, discovered = {}, {}
 local debugOn = false
 local lastActive = false
+
+-- Debug output: printed, and also kept in DB.trace (saved to the addon's saved-variables file on /reload).
+local function trace(msg)
+	if not debugOn then return end
+	print(msg)
+	DB.trace = DB.trace or {}
+	DB.trace[#DB.trace + 1] = string.format("%.1f %s", GetTime(), msg)
+	if #DB.trace > 300 then table.remove(DB.trace, 1) end
+end
 local armEntry
 
 local function discoverBars()
@@ -868,85 +877,48 @@ local function questNames(questID)
 	return names, needles
 end
 
+-- Returns found, the needle that matched and the tooltip line it matched in (the last two are for /qhud debug).
 local function tooltipMentions(unit, needles)
-	local ok, found = pcall(function()
+	local ok, found, needle, line = pcall(function()
 		local data = C_TooltipInfo.GetUnit(unit)
 		if not data or not data.lines then return false end
-		for _, line in ipairs(data.lines) do
-			local text = line.leftText
+		for _, l in ipairs(data.lines) do
+			local text = l.leftText
 			if type(text) == "string" then
-				for _, needle in ipairs(needles) do
-					if text:find(needle, 1, true) then return true end
+				for _, n in ipairs(needles) do
+					if text:find(n, 1, true) then return true, n, text end
 				end
 			end
 		end
 		return false
 	end)
-	return ok and found
+	return ok and found, needle, line
 end
 
+-- Returns whether the unit is a quest mob, and why (used by /qhud debug).
 local function isQuestUnit(unit, names, needles)
 	local n = UnitName(unit)
-	if n and names[singular(n)] then return true end
+	if n and names[singular(n)] then return true, "its name is a kill objective" end
 	if C_TooltipInfo and C_TooltipInfo.GetUnit then
-		return #needles > 0 and tooltipMentions(unit, needles) and true or false
+		if #needles == 0 then return false end
+		local found, needle, line = tooltipMentions(unit, needles)
+		if found then return true, 'tooltip line "' .. tostring(line) .. '" contains "' .. tostring(needle) .. '"' end
+		return false
 	end
 	-- Only clients without the tooltip API fall back to the game's looser "related to a quest" flag.
 	if C_QuestLog and C_QuestLog.UnitIsRelatedToActiveQuest then
 		local ok, related = pcall(C_QuestLog.UnitIsRelatedToActiveQuest, unit)
-		return ok and related and true or false
+		return ok and related and true or false, "the game flags it as related to a quest"
 	end
 	return false
 end
 
--- Looks through the visible enemy nameplates for a quest mob before any Tab is pressed, so nothing is targeted
--- or marked when there is none. Returns true or false, or nil when there are no nameplates to look at (for
--- example when enemy nameplates are turned off), in which case the caller just runs the Tab chain.
-local function questMobNearby(names, needles)
-	if not (C_NamePlate and C_NamePlate.GetNamePlates) then return nil end
-	local ok, plates = pcall(C_NamePlate.GetNamePlates)
-	if not ok or type(plates) ~= "table" or #plates == 0 then return nil end
-	for _, plate in ipairs(plates) do
-		local unit = plate.namePlateUnitToken or (plate.UnitFrame and plate.UnitFrame.unit)
-		if unit then
-			local okUnit, mob = pcall(function()
-				if not UnitCanAttack("player", unit) or UnitIsDead(unit) then return false end
-				if UnitIsTapDenied and UnitIsTapDenied(unit) then return false end
-				return isQuestUnit(unit, names, needles)
-			end)
-			if okUnit and mob then return true end
-		end
-	end
-	return false
-end
-
--- Quest-mob targeting works like Tab, restricted to quest mobs. Addons cannot change the target, and the
--- unit IDs of nameplates cannot be targeted by commands, so a key press clicks a secure button that presses
--- Tab (/targetenemy) and then clicks a chain of secure step buttons. The PreClick of each step checks the new
--- target and either finishes with the skull or sets the macro for one more Tab step, all within one key press.
-local STEP_MAX = 16
-
--- A macro's /click sends an up click by default, but a secure button only acts on the phase that matches the
--- ActionButtonUseKeyDown setting. Sending both a down and an up click makes it work either way.
-local function clickStep(n)
-	return "/click QuietHUDStep" .. n .. " LeftButton 1\n/click QuietHUDStep" .. n .. " LeftButton 0"
-end
-
-local function dbgLine(msg)
-	if not debugOn then return nil end
-	return '/run print("QuietHUD: ' .. msg .. '")'
-end
-
-local function joinLines(...)
-	local t = {}
-	for i = 1, select("#", ...) do
-		local v = select(i, ...)
-		if v and v ~= "" then t[#t + 1] = v end
-	end
-	return table.concat(t, "\n")
-end
-
-local run = { active = false, depth = 0, startGUID = nil, names = {}, needles = {}, found = nil }
+-- Quest-mob targeting. Addons cannot change the target, and this client lets only one Tab take effect per key
+-- press (the buttons a macro clicks never run their own macros), so a chain of Tabs cannot skip the mobs that are
+-- not quest mobs. Instead the addon looks at the enemy nameplates, decides which quest mob to go to, and writes a
+-- fixed macro for that one name just before the key press: /targetexact <name>, then the skull. The target is
+-- therefore always a quest mob, and the skull always lands on it.
+local run = { active = false, names = {}, needles = {}, plan = nil }
 
 local function targetIsQuestMob()
 	if not UnitExists("target") or not UnitCanAttack("player", "target") or UnitIsDead("target") then
@@ -956,34 +928,56 @@ local function targetIsQuestMob()
 	return isQuestUnit("target", run.names, run.needles)
 end
 
-for i = 1, STEP_MAX do
-	local step = CreateFrame("Button", "QuietHUDStep" .. i, UIParent, "SecureActionButtonTemplate")
-	step:SetAttribute("type", "macro")
-	step:SetAttribute("macrotext", "")
-	step:RegisterForClicks("AnyDown", "AnyUp")
-	step:SetScript("PreClick", function(self, _, down)
-		if not run.active or InCombatLockdown() then return end
-		run.depth = i
-		local ok, quest = pcall(targetIsQuestMob)
-		local okGuid, guid = pcall(UnitGUID, "target")
-		local backAtStart = okGuid and guid ~= nil and guid == run.startGUID
-		if debugOn then
-			print(string.format("QuietHUD step %d (%s click): target=%s quest=%s", i, down and "down" or "up",
-				tostring(UnitName("target")), tostring(ok and quest)))
+-- The quest mobs among the visible enemy nameplates, nearest first. Returns nil when there are no nameplates at
+-- all (for example when enemy nameplates are turned off).
+local function questMobsOnScreen(names, needles)
+	if not (C_NamePlate and C_NamePlate.GetNamePlates) then return nil end
+	local ok, plates = pcall(C_NamePlate.GetNamePlates)
+	if not ok or type(plates) ~= "table" or #plates == 0 then return nil end
+	local list = {}
+	for _, plate in ipairs(plates) do
+		local unit = plate.namePlateUnitToken or (plate.UnitFrame and plate.UnitFrame.unit)
+		if unit then
+			local okUnit, mob, why = pcall(function()
+				if not UnitCanAttack("player", unit) or UnitIsDead(unit) then return false end
+				if UnitIsTapDenied and UnitIsTapDenied(unit) then return false end
+				return isQuestUnit(unit, names, needles)
+			end)
+			if debugOn then
+				pcall(function()
+					trace(string.format("  plate %s: attackable=%s dead=%s tapped=%s -> quest=%s%s", tostring(UnitName(unit)),
+						tostring(UnitCanAttack("player", unit)), tostring(UnitIsDead(unit)),
+						tostring(UnitIsTapDenied and UnitIsTapDenied(unit)), tostring(okUnit and mob),
+						(okUnit and mob and why) and (", because " .. why) or ""))
+				end)
+			end
+			if okUnit and mob then
+				local dist
+				if UnitDistanceSquared then
+					local okDist, d = pcall(UnitDistanceSquared, unit)
+					if okDist and type(d) == "number" and not (issecretvalue and issecretvalue(d)) then dist = d end
+				end
+				local name = UnitName(unit)
+				if name and not (issecretvalue and issecretvalue(name)) then list[#list + 1] = { name = name, dist = dist } end
+			end
 		end
-		local text
-		if ok and quest then
-			run.found = UnitName("target") or "?"
-			run.active = false
-			text = joinLines(dbgLine("step " .. i .. " macro ran (found)"))
-		elseif i >= STEP_MAX or backAtStart or not UnitExists("target") then
-			run.active = false
-			text = joinLines("/cleartarget", dbgLine("step " .. i .. " macro ran (gave up)"))
-		else
-			text = joinLines("/targetenemy", clickStep(i + 1), dbgLine("step " .. i .. " macro ran (tab)"))
+	end
+	table.sort(list, function(a, b) return (a.dist or math.huge) < (b.dist or math.huge) end)
+	return list
+end
+
+-- Which quest mob name to go to. If you are already on a quest mob, move to a different kind when there is one
+-- (a name cannot pick one mob out of several with the same name); otherwise the nearest.
+local function chooseQuestName(list)
+	local okQ, onQuestMob = pcall(targetIsQuestMob)
+	local current = (okQ and onQuestMob) and UnitName("target") or nil
+	if current then
+		for _, mob in ipairs(list) do
+			if mob.name ~= current then return mob.name, "a different kind of quest mob" end
 		end
-		self:SetAttribute("macrotext", text)
-	end)
+		return current, "the nearest " .. current
+	end
+	return list[1].name, "the nearest quest mob"
 end
 
 local targetButton = CreateFrame("Button", "QuietHUDTargetButton", UIParent, "SecureActionButtonTemplate")
@@ -992,7 +986,7 @@ targetButton:SetAttribute("macrotext", "")
 targetButton:RegisterForClicks("AnyDown", "AnyUp")
 
 -- The game locks addon changes to secure buttons during combat, so the button is kept armed with a plain Tab
--- and the skull (when the feature is on). Out of combat every press replaces it with the smart quest chain.
+-- and the skull (when the feature is on). Out of combat every press replaces it with the quest mob macro.
 local COMBAT_MACRO = "/targetenemy\n/tm 0\n/tm " .. SKULL
 armEntry = function()
 	if InCombatLockdown() then return end
@@ -1007,6 +1001,7 @@ end
 
 targetButton:SetScript("PreClick", function(self, _, down)
 	if not isActionClick(down) then return end
+	run.plan = nil
 	if not DB.questTarget then
 		print("QuietHUD: quest targeting is off. Turn it on in /qhud, Extras.")
 		return
@@ -1018,48 +1013,50 @@ targetButton:SetScript("PreClick", function(self, _, down)
 		end
 		return
 	end
-	local ok, names, needles = pcall(questNames, highlightedQuestID())
+	local questID = highlightedQuestID()
+	local ok, names, needles = pcall(questNames, questID)
 	if not ok then
 		self:SetAttribute("macrotext", "")
 		print("QuietHUD: could not read your quests just now")
 		return
 	end
-	if questMobNearby(names, needles) == false then
+	run.names, run.needles = names, needles
+	if debugOn then
+		local kills = {}
+		for name in pairs(names) do kills[#kills + 1] = name end
+		trace("QuietHUD: --- key press. start target=" .. tostring(UnitName("target")))
+		trace("QuietHUD: highlighted quest id " .. tostring(questID) .. ", kill names: [" .. table.concat(kills, ", ")
+			.. "], tooltip needles: [" .. table.concat(needles, ", ") .. "]")
+	end
+	local mobs = questMobsOnScreen(names, needles)
+	if not mobs then
 		self:SetAttribute("macrotext", "")
-		print("QuietHUD: no quest mob found among the nearby enemies")
+		print("QuietHUD: no enemy nameplates to look at. Turn on enemy nameplates so the key can find quest mobs.")
+		trace("QuietHUD: there are no nameplates, so nothing was pressed")
 		return
 	end
-	run.active, run.depth, run.found = true, 0, nil
-	run.names, run.needles = names, needles
-	local okGuid, guid = pcall(UnitGUID, "target")
-	run.startGUID = okGuid and guid or nil
-	self:SetAttribute("macrotext", joinLines("/targetenemy", clickStep(1), "/tm 0", "/tm " .. SKULL,
-		debugOn and '/run print("QuietHUD: entry macro finished, mark on target is "..tostring(GetRaidTargetIndex("target")))' or nil))
+	if #mobs == 0 then
+		self:SetAttribute("macrotext", "")
+		print("QuietHUD: no quest mob found among the nearby enemies")
+		trace("QuietHUD: no quest mob on the nameplates, so nothing was pressed")
+		return
+	end
+	local name, why = chooseQuestName(mobs)
+	run.plan = why
+	local text = "/targetexact " .. name .. "\n/tm 0\n/tm " .. SKULL
+	trace("QuietHUD: " .. #mobs .. " quest mob(s) on the nameplates, going to " .. why .. ": " .. text:gsub("\n", " | "))
+	self:SetAttribute("macrotext", text)
 end)
 
 targetButton:SetScript("PostClick", function(self, _, down)
-	if not InCombatLockdown() then
-		for i = 1, STEP_MAX do
-			local s = _G["QuietHUDStep" .. i]
-			if s then s:SetAttribute("macrotext", "") end
+	if not InCombatLockdown() then armEntry() end
+	if isActionClick(down) and run.plan then
+		local name = UnitName("target")
+		if name and not (issecretvalue and issecretvalue(name)) then
+			print("QuietHUD: " .. name .. " (" .. run.plan .. ")")
 		end
-		armEntry()
+		run.plan = nil
 	end
-	if isActionClick(down) and run.depth > 0 then
-		if run.found then
-			print(string.format("QuietHUD: quest mob %s (after %d Tab step%s)", run.found, run.depth,
-				run.depth == 1 and "" or "s"))
-		else
-			print("QuietHUD: no quest mob found among the nearby enemies")
-		end
-	end
-	if debugOn and isActionClick(down) and C_Timer and C_Timer.After then
-		C_Timer.After(0.3, function()
-			print("QuietHUD: raid mark on the target is " .. tostring(GetRaidTargetIndex("target")))
-		end)
-	end
-	run.active = false
-	run.depth = 0
 end)
 
 -- Adding frames by hand
@@ -1203,6 +1200,7 @@ SlashCmdList["QUIETHUD"] = function(msg)
 		print("QuietHUD: settings reset to defaults")
 	elseif cmd == "debug" then
 		debugOn = not debugOn
+		if debugOn then DB.trace = {} end
 		print("QuietHUD debug " .. (debugOn and "on" or "off") .. ", ToggleSheath hooked: " .. tostring(hooked)
 			.. ", sheath key: " .. tostring((GetBindingKey("TOGGLESHEATH"))) .. ", HUD drawn state: " .. tostring(drawn))
 	elseif cmd == "state" then
