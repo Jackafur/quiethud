@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.1.3
+
+- New Chat page: choose which kinds of message bring the chat up (whispers, party/raid/instance, guild, say/yell/
+  emotes, channels, loot and XP, system messages, NPC speech). The defaults are quieter: only whispers, group
+  chat, guild chat and system messages. Before, every kind including channel chatter and loot woke it. The
+  "chat stays" slider moved here from Extras. `/qhud debug` now prints the event that woke the chat.
+- The player cast bar now fades with the player frame.
+- "Only while I am moving" now detects movement two ways (walking speed, and whether your position changed), so
+  it no longer depends on the game reporting your speed. `/qhud state` also saves what it prints to the trace
+  file and says how movement was detected.
+- The minimap is now fully solid when it is shown, instead of taking the HUD opacity. In cities and interiors
+  the map could come up blank at partial opacity. A short log of the minimap's decisions is also kept and saved
+  with the settings, so a minimap that does not show can be diagnosed afterwards.
+- New `/qhud find <text>` finds the frame showing some text, and `/qhud add <group> <frame name>` adds a frame by
+  name, so a notice can be hidden without hovering it.
+
 ## 1.1.2
 
 - Quest targeting reworked. The game lets an addon change the target only once per key press, so the old idea

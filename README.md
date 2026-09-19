@@ -6,7 +6,7 @@ optional, and nothing is hidden unless you turn it on.
 
 ## What it does
 
-Open the settings with `/qhud`. There are four pages.
+Open the settings with `/qhud`. There are five pages.
 
 **Show when** (what brings the HUD back)
 - Master on/off switch, opacity when active (something woke the HUD), and opacity when idle (nothing is
@@ -23,8 +23,14 @@ Open the settings with `/qhud`. There are four pages.
 **Bars** (per action bar, Action Bars 1 to 8)
 - Whether each bar fades, and whether to hide its hotkey text or its macro names.
 
+**Chat**
+- How long chat stays after a message, and which kinds of message bring it up: whispers, party/raid/instance
+  chat, guild chat, say/yell/emotes from players, channels such as General and Trade, loot/money/XP/reputation,
+  system messages, and NPC speech. By default only whispers, group chat, guild chat and system messages do, so
+  channel chatter, loot and nearby players do not keep waking it. `/qhud debug` prints the event that woke it.
+
 **Extras**
-- How long chat and the tracker/minimap stay after new activity.
+- How long the tracker and minimap stay after new activity.
 - Optional hiding of the bags bar, the menu bar and the beta Issue Reporter.
 - The quest-mob targeting key (work in progress), off by default.
 - Reset to defaults.
@@ -122,7 +128,8 @@ the nameplates to show. The message "quest targeting is off" means the Extras ch
 | `/qhud state` | Print whether the HUD is currently active or idle, what triggered it, and the real opacity of a few frames |
 | `/qhud instance` | Print what the game says about your instance, and whether the HUD is being held on |
 | `/qhud where` | Print the name of the frame under the mouse |
-| `/qhud add bars\|player\|hud\|quest\|map\|hidden` | Put the frame under the mouse into a group (saved) |
+| `/qhud find <text>` | Find which frame is showing some text, e.g. a notice you want to hide. If it is not on screen it keeps watching for 10 minutes |
+| `/qhud add bars\|player\|hud\|quest\|map\|hidden [frame name]` | Put a frame into a group (saved). Without a name it uses the frame under the mouse |
 | `/qhud remove <name>`, `/qhud list` | Take a frame you added back out, or list them |
 | `/qhud debug` | Toggle debug output for the sheath detection and quest targeting |
 

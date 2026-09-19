@@ -22,6 +22,7 @@ local FIELDS = {
 	{ key = "fadeChat", code = "fc", kind = "bool", def = true },
 	{ key = "chatDim", code = "cd", kind = "bool", def = false },
 	{ key = "chatSeconds", code = "c", kind = "num", def = 8 },
+	{ key = "chatKinds", code = "ck", kind = "num", def = 71 },
 	{ key = "questSeconds", code = "q", kind = "num", def = 10 },
 	{ key = "hideBags", code = "hb", kind = "bool", def = false },
 	{ key = "hideMicro", code = "hm", kind = "bool", def = false },
@@ -43,7 +44,7 @@ local SKULL = 8
 
 local DEFAULT_LISTS = {
 	bars = { "StatusTrackingBarManager", "StanceBar", "PetActionBar", "PossessActionBar" },
-	player = { "PlayerFrame" },
+	player = { "PlayerFrame", "PlayerCastingBarFrame", "CastingBarFrame" },
 	hud = {
 		"TargetFrame", "FocusFrame", "PetFrame", "PartyFrame", "CompactRaidFrameContainer",
 		"CompactRaidFrameManager", "BuffFrame", "DebuffFrame", "TemporaryEnchantFrame", "DamageMeter",
@@ -86,6 +87,27 @@ local CHAT_EXTRAS = {
 	"GeneralDockManager", "ChatFrameMenuButton", "ChatFrameChannelButton",
 	"ChatFrameToggleVoiceDeafenButton", "ChatFrameToggleVoiceMuteButton", "QuickJoinToastButton",
 }
+
+-- What can bring the chat up. Bit i of the chatKinds setting turns category i on. The default (71) is whispers,
+-- party/raid/instance chat, guild chat and system messages.
+local CHAT_KINDS = {
+	{ "Whispers", { "CHAT_MSG_WHISPER", "CHAT_MSG_WHISPER_INFORM", "CHAT_MSG_BN_WHISPER", "CHAT_MSG_BN_WHISPER_INFORM",
+		"CHAT_MSG_AFK", "CHAT_MSG_DND" } },
+	{ "Party, raid and instance chat", { "CHAT_MSG_PARTY", "CHAT_MSG_PARTY_LEADER", "CHAT_MSG_RAID",
+		"CHAT_MSG_RAID_LEADER", "CHAT_MSG_RAID_WARNING", "CHAT_MSG_INSTANCE_CHAT", "CHAT_MSG_INSTANCE_CHAT_LEADER" } },
+	{ "Guild and officer chat", { "CHAT_MSG_GUILD", "CHAT_MSG_OFFICER", "CHAT_MSG_GUILD_ACHIEVEMENT" } },
+	{ "Say, yell and emotes from players", { "CHAT_MSG_SAY", "CHAT_MSG_YELL", "CHAT_MSG_EMOTE", "CHAT_MSG_TEXT_EMOTE" } },
+	{ "Channels (General, Trade, ...)", { "CHAT_MSG_CHANNEL" } },
+	{ "Loot, money, XP, reputation, skills", { "CHAT_MSG_LOOT", "CHAT_MSG_MONEY", "CHAT_MSG_COMBAT_XP_GAIN",
+		"CHAT_MSG_COMBAT_FACTION_CHANGE", "CHAT_MSG_SKILL" } },
+	{ "System messages and achievements", { "CHAT_MSG_SYSTEM", "CHAT_MSG_ACHIEVEMENT" } },
+	{ "NPC speech and emotes", { "CHAT_MSG_MONSTER_SAY", "CHAT_MSG_MONSTER_YELL", "CHAT_MSG_MONSTER_EMOTE",
+		"CHAT_MSG_MONSTER_WHISPER" } },
+}
+local chatKindOf = {}
+for i, kind in ipairs(CHAT_KINDS) do
+	for _, e in ipairs(kind[2]) do chatKindOf[e] = i end
+end
 
 local DB = { extra = {} }
 for k, v in pairs(DEFAULTS) do DB[k] = v end
@@ -397,12 +419,43 @@ if keys.SetPropagateKeyboardInput then
 	end)
 end
 
+-- Moving is read two ways, so one of them failing (the game can hide the speed value) does not break it: the
+-- walking speed, and whether the player's position changed since the last check.
+local lastPosX, lastPosY, lastMoveReason, lastSpeedText, lastLoggedMoving = nil, nil, "none", "?", nil
 local function isMoving()
+	local reason = "none"
 	local speed = GetUnitSpeed("player")
-	if issecretvalue and issecretvalue(speed) then return false end
-	return (speed or 0) > 0
+	lastSpeedText = (issecretvalue and issecretvalue(speed)) and "hidden" or tostring(speed)
+	if not (issecretvalue and issecretvalue(speed)) and (speed or 0) > 0 then reason = "speed" end
+	if UnitPosition then
+		local y, x = UnitPosition("player")
+		if type(x) == "number" and type(y) == "number" and not (issecretvalue and (issecretvalue(x) or issecretvalue(y))) then
+			if reason == "none" and lastPosX and (math.abs(x - lastPosX) > 0.01 or math.abs(y - lastPosY) > 0.01) then
+				reason = "position"
+			end
+			lastPosX, lastPosY = x, y
+		end
+	end
+	lastMoveReason = reason
+	return reason ~= "none"
 end
 
+-- A short log of the minimap decisions, saved with the settings on /reload. It is kept even without debug mode,
+-- so a minimap that does not show can be diagnosed afterwards.
+local function mapLog(msg)
+	DB.mapLog = DB.mapLog or {}
+	DB.mapLog[#DB.mapLog + 1] = string.format("%.1f %s", GetTime(), msg)
+	if #DB.mapLog > 80 then table.remove(DB.mapLog, 1) end
+end
+
+-- The player arrow, the quest arrow and the quest-area overlays are drawn by the game and ignore the opacity of
+-- the minimap cluster, so a faded minimap is hidden outright.
+local function setMinimapVisible(visible, alpha)
+	if not Minimap then return end
+	Minimap:SetShown(visible)
+	mapLog(string.format("minimap %s (cluster alpha %.2f, Minimap:IsShown=%s)", visible and "shown" or "hidden", alpha or -1,
+		tostring(Minimap:IsShown())))
+end
 -- Main loop
 local TEXT_SPECS = { { "HotKey", "barHotkeys" }, { "Name", "barNames" } }
 local hotkeyClock = 0
@@ -430,6 +483,11 @@ local function update(dt)
 	lastActive = active and true or false
 	local okMove, moving = pcall(isMoving)
 	if okMove and moving then moveUntil = now + MOVE_LINGER end
+	if (okMove and moving and true or false) ~= lastLoggedMoving then
+		lastLoggedMoving = okMove and moving and true or false
+		mapLog(string.format("moving=%s by %s (speed %s, fade=%s, movingMode=%s, dim=%s)", tostring(lastLoggedMoving),
+			lastMoveReason, lastSpeedText, tostring(DB.fadeMinimap), tostring(DB.minimapMoving), tostring(DB.minimapDim)))
+	end
 
 	local vis = {}
 	vis.bars = active or (DB.barsMouseover and anyHovered(barHover))
@@ -460,7 +518,7 @@ local function update(dt)
 		if enabled and flags[g] then
 			cur[g] = step(cur[g], vis[g] and 1 or 0, dt)
 			local peak = DB.base or 0.6
-			if edit or (g == "chat" and not DB.chatDim) then peak = 1 end
+			if edit or g == "map" or (g == "chat" and not DB.chatDim) then peak = 1 end
 			local floor = idle
 			if g == "map" and DB.minimapDim then floor = DB.mapDimOpacity or 0.3 end
 			local low = math.min(floor, peak)
@@ -490,7 +548,7 @@ local function update(dt)
 	local wantMinimap = not (enabled and DB.fadeMinimap) or mapAlpha > 0.01
 	if Minimap and wantMinimap ~= minimapShown then
 		minimapShown = wantMinimap
-		Minimap:SetShown(wantMinimap)
+		setMinimapVisible(wantMinimap, mapAlpha)
 	end
 
 	for _, pair in ipairs(HIDE_TOGGLES) do
@@ -565,8 +623,11 @@ local PAGES = {
 	{ title = "Bars", items = {
 		{ "bargrid" },
 	} },
-	{ title = "Extras", items = {
+	{ title = "Chat", items = {
 		{ "slider", "chatSeconds", "Chat stays after a message (seconds)", 2, 30, 1, "%.0f" },
+		{ "kinds" },
+	} },
+	{ title = "Extras", items = {
 		{ "slider", "questSeconds", "Tracker and minimap stay (seconds)", 3, 30, 1, "%.0f" },
 		{ "check", "hideBags", "Always hide the bags bar" },
 		{ "check", "hideMicro", "Always hide the menu bar" },
@@ -656,6 +717,20 @@ local function makeMaskCheck(parent, x, y, key, index)
 	end)
 	controls[#controls + 1] = function() check:SetChecked(barBit(DB[key], index)) end
 	controls[#controls]()
+	return check
+end
+
+-- The list of what brings the chat up, one checkbox per category in CHAT_KINDS.
+local function makeChatKinds(parent, y)
+	local heading = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	heading:SetPoint("TOPLEFT", 16, y)
+	heading:SetText("What brings the chat up")
+	for i, kind in ipairs(CHAT_KINDS) do
+		local check = makeMaskCheck(parent, 12, y - 14 - (i - 1) * 26, "chatKinds", i)
+		local text = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+		text:SetPoint("LEFT", check, "RIGHT", 4, 0)
+		text:SetText(kind[1])
+	end
 end
 
 local function makeBarGrid(parent, y)
@@ -759,6 +834,7 @@ local function buildConfig()
 	local close = CreateFrame("Button", nil, config, "UIPanelCloseButton")
 	close:SetPoint("TOPRIGHT", 2, 2)
 
+	local tabX = 12
 	for i, page in ipairs(PAGES) do
 		local frame = CreateFrame("Frame", nil, config)
 		frame:SetPoint("TOPLEFT", 0, -68)
@@ -771,6 +847,9 @@ local function buildConfig()
 			elseif item[1] == "minimap" then
 				makeMinimapMode(frame, y - 8)
 				y = y - 116
+			elseif item[1] == "kinds" then
+				makeChatKinds(frame, y)
+				y = y - (18 + #CHAT_KINDS * 26)
 			elseif item[1] == "bargrid" then
 				makeBarGrid(frame, y)
 				y = y - 220
@@ -781,8 +860,10 @@ local function buildConfig()
 		end
 		pages[i] = frame
 		local tab = CreateFrame("Button", nil, config, "UIPanelButtonTemplate")
-		tab:SetSize(80, 22)
-		tab:SetPoint("TOPLEFT", 12 + (i - 1) * 86, -36)
+		local tabWidth = math.max(44, math.floor(#page.title * 6.6 + 22))
+		tab:SetSize(tabWidth, 22)
+		tab:SetPoint("TOPLEFT", tabX, -36)
+		tabX = tabX + tabWidth + 4
 		tab:SetText(page.title)
 		tab:SetScript("OnClick", function() showPage(i) end)
 		tabs[i] = tab
@@ -1104,6 +1185,81 @@ local function removeExtra(name)
 	return removed
 end
 
+-- Finding a frame by the text it shows, for things like a notice you want to hide
+local function frameChain(f)
+	local parts = {}
+	while f and #parts < 6 do
+		local ok, name = pcall(f.GetName, f)
+		parts[#parts + 1] = (ok and name) or ("<" .. tostring(f.GetObjectType and f:GetObjectType()) .. ">")
+		local okParent, parent = pcall(f.GetParent, f)
+		if not okParent or parent == UIParent or parent == WorldFrame then break end
+		f = parent
+	end
+	return table.concat(parts, " < ")
+end
+
+local function scanFrame(frame, needle, hits)
+	if frame.IsForbidden and frame:IsForbidden() then return end
+	if not frame:IsVisible() then return end
+	for _, region in ipairs({ frame:GetRegions() }) do
+		if region.GetObjectType and region:GetObjectType() == "FontString" and region:IsVisible() then
+			local text = region:GetText()
+			if type(text) == "string" and not (issecretvalue and issecretvalue(text)) and text:lower():find(needle, 1, true) then
+				hits[#hits + 1] = { chain = frameChain(frame), text = text }
+				return
+			end
+		end
+	end
+end
+
+local function scanForText(needle)
+	needle = needle:lower()
+	local hits = {}
+	local frame = EnumerateFrames()
+	while frame do
+		pcall(scanFrame, frame, needle, hits)
+		frame = EnumerateFrames(frame)
+	end
+	return hits
+end
+
+local function reportHits(text, hits)
+	print('QuietHUD: "' .. text .. '" is shown by (frame, then the frames that hold it):')
+	for i = 1, math.min(#hits, 6) do
+		print("  " .. hits[i].chain .. ' : "' .. hits[i].text:sub(1, 60) .. '"')
+	end
+	print("QuietHUD: to hide one, use /qhud add hidden <a frame name from the list>")
+end
+
+local finder
+local function findText(text)
+	if finder then
+		finder:Cancel()
+		finder = nil
+	end
+	local hits = scanForText(text)
+	if #hits > 0 then
+		reportHits(text, hits)
+		return
+	end
+	print('QuietHUD: nothing on screen contains "' .. text .. '" right now. Watching for 10 minutes, I will report when it shows up.')
+	if not (C_Timer and C_Timer.NewTicker) then return end
+	local tries = 0
+	finder = C_Timer.NewTicker(1, function(ticker)
+		tries = tries + 1
+		local found = scanForText(text)
+		if #found > 0 then
+			ticker:Cancel()
+			finder = nil
+			reportHits(text, found)
+		elseif tries >= 600 then
+			ticker:Cancel()
+			finder = nil
+			print('QuietHUD: stopped watching for "' .. text .. '"')
+		end
+	end)
+end
+
 -- Events
 local ev = CreateFrame("Frame")
 ev:RegisterEvent("ADDON_LOADED")
@@ -1113,6 +1269,7 @@ ev:RegisterEvent("PLAYER_ENTERING_WORLD")
 ev:RegisterEvent("PLAYER_REGEN_DISABLED")
 ev:RegisterEvent("PLAYER_REGEN_ENABLED")
 pcall(ev.RegisterEvent, ev, "VARIABLES_LOADED")
+pcall(ev.RegisterEvent, ev, "PLAYER_STARTED_MOVING")
 local kindOf = {}
 for _, e in ipairs({ "QUEST_ACCEPTED", "QUEST_TURNED_IN", "QUEST_REMOVED", "QUEST_WATCH_UPDATE", "UI_INFO_MESSAGE" }) do
 	kindOf[e] = "quest"
@@ -1120,21 +1277,10 @@ end
 for _, e in ipairs({ "ZONE_CHANGED", "ZONE_CHANGED_INDOORS", "ZONE_CHANGED_NEW_AREA" }) do
 	kindOf[e] = "map"
 end
-for _, e in ipairs({
-	"CHAT_MSG_SAY", "CHAT_MSG_YELL", "CHAT_MSG_EMOTE", "CHAT_MSG_TEXT_EMOTE", "CHAT_MSG_WHISPER",
-	"CHAT_MSG_WHISPER_INFORM", "CHAT_MSG_BN_WHISPER", "CHAT_MSG_BN_WHISPER_INFORM", "CHAT_MSG_PARTY",
-	"CHAT_MSG_PARTY_LEADER", "CHAT_MSG_RAID", "CHAT_MSG_RAID_LEADER", "CHAT_MSG_RAID_WARNING",
-	"CHAT_MSG_INSTANCE_CHAT", "CHAT_MSG_INSTANCE_CHAT_LEADER", "CHAT_MSG_GUILD", "CHAT_MSG_OFFICER",
-	"CHAT_MSG_CHANNEL", "CHAT_MSG_SYSTEM", "CHAT_MSG_LOOT", "CHAT_MSG_MONEY", "CHAT_MSG_COMBAT_XP_GAIN",
-	"CHAT_MSG_COMBAT_FACTION_CHANGE", "CHAT_MSG_SKILL", "CHAT_MSG_MONSTER_SAY", "CHAT_MSG_MONSTER_YELL",
-	"CHAT_MSG_MONSTER_EMOTE", "CHAT_MSG_MONSTER_WHISPER", "CHAT_MSG_AFK", "CHAT_MSG_DND",
-	"CHAT_MSG_ACHIEVEMENT", "CHAT_MSG_GUILD_ACHIEVEMENT",
-}) do
-	kindOf[e] = "chat"
-end
 for e in pairs(kindOf) do pcall(ev.RegisterEvent, ev, e) end
+for e in pairs(chatKindOf) do pcall(ev.RegisterEvent, ev, e) end
 
-ev:SetScript("OnEvent", function(_, event, arg1)
+ev:SetScript("OnEvent", function(_, event, arg1, _, _, arg4)
 	if event == "ADDON_LOADED" then
 		if arg1 == ADDON then initDB() end
 	elseif event == "VARIABLES_LOADED" then
@@ -1166,12 +1312,24 @@ ev:SetScript("OnEvent", function(_, event, arg1)
 		combatEnd = GetTime() + (DB.linger or 4)
 		run.combatWarned = false
 		armEntry()
+	elseif event == "PLAYER_STARTED_MOVING" then
+		moveUntil = GetTime() + MOVE_LINGER
 	elseif kindOf[event] == "quest" then
 		questUntil = GetTime() + (DB.questSeconds or 10)
 	elseif kindOf[event] == "map" then
 		mapUntil = GetTime() + (DB.questSeconds or 10)
-	elseif kindOf[event] == "chat" then
-		bumpChat()
+	elseif chatKindOf[event] then
+		local i = chatKindOf[event]
+		if barBit(DB.chatKinds, i) then
+			bumpChat()
+			if debugOn then
+				local channel = ""
+				if event == "CHAT_MSG_CHANNEL" and not (issecretvalue and issecretvalue(arg4)) then
+					channel = " in " .. tostring(arg4)
+				end
+				trace("QuietHUD: chat woken by " .. event .. channel .. " (" .. CHAT_KINDS[i][1] .. ")")
+			end
+		end
 	end
 end)
 
@@ -1205,6 +1363,13 @@ SlashCmdList["QUIETHUD"] = function(msg)
 			.. ", sheath key: " .. tostring((GetBindingKey("TOGGLESHEATH"))) .. ", HUD drawn state: " .. tostring(drawn))
 	elseif cmd == "state" then
 		local ok, err = pcall(function()
+			-- Everything this command prints is also kept in the trace, so it can be read from the saved-variables
+			-- file after a /reload.
+			local function print(msg)
+				_G.print(msg)
+				DB.trace = DB.trace or {}
+				DB.trace[#DB.trace + 1] = string.format("%.1f state: %s", GetTime(), tostring(msg))
+			end
 			local function alpha(name)
 				local f = _G[name]
 				return (f and f.GetAlpha) and string.format("%.2f", f:GetAlpha()) or "none"
@@ -1216,6 +1381,12 @@ SlashCmdList["QUIETHUD"] = function(msg)
 				tostring(drawn), tostring(UnitExists("target") and true or false)))
 			print("QuietHUD alpha now: PlayerFrame=" .. alpha("PlayerFrame") .. ", MainActionBar=" .. alpha("MainActionBar")
 				.. ", TargetFrame=" .. alpha("TargetFrame") .. ", MinimapCluster=" .. alpha("MinimapCluster"))
+			local okSpeed, speed = pcall(GetUnitSpeed, "player")
+			local speedText = not okSpeed and "unreadable" or ((issecretvalue and issecretvalue(speed)) and "hidden by the game" or tostring(speed))
+			print(string.format("QuietHUD minimap: mode=%s, Minimap shown=%s, alpha=%s, walking speed=%s, moving detected by=%s, moving window left=%.1fs, zone-change window=%s, indoors=%s, in %s / %s",
+				MINIMAP_MODES[minimapMode()][1], tostring(Minimap and Minimap:IsShown()), alpha("Minimap"), speedText,
+				lastMoveReason, math.max(0, moveUntil - GetTime()), tostring(GetTime() < mapUntil),
+				tostring(IsIndoors and IsIndoors() or false), tostring(GetZoneText()), tostring(GetSubZoneText())))
 		end)
 		if not ok then print("QuietHUD: could not read the state (" .. tostring(err) .. ")") end
 	elseif cmd == "instance" then
@@ -1229,17 +1400,26 @@ SlashCmdList["QUIETHUD"] = function(msg)
 		print("QuietHUD action bar frames found: " .. table.concat(discovered, ", "))
 	elseif cmd == "where" then
 		print("QuietHUD: frame under mouse = " .. tostring(frameUnderMouse()))
+	elseif cmd == "find" then
+		if rest == "" then
+			print("QuietHUD: usage /qhud find <part of the text>, for example /qhud find refresh")
+		else
+			findText(rest)
+		end
 	elseif cmd == "add" then
-		local group = rest:lower()
-		local name = frameUnderMouse()
+		local group, explicit = rest:match("^(%S*)%s*(.-)%s*$")
+		group = group:lower()
+		local name = explicit ~= "" and explicit or frameUnderMouse()
 		local valid = false
 		for _, g in ipairs(EXTRA_GROUPS) do
 			if g == group then valid = true end
 		end
 		if not valid then
-			print("QuietHUD: usage /qhud add bars|player|hud|quest|map|hidden (hover the frame first)")
+			print("QuietHUD: usage /qhud add bars|player|hud|quest|map|hidden [frame name] (or hover the frame first)")
 		elseif not name then
 			print("QuietHUD: no named frame under the mouse")
+		elseif not _G[name] then
+			print("QuietHUD: there is no frame named " .. name)
 		else
 			addExtra(group, name)
 			print("QuietHUD: added " .. name .. " to " .. group)
@@ -1251,6 +1431,6 @@ SlashCmdList["QUIETHUD"] = function(msg)
 			print("QuietHUD " .. g .. " extras: " .. table.concat(DB.extra[g] or {}, ", "))
 		end
 	else
-		print("QuietHUD: /qhud (menu), toggle, reset, target, quest, map, chat, bars, instance, state, debug, where, add <group>, remove <name>, list")
+		print("QuietHUD: /qhud (menu), toggle, reset, target, quest, map, chat, bars, instance, state, debug, where, find <text>, add <group> [name], remove <name>, list")
 	end
 end

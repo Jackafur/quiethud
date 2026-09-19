@@ -2,7 +2,7 @@
 ## Title: QuietHUD
 ## Notes: Fades the HUD out when idle to protect OLED panels. Every element and trigger is optional.
 ## Author: jackafur
-## Version: 1.1.2
+## Version: 1.1.3
 ## X-License: MIT
 ## IconTexture: Interface\AddOns\QuietHUD\icon.tga
 ## SavedVariables: QuietHUDDB
