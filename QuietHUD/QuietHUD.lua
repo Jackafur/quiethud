@@ -18,6 +18,8 @@ local FIELDS = {
 	{ key = "minimapMoving", code = "m", kind = "bool", def = true },
 	{ key = "minimapDim", code = "md", kind = "bool", def = false },
 	{ key = "mapDimOpacity", code = "mo", kind = "num", def = 0.3 },
+	{ key = "mapFollowsHud", code = "mf", kind = "bool", def = false },
+	{ key = "mapDarken", code = "mk", kind = "bool", def = false },
 	{ key = "fadeTracker", code = "fq", kind = "bool", def = true },
 	{ key = "fadeChat", code = "fc", kind = "bool", def = true },
 	{ key = "chatDim", code = "cd", kind = "bool", def = false },
@@ -30,6 +32,7 @@ local FIELDS = {
 	{ key = "barHotkeys", code = "ah", kind = "num", def = 0 },
 	{ key = "barNames", code = "an", kind = "num", def = 0 },
 	{ key = "hideReporter", code = "hr", kind = "bool", def = false },
+	{ key = "shortHotkeys", code = "sk", kind = "bool", def = false },
 	{ key = "questTarget", code = "qt", kind = "bool", def = false },
 }
 local DEFAULTS, BY_CODE = {}, {}
@@ -448,15 +451,171 @@ local function mapLog(msg)
 	if #DB.mapLog > 80 then table.remove(DB.mapLog, 1) end
 end
 
--- The player arrow, the quest arrow and the quest-area overlays are drawn by the game and ignore the opacity of
--- the minimap cluster, so a faded minimap is hidden outright.
+-- At partial opacity the game draws a blank map in cities and interiors, so the minimap cluster is never faded
+-- with its own opacity. Instead a black overlay on the map darkens it (which also dims the player and quest arrows
+-- the game draws on it), and the other parts of the cluster are faded one by one. The cluster and the frames the
+-- map sits in keep opacity 1.
+local mapOverlay, mapParts, mapDimApplied, mapAncestors
+
+local function getMapOverlay()
+	if mapOverlay then return mapOverlay end
+	local frame = CreateFrame("Frame", nil, Minimap)
+	frame:SetAllPoints(Minimap)
+	frame:SetFrameLevel(Minimap:GetFrameLevel() + 20)
+	local tex = frame:CreateTexture(nil, "OVERLAY")
+	tex:SetAllPoints()
+	tex:SetColorTexture(0, 0, 0, 1)
+	if frame.CreateMaskTexture then
+		local mask = frame:CreateMaskTexture()
+		mask:SetAllPoints(tex)
+		mask:SetTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+		tex:AddMaskTexture(mask)
+	end
+	frame:Hide()
+	mapOverlay = frame
+	return frame
+end
+
+local function fadeMapParts(frame, factor)
+	for _, child in ipairs({ frame:GetChildren() }) do
+		if child ~= Minimap and child ~= mapOverlay then
+			if mapAncestors[child] then
+				fadeMapParts(child, factor)
+			else
+				if mapParts[child] == nil then mapParts[child] = child:GetAlpha() end
+				child:SetAlpha(mapParts[child] * factor)
+			end
+		end
+	end
+	for _, region in ipairs({ frame:GetRegions() }) do
+		if mapParts[region] == nil then mapParts[region] = region:GetAlpha() end
+		region:SetAlpha(mapParts[region] * factor)
+	end
+end
+
+local function applyMinimapAlpha(a)
+	if not (Minimap and MinimapCluster) then return end
+	mapParts = mapParts or {}
+	if not mapAncestors then
+		mapAncestors = {}
+		local f = Minimap:GetParent()
+		while f and f ~= UIParent do
+			mapAncestors[f] = true
+			f = f:GetParent()
+		end
+	end
+	if a >= 0.995 then
+		if mapDimApplied then
+			mapDimApplied = nil
+			if mapOverlay then mapOverlay:Hide() end
+			for part, alpha in pairs(mapParts) do part:SetAlpha(alpha) end
+			mapParts = {}
+		end
+		applyList("map", 1)
+		return
+	end
+	if mapDimApplied and math.abs(mapDimApplied - a) < 0.004 then return end
+	mapDimApplied = a
+	MinimapCluster:SetAlpha(1)
+	local overlay = getMapOverlay()
+	overlay:SetAlpha(1 - a)
+	overlay:Show()
+	local ok, err = pcall(function()
+		fadeMapParts(MinimapCluster, a)
+		fadeMapParts(Minimap, a)
+	end)
+	if not ok then mapLog("could not fade the minimap parts: " .. tostring(err)) end
+	for _, name in ipairs(LISTS.map) do
+		local f = name ~= "MinimapCluster" and _G[name]
+		if f and f.SetAlpha then f:SetAlpha(a) end
+	end
+end
+-- Hiding the Minimap frame and showing it again breaks the map in cities and interiors (it does not come back until
+-- the game redraws it), and the player arrow, quest arrow and quest-area overlays ignore opacity, so a faded minimap
+-- can be neither hidden nor made transparent. Instead it is shrunk to almost nothing, which takes those along, and
+-- put back to its size when it is wanted again. The frame itself is never hidden.
+local mapSavedScale
 local function setMinimapVisible(visible, alpha)
-	if not Minimap then return end
-	Minimap:SetShown(visible)
-	mapLog(string.format("minimap %s (cluster alpha %.2f, Minimap:IsShown=%s)", visible and "shown" or "hidden", alpha or -1,
-		tostring(Minimap:IsShown())))
+	if not MinimapCluster then return end
+	if visible then
+		if mapSavedScale then
+			MinimapCluster:SetScale(mapSavedScale)
+			mapSavedScale = nil
+		end
+	else
+		if not mapSavedScale then mapSavedScale = MinimapCluster:GetScale() end
+		MinimapCluster:SetScale(0.001)
+	end
+	mapLog(string.format("minimap %s (cluster alpha %.2f, scale %.3f)", visible and "shown" or "hidden", alpha or -1,
+		MinimapCluster:GetScale()))
 end
 -- Main loop
+-- Shorter hotkey text, for keys such as the number pad or mouse buttons whose full names do not fit on an action
+-- button (they show up as "NUM..."): Num Pad 1 becomes N1, Mouse Button 4 becomes M4, Shift- becomes s-, and so on.
+-- Matching ignores case and only the parts that match are changed.
+local function ci(word)
+	return (word:gsub(".", function(c)
+		if c:match("%a") then return "[" .. c:lower() .. c:upper() .. "]" end
+		if c == " " then return "%s*" end
+		return "%" .. c
+	end))
+end
+local SHORT_RULES = {
+	{ ci("shift") .. "[%-%+]", "s-" }, { ci("ctrl") .. "[%-%+]", "c-" }, { ci("alt") .. "[%-%+]", "a-" },
+	{ ci("num pad") .. "%s*(%d+)", "N%1" }, { ci("num") .. "%s+(%d+)", "N%1" },
+	{ ci("num pad") .. "%s*([%+%-%*/%.])", "N%1" },
+	{ ci("num pad plus"), "N+" }, { ci("num pad minus"), "N-" }, { ci("num pad multiply"), "N*" },
+	{ ci("num pad divide"), "N/" }, { ci("num pad decimal"), "N." }, { ci("num lock"), "NL" },
+	{ ci("left mouse button"), "M1" }, { ci("right mouse button"), "M2" }, { ci("middle mouse button"), "M3" },
+	{ ci("middle mouse"), "M3" }, { ci("mouse button") .. "%s*(%d+)", "M%1" },
+	{ ci("mouse wheel up"), "MwU" }, { ci("mouse wheel down"), "MwD" },
+	{ ci("page up"), "PgU" }, { ci("page down"), "PgD" }, { ci("insert"), "Ins" }, { ci("delete"), "Del" },
+	{ ci("backspace"), "Bk" }, { ci("caps lock"), "Cap" }, { ci("escape"), "Esc" }, { ci("space"), "Sp" },
+}
+local function shortHotkey(text)
+	for _, rule in ipairs(SHORT_RULES) do text = text:gsub(rule[1], rule[2]) end
+	-- The slot on a button is only about three characters wide, so drop the dash after a modifier as well:
+	-- c-N1 becomes cN1 and s-1 becomes s1.
+	local prefix = ""
+	while true do
+		local mod, rest = text:match("^([scaSCA])%-(.+)$")
+		if not mod then break end
+		prefix, text = prefix .. mod, rest
+	end
+	return prefix .. text
+end
+local shortened = {}
+
+-- Buttons outside the eight action bars that show a hotkey too: the pet bar, the stance bar and the possess bar.
+local EXTRA_BUTTONS = { { "PetActionButton", 10 }, { "StanceButton", 10 }, { "PossessButton", 2 } }
+
+-- Shortens (or, with wantShort false, restores) the hotkey text of one button.
+local function shortenOne(fs, wantShort)
+	local okText, text = pcall(fs.GetText, fs)
+	if not (okText and type(text) == "string") or (issecretvalue and issecretvalue(text)) then return end
+	local rec = shortened[fs]
+	if wantShort then
+		-- Blizzard writes the long text again on binding and page changes, so redo it when it changed.
+		if not (rec and text == rec.short) then
+			local short = shortHotkey(text)
+			if short ~= text then
+				-- The slot is narrow, so give the shorter text the width of the whole button as well.
+				local width = rec and rec.width or fs:GetWidth()
+				local parent = fs:GetParent()
+				local room = parent and parent:GetWidth() or width
+				shortened[fs] = { orig = text, short = short, width = width }
+				fs:SetText(short)
+				if room > width then fs:SetWidth(room) end
+			else
+				shortened[fs] = nil
+			end
+		end
+	elseif rec and text == rec.short then
+		fs:SetText(rec.orig)
+		if rec.width then fs:SetWidth(rec.width) end
+		shortened[fs] = nil
+	end
+end
 local TEXT_SPECS = { { "HotKey", "barHotkeys" }, { "Name", "barNames" } }
 local hotkeyClock = 0
 -- Any instance that is not PvP counts, so instance types this client adds or names differently still work.
@@ -518,15 +677,30 @@ local function update(dt)
 		if enabled and flags[g] then
 			cur[g] = step(cur[g], vis[g] and 1 or 0, dt)
 			local peak = DB.base or 0.6
-			if edit or g == "map" or (g == "chat" and not DB.chatDim) then peak = 1 end
+			if edit or (g == "chat" and not DB.chatDim) or (g == "map" and not DB.mapFollowsHud) then peak = 1 end
 			local floor = idle
 			if g == "map" and DB.minimapDim then floor = DB.mapDimOpacity or 0.3 end
 			local low = math.min(floor, peak)
 			local a = low + (peak - low) * cur[g]
+			local dimHere = false
+			if g == "map" then
+				-- The game redraws the map of a building interior as you move through it, and draws a blank map if that
+				-- happens while the minimap is partly transparent. So indoors the map stays fully opaque and is dimmed
+				-- with a dark layer instead. Outdoors it uses real transparency.
+				local okIn, indoors = pcall(function() return IsIndoors and IsIndoors() end)
+				dimHere = (DB.mapDarken or (okIn and indoors)) and true or false
+			end
 			if g == "chat" then
 				applyChat(a)
 			elseif g == "bars" then
 				applyBars(a, true)
+			elseif g == "map" then
+				if dimHere then
+					applyMinimapAlpha(a)
+				else
+					if mapDimApplied then applyMinimapAlpha(1) end
+					applyList(g, a)
+				end
 			else
 				applyList(g, a)
 			end
@@ -537,6 +711,8 @@ local function update(dt)
 				applyChat(1)
 			elseif g == "bars" then
 				applyBars(1, false)
+			elseif g == "map" then
+				applyMinimapAlpha(1)
 			else
 				applyList(g, 1)
 			end
@@ -546,7 +722,7 @@ local function update(dt)
 	end
 
 	local wantMinimap = not (enabled and DB.fadeMinimap) or mapAlpha > 0.01
-	if Minimap and wantMinimap ~= minimapShown then
+	if MinimapCluster and wantMinimap ~= minimapShown then
 		minimapShown = wantMinimap
 		setMinimapVisible(wantMinimap, mapAlpha)
 	end
@@ -572,8 +748,13 @@ local function update(dt)
 	hotkeyClock = hotkeyClock + dt
 	if hotkeyClock > 0.5 then
 		hotkeyClock = 0
+		if MinimapCluster and mapSavedScale and MinimapCluster:GetScale() > 0.01 then MinimapCluster:SetScale(0.001) end
+		local wantShort = enabled and DB.shortHotkeys
 		for i = 1, #BAR_DEFS do
-			for _, spec in ipairs(TEXT_SPECS) do
+			for j = 1, 12 do
+				local fs = _G[BAR_DEFS[i].buttons .. j .. "HotKey"]
+				if fs and (wantShort or shortened[fs]) then shortenOne(fs, wantShort) end
+			end			for _, spec in ipairs(TEXT_SPECS) do
 				local on = enabled and barBit(DB[spec[2]], i)
 				local tag = spec[1] .. i
 				if on or textHidden[tag] then
@@ -583,6 +764,12 @@ local function update(dt)
 					end
 					textHidden[tag] = on and true or false
 				end
+			end
+		end
+		for _, set in ipairs(EXTRA_BUTTONS) do
+			for j = 1, set[2] do
+				local fs = _G[set[1] .. j .. "HotKey"]
+				if fs and (wantShort or shortened[fs]) then shortenOne(fs, wantShort) end
 			end
 		end
 	end
@@ -622,6 +809,7 @@ local PAGES = {
 	} },
 	{ title = "Bars", items = {
 		{ "bargrid" },
+		{ "check", "shortHotkeys", "Shorten hotkey text (Num Pad 1 shows N1)" },
 	} },
 	{ title = "Chat", items = {
 		{ "slider", "chatSeconds", "Chat stays after a message (seconds)", 2, 30, 1, "%.0f" },
@@ -781,14 +969,20 @@ local function makeMinimapMode(parent, y)
 	hint:SetPoint("TOPLEFT", 16, y - 28)
 	hint:SetWidth(318)
 	hint:SetJustifyH("LEFT")
+	local shownBox = CreateFrame("Frame", nil, parent)
+	shownBox:SetPoint("TOPLEFT", 0, y - 54)
+	shownBox:SetSize(340, 54)
+	makeCheck(shownBox, 0, "Use the HUD opacity on the minimap", "mapFollowsHud")
+	makeCheck(shownBox, -26, "Darken it instead of fading it", "mapDarken")
 	local dimBox = CreateFrame("Frame", nil, parent)
-	dimBox:SetPoint("TOPLEFT", 0, y - 60)
+	dimBox:SetPoint("TOPLEFT", 0, y - 112)
 	dimBox:SetSize(340, 46)
 	makeSlider(dimBox, 0, "Minimap opacity when dimmed", "mapDimOpacity", 0.05, 1, 0.05, "%.2f")
 	local function refresh()
 		local mode = minimapMode()
 		button:SetText(MINIMAP_MODES[mode][1])
 		hint:SetText(MINIMAP_MODES[mode][5])
+		shownBox:SetShown(mode ~= 3)
 		dimBox:SetShown(mode == 4)
 	end
 	button:SetScript("OnClick", function()
@@ -817,7 +1011,7 @@ end
 
 local function buildConfig()
 	config = CreateFrame("Frame", "QuietHUDConfig", UIParent)
-	config:SetSize(360, 418)
+	config:SetSize(360, 442)
 	config:SetPoint("CENTER")
 	config:SetFrameStrata("DIALOG")
 	config:SetMovable(true)
@@ -1270,6 +1464,7 @@ ev:RegisterEvent("PLAYER_REGEN_DISABLED")
 ev:RegisterEvent("PLAYER_REGEN_ENABLED")
 pcall(ev.RegisterEvent, ev, "VARIABLES_LOADED")
 pcall(ev.RegisterEvent, ev, "PLAYER_STARTED_MOVING")
+
 local kindOf = {}
 for _, e in ipairs({ "QUEST_ACCEPTED", "QUEST_TURNED_IN", "QUEST_REMOVED", "QUEST_WATCH_UPDATE", "UI_INFO_MESSAGE" }) do
 	kindOf[e] = "quest"
@@ -1400,6 +1595,84 @@ SlashCmdList["QUIETHUD"] = function(msg)
 		print("QuietHUD action bar frames found: " .. table.concat(discovered, ", "))
 	elseif cmd == "where" then
 		print("QuietHUD: frame under mouse = " .. tostring(frameUnderMouse()))
+	elseif cmd == "alpha" then
+		local name, value = rest:match("^(%S+)%s+([%d%.]+)$")
+		local frame = name and _G[name]
+		if frame and frame.SetAlpha and tonumber(value) then
+			frame:SetAlpha(tonumber(value))
+			print("QuietHUD: " .. name .. " opacity set to " .. value .. " (it stays until something fades it again, or a reload)")
+		else
+			print("QuietHUD: usage /qhud alpha <frame name> <0 to 1>, for example /qhud alpha Minimap 0.6")
+		end
+	elseif cmd == "chain" then
+		local frame = rest ~= "" and _G[rest] or nil
+		print("QuietHUD: " .. (frame and frameChain(frame) or "usage /qhud chain <frame name>, for example /qhud chain Minimap"))
+	elseif cmd == "hotkeys" then
+		-- Lists hotkey text with a modifier first (those are the long ones), and keeps the lines in the trace too.
+		local function say(msg)
+			print(msg)
+			DB.trace = DB.trace or {}
+			DB.trace[#DB.trace + 1] = string.format("%.1f hotkeys: %s", GetTime(), msg)
+		end
+		local found = {}
+		for i = 1, #BAR_DEFS do
+			for j = 1, 12 do
+				local name = BAR_DEFS[i].buttons .. j .. "HotKey"
+				local fs = _G[name]
+				if fs then
+					local ok, text = pcall(fs.GetText, fs)
+					if ok and type(text) == "string" and text ~= "" and not (issecretvalue and issecretvalue(text)) then
+						local rec = shortened[fs]
+						local original = rec and rec.orig or text
+						found[#found + 1] = { name = name, original = original, text = text, width = fs:GetWidth(),
+							modifier = original:find("[%-%+]") ~= nil }
+					end
+				end
+			end
+		end
+		for _, set in ipairs(EXTRA_BUTTONS) do
+			for j = 1, set[2] do
+				local name = set[1] .. j .. "HotKey"
+				local fs = _G[name]
+				if fs then
+					local ok, text = pcall(fs.GetText, fs)
+					if ok and type(text) == "string" and text ~= "" and not (issecretvalue and issecretvalue(text)) then
+						local rec = shortened[fs]
+						local original = rec and rec.orig or text
+						found[#found + 1] = { name = name, original = original, text = text, width = fs:GetWidth(),
+							modifier = original:find("[%-%+]") ~= nil }
+					end
+				end
+			end
+		end
+		table.sort(found, function(a, b)
+			if a.modifier ~= b.modifier then return a.modifier end
+			return a.name < b.name
+		end)
+		say(string.format("QuietHUD hotkeys: shortening is %s, %d button(s) with hotkey text", DB.shortHotkeys and "ON" or "OFF", #found))
+		for i = 1, math.min(#found, 10) do
+			local f = found[i]
+			say(string.format('  %s: the game says "%s", it shows "%s", the rules give "%s", width %.0f', f.name, f.original,
+				f.text, shortHotkey(f.original), f.width))
+		end
+		if #found == 0 then say("QuietHUD: no hotkey text found on the action bars") end	elseif cmd == "methods" then
+		local name, filter = rest:match("^(%S*)%s*(.-)%s*$")
+		local frame = name ~= "" and _G[name] or nil
+		local meta = frame and getmetatable(frame)
+		local index = meta and meta.__index
+		if type(index) ~= "table" then
+			print("QuietHUD: usage /qhud methods <frame name> [part of a method name], for example /qhud methods Minimap texture")
+		else
+			local found = {}
+			for key in pairs(index) do
+				if type(key) == "string" and (filter == "" or key:lower():find(filter:lower(), 1, true)) then
+					found[#found + 1] = key
+				end
+			end
+			table.sort(found)
+			print("QuietHUD: " .. #found .. " method(s) of " .. name .. (filter ~= "" and (' matching "' .. filter .. '"') or "")
+				.. ": " .. table.concat(found, ", "))
+		end
 	elseif cmd == "find" then
 		if rest == "" then
 			print("QuietHUD: usage /qhud find <part of the text>, for example /qhud find refresh")
@@ -1431,6 +1704,6 @@ SlashCmdList["QUIETHUD"] = function(msg)
 			print("QuietHUD " .. g .. " extras: " .. table.concat(DB.extra[g] or {}, ", "))
 		end
 	else
-		print("QuietHUD: /qhud (menu), toggle, reset, target, quest, map, chat, bars, instance, state, debug, where, find <text>, add <group> [name], remove <name>, list")
+		print("QuietHUD: /qhud (menu), toggle, reset, target, quest, map, chat, bars, instance, state, debug, where, hotkeys, alpha <frame> <0-1>, chain <frame>, find <text>, methods <frame> [text], add <group> [name], remove <name>, list")
 	end
 end

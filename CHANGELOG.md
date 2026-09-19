@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.1.4
+
+- The minimap can fade without going blank in interiors. Two things blanked it: hiding the minimap and showing it
+  again, and being partly transparent while the game redraws the map of a building interior. Now a faded-out
+  minimap is shrunk to almost nothing instead of hidden (which also takes the player and quest arrows, which ignore
+  opacity), and indoors the map stays fully opaque and is dimmed with a dark layer instead (which also dims the
+  arrows). Outdoors it uses real transparency. "Use the HUD opacity on the minimap" (Elements page, off by default)
+  makes it follow "Opacity when active", and "Darken it instead of fading it" uses the dark layer everywhere.
+- New option on the Bars page, "Shorten hotkey text" (also covers the pet, stance and possess bars): Num Pad 1 shows N1, Mouse Button 4 shows M4, Ctrl plus Num Pad 1
+  shows cN1, Shift plus 1 shows s1, and so on, so long key names stop showing as "NUM...". Off by default; turning it off restores the original text.
+- Shortened hotkey text also widens the text slot to the width of the button, so it is not cut off with "...".
+  New `/qhud hotkeys` shows what the game gives for a few buttons and what the rules make of it.
+- New `/qhud methods <frame> [text]` command that lists what a frame offers, for working out what can be changed.
+
 ## 1.1.3
 
 - New Chat page: choose which kinds of message bring the chat up (whispers, party/raid/instance, guild, say/yell/

@@ -22,6 +22,8 @@ Open the settings with `/qhud`. There are five pages.
 
 **Bars** (per action bar, Action Bars 1 to 8)
 - Whether each bar fades, and whether to hide its hotkey text or its macro names.
+- Optionally shorten the hotkey text on all bars, and on the pet, stance and possess bars: Num Pad 1 shows N1, Mouse Button 4 shows M4, Ctrl plus Num Pad 1 shows cN1, Shift plus 1
+  shows s1, and so on, so long key names no longer show as "NUM...". Turning it off puts the original text back.
 
 **Chat**
 - How long chat stays after a message, and which kinds of message bring it up: whispers, party/raid/instance
@@ -70,7 +72,12 @@ and fades again when you leave. Chat still follows its own rules. If it does not
 every other element. "Only while I am moving" fades it out the moment you stand still and brings it back when
 you move or change zone, which suits a minimap that is only really useful while travelling. "Always shown"
 never fades it. "Always on, dimmed" keeps it faintly visible at its own opacity (a slider appears when you pick
-this mode) and brightens it when you move or the rest of the HUD wakes up.
+this mode) and brightens it when you move or the rest of the HUD wakes up. The minimap can be made transparent, with catches. The game draws a blank map in building interiors if the minimap
+is hidden and shown again, or is partly transparent while it redraws the interior. So a faded-out minimap is shrunk to
+almost nothing instead of hidden, and indoors the map stays fully opaque and is dimmed with a dark layer instead
+(which also dims the player and quest arrows, which ignore transparency). Outdoors it uses real transparency. By
+default it stays fully solid while showing; tick "Use the HUD opacity on the minimap" (Elements page) to make it
+follow "Opacity when active". "Darken it instead of fading it" uses the dark layer everywhere, not just indoors.
 
 **Chat uses the HUD opacity.** By default chat is fully opaque when it appears, so it stays readable.
 Tick this if you want it dimmed to the same level as everything else.
@@ -128,6 +135,8 @@ the nameplates to show. The message "quest targeting is off" means the Extras ch
 | `/qhud state` | Print whether the HUD is currently active or idle, what triggered it, and the real opacity of a few frames |
 | `/qhud instance` | Print what the game says about your instance, and whether the HUD is being held on |
 | `/qhud where` | Print the name of the frame under the mouse |
+| `/qhud hotkeys` | Show the hotkey text of a few action buttons: what the game gives, what is shown, and what the shortening rules make of it |
+| `/qhud methods <frame> [text]` | List the functions a frame offers, optionally only those whose name contains some text. For finding out what can be changed on a frame |
 | `/qhud find <text>` | Find which frame is showing some text, e.g. a notice you want to hide. If it is not on screen it keeps watching for 10 minutes |
 | `/qhud add bars\|player\|hud\|quest\|map\|hidden [frame name]` | Put a frame into a group (saved). Without a name it uses the frame under the mouse |
 | `/qhud remove <name>`, `/qhud list` | Take a frame you added back out, or list them |
