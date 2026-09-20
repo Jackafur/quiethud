@@ -1,5 +1,63 @@
 # Changelog
 
+## 1.1.5
+
+- New trigger grid on the Elements page. The action bars, player frame, enemy, party and other frames, objective tracker
+  and chat each get a row of columns: Fade, Awake (combat, a drawn weapon or a target), While moving, Mouse over,
+  Dungeon or raid, Hide in combat, which beats the rest, and for some rows New info (quest progress for the
+  tracker, new messages for chat, a zone change for the minimap). Mouse over is now optional for every element, and "only on mouse over" is just leaving that one box ticked.
+  This replaces "Show action bars on mouse over" (Show when page) and the loose arrow and tracker mouse over boxes.
+  The defaults are what each element did before, and the old action bars setting carries over. The player and unit
+  frames can now come back on mouse over too, and the chat can also show while awake or moving, or hide in combat
+  (typing always brings it up).
+- The minimap is a row of the Elements grid, and the mode button is gone. Awake makes it follow the HUD, While moving shows
+  it only while you move, an unticked Fade never fades it, and the new slider "Minimap opacity when idle" replaces the
+  dimmed mode. New info brings it back after a zone change (it always did, and the Extras slider sets how long), and
+  Hide in combat and Dungeon or raid work on it like on every other row. Your old mode carries over.
+- The "Always show in dungeons and raids" option on the Show when page is gone. Dungeon or raid is a column of the
+  grid for every element, so it is a choice per element and no longer part of "awake". If you had the old
+  option on, it carries over to those boxes.
+- The bags bar and the menu bar are rows of the Elements grid instead of "always hide" checkboxes. Tick Fade and leave
+  the other boxes empty to keep one hidden, or tick Awake and Mouse over to have it appear when needed. If you had one
+  hidden it carries over that way.
+- New RXP tab for the RestedXP addon: tick to fade its guide window, its targets and active items windows and its waypoint arrow, no
+  `/qhud add` needed. Two sliders set the opacity of the guide and targets when shown (default 0.70) and when idle
+  (default 0, hidden), and the arrow has its own pair (default 0.60 and 0). The guide and targets, and the arrow, each
+  get a row of the same trigger columns.
+- New experimental pixel shift (Extras page, off by default): the minimap and the objective tracker, and any frame added with
+  `/qhud add shift <frame name>` or the two checkboxes for the action bars, bags and menu bar and for the player, target and party
+  frames, move a couple of pixels every few minutes to spread wear on an OLED panel. Saved positions are
+  never changed, everything is put back exactly when it is turned off, when Edit Mode opens and at logout, and nothing moves in
+  combat. `/qhud shift` shows its state.
+- New tooltip opacity slider (Extras page). It fades the whole tooltip, text included.
+- The durability icon, the loss of control alert and External Defensives follow the Enemy, party, buffs row.
+- New key binding "Hold to show the whole HUD" (Esc, Options, Keybindings, AddOns, QuietHUD): hold it and everything shows, even
+  what is set to hide in combat, and it fades again when you let go. `/qhud peek` does the same for a macro (it toggles).
+- New Extras options that show the whole HUD while you hold Alt, Ctrl or Shift, for when a key binding is not wanted or possible.
+- New `/qhud mouse` command: watches your right-clicks and prints which frame took one that should have turned the camera, with
+  details about that frame. It stays on after a reload and says nothing while the camera works.
+- Fixed: mouse over on the RestedXP guide only worked over the small bar at its bottom. Mouse over now counts the
+  whole window, not only the frame's own rectangle.
+- Fixed: a frame that leaves a fade group (unticking a box, `/qhud remove`) now gets its full opacity back. Before
+  it stayed faded.
+- Fixed: frames added with `/qhud add` were forgotten after a reload once the settings grew. The settings are stored
+  in a macro limited to 255 characters, and storing every setting left no room for the frames, so they were dropped.
+  Only settings that differ from their default are stored now. If you had added frames, add them again once.
+- New `nav` group for `/qhud add`, for a direction arrow such as a quest guide's waypoint arrow. Its row of the
+  trigger grid (RXP tab) chooses when it shows. `/qhud arrow` keeps it visible until used again, for a macro. The
+  frame is faded through a container of ours, so a frame that sets its own opacity to show and hide itself does not
+  fight with the fade.
+- Frames added to the quest group (`/qhud add quest <frame name>`) now also come back when you hover them, like the
+  objective tracker does. Handy for a quest guide window.
+- New slider "Chat fade out animation" (Chat page, default 1.5 seconds) for how long the chat, including the window or
+  background of a chat addon in the chat group, takes to fade out. The rest of the HUD keeps its fade speed.
+- "Chat uses the HUD opacity when active" moved to the Chat page, next to the other chat settings, and "Fade chat" is
+  a column of the Elements grid. New slider "Chat opacity when active" sets the chat's own opacity when it is not
+  using the HUD's.
+- New `chat` group for `/qhud add`: frames added to it fade together with the chat, for example the window or the
+  background of a chat replacement addon. Find the frame with `/qhud find <text from a chat message>`.
+- The quest key's "no enemy nameplates" message now shows once per session instead of on every key press.
+
 ## 1.1.4
 
 - The minimap can fade without going blank in interiors. Two things blanked it: hiding the minimap and showing it

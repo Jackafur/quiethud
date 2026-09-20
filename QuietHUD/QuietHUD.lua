@@ -8,16 +8,13 @@ local FIELDS = {
 	{ key = "inCombat", code = "k", kind = "bool", def = true },
 	{ key = "sheathShows", code = "w", kind = "bool", def = true },
 	{ key = "showOnTarget", code = "t", kind = "bool", def = false },
-	{ key = "inInstance", code = "ii", kind = "bool", def = false },
-	{ key = "barsMouseover", code = "o", kind = "bool", def = true },
 	{ key = "linger", code = "l", kind = "num", def = 4 },
 	{ key = "fadeBars", code = "fb", kind = "bool", def = true },
 	{ key = "fadePlayer", code = "fp", kind = "bool", def = true },
 	{ key = "fadeUnits", code = "fu", kind = "bool", def = true },
 	{ key = "fadeMinimap", code = "fm", kind = "bool", def = true },
-	{ key = "minimapMoving", code = "m", kind = "bool", def = true },
-	{ key = "minimapDim", code = "md", kind = "bool", def = false },
-	{ key = "mapDimOpacity", code = "mo", kind = "num", def = 0.3 },
+	{ key = "trigMap", code = "tm", kind = "num", def = 14 },
+	{ key = "mapIdle", code = "mz", kind = "num", def = 0 },
 	{ key = "mapFollowsHud", code = "mf", kind = "bool", def = false },
 	{ key = "mapDarken", code = "mk", kind = "bool", def = false },
 	{ key = "fadeTracker", code = "fq", kind = "bool", def = true },
@@ -25,15 +22,46 @@ local FIELDS = {
 	{ key = "chatDim", code = "cd", kind = "bool", def = false },
 	{ key = "chatSeconds", code = "c", kind = "num", def = 8 },
 	{ key = "chatKinds", code = "ck", kind = "num", def = 71 },
+	{ key = "chatOpacity", code = "co", kind = "num", def = 1 },
+	{ key = "chatFadeSeconds", code = "cf", kind = "num", def = 1.5 },
+	-- What brings each element up: one number per element, where bit i is column i of the trigger grid (1 awake,
+	-- 2 while moving, 3 new info, 4 mouse over, 5 hide in combat, 6 dungeon or raid). The defaults are what each element
+	-- did before.
+	{ key = "trigBars", code = "tb", kind = "num", def = 9 },
+	{ key = "trigPlayer", code = "tp", kind = "num", def = 1 },
+	{ key = "trigUnits", code = "tu", kind = "num", def = 1 },
+	{ key = "trigTracker", code = "tq", kind = "num", def = 13 },
+	{ key = "trigChat", code = "tc", kind = "num", def = 12 },
+	{ key = "trigRxp", code = "tr", kind = "num", def = 13 },
+	{ key = "trigNav", code = "tn", kind = "num", def = 26 },
+	{ key = "rxpGuide", code = "rg", kind = "bool", def = false },
+	{ key = "rxpTargets", code = "rt", kind = "bool", def = false },
+	{ key = "rxpArrow", code = "ra", kind = "bool", def = false },
+	{ key = "rxpShown", code = "rs", kind = "num", def = 0.7 },
+	{ key = "rxpIdle", code = "ri", kind = "num", def = 0 },
+	{ key = "navShown", code = "ns", kind = "num", def = 0.6 },
+	{ key = "navIdle", code = "ni", kind = "num", def = 0 },
 	{ key = "questSeconds", code = "q", kind = "num", def = 10 },
-	{ key = "hideBags", code = "hb", kind = "bool", def = false },
-	{ key = "hideMicro", code = "hm", kind = "bool", def = false },
+	{ key = "fadeBags", code = "fg", kind = "bool", def = false },
+	{ key = "fadeMicro", code = "fo", kind = "bool", def = false },
+	{ key = "trigBagsBar", code = "tg", kind = "num", def = 9 },
+	{ key = "trigMicro", code = "to", kind = "num", def = 9 },
 	{ key = "barFade", code = "af", kind = "num", def = 255 },
 	{ key = "barHotkeys", code = "ah", kind = "num", def = 0 },
 	{ key = "barNames", code = "an", kind = "num", def = 0 },
 	{ key = "hideReporter", code = "hr", kind = "bool", def = false },
 	{ key = "shortHotkeys", code = "sk", kind = "bool", def = false },
 	{ key = "questTarget", code = "qt", kind = "bool", def = false },
+	{ key = "watchMouse", code = "wm", kind = "bool", def = false },
+	{ key = "pixelShift", code = "ps", kind = "bool", def = false },
+	{ key = "shiftPixels", code = "sp", kind = "num", def = 2 },
+	{ key = "shiftMinutes", code = "sm", kind = "num", def = 3 },
+	{ key = "tooltipAlpha", code = "ta", kind = "num", def = 1 },
+	{ key = "shiftBars", code = "sb", kind = "bool", def = false },
+	{ key = "shiftUnits", code = "su", kind = "bool", def = false },
+	{ key = "peekAlt", code = "pa", kind = "bool", def = false },
+	{ key = "peekCtrl", code = "pc", kind = "bool", def = false },
+	{ key = "peekShift", code = "pf", kind = "bool", def = false },
 }
 local DEFAULTS, BY_CODE = {}, {}
 for _, f in ipairs(FIELDS) do
@@ -53,6 +81,7 @@ local DEFAULT_LISTS = {
 		"CompactRaidFrameManager", "BuffFrame", "DebuffFrame", "TemporaryEnchantFrame", "DamageMeter",
 		"TotemFrame", "EssentialCooldownViewer", "UtilityCooldownViewer",
 		"BuffIconCooldownViewer", "BuffBarCooldownViewer",
+		"DurabilityFrame", "LossOfControlFrame", "ExternalDefensivesFrame",
 	},
 	quest = { "ObjectiveTrackerFrame" },
 	map = { "MinimapCluster" },
@@ -60,8 +89,12 @@ local DEFAULT_LISTS = {
 	bags = { "BagsBar" },
 	reporter = { "PTR_IssueReporter", "PTR_IssueReporterButton", "PTR_IssueReporterFrame" },
 	hidden = {},
+	chat = {},
+	nav = {},
+	rxp = {},
+	shift = { "MinimapCluster", "ObjectiveTrackerFrame" },
 }
-local ALL_LISTS = { "bars", "player", "hud", "quest", "map", "micro", "bags", "reporter", "hidden" }
+local ALL_LISTS = { "bars", "player", "hud", "quest", "map", "micro", "bags", "reporter", "hidden", "chat", "nav", "rxp", "shift" }
 -- Action Bars 1 to 8: the frame(s) of each bar and the prefix of its button names.
 local BAR_DEFS = {
 	{ frames = { "MainActionBar", "MainMenuBar" }, buttons = "ActionButton" },
@@ -79,9 +112,9 @@ for i, def in ipairs(BAR_DEFS) do
 	ALL_LISTS[#ALL_LISTS + 1] = "bar" .. i
 	for _, name in ipairs(def.frames) do KNOWN_BAR_FRAMES[name] = true end
 end
-local EXTRA_GROUPS = { "bars", "player", "hud", "quest", "map", "hidden" }
-local FADE_ORDER = { "bars", "player", "hud", "quest", "map", "chat" }
-local HIDE_TOGGLES = { { "micro", "hideMicro" }, { "bags", "hideBags" }, { "reporter", "hideReporter" } }
+local EXTRA_GROUPS = { "bars", "player", "hud", "quest", "map", "hidden", "chat", "nav", "rxp", "shift" }
+local FADE_ORDER = { "bars", "player", "hud", "quest", "map", "chat", "nav", "rxp", "bags", "micro" }
+local HIDE_TOGGLES = { { "reporter", "hideReporter" } }
 local ACTION_BARS = {
 	"MainActionBar", "MainMenuBar", "MultiBarBottomLeft", "MultiBarBottomRight", "MultiBarRight",
 	"MultiBarLeft", "MultiBar5", "MultiBar6", "MultiBar7", "MultiBar8", "StanceBar", "PetActionBar",
@@ -116,7 +149,8 @@ local DB = { extra = {} }
 for k, v in pairs(DEFAULTS) do DB[k] = v end
 local LISTS = {}
 local drawn, questUntil, mapUntil, chatUntil, combatEnd, moveUntil = false, 0, 0, 0, 0, 0
-local cur = { bars = 0, player = 0, hud = 0, quest = 0, map = 0, chat = 0 }
+local peekUntil = 0   -- the "hold to show" key: everything is shown until this time
+local cur = { bars = 0, player = 0, hud = 0, quest = 0, map = 0, chat = 0, nav = 0, rxp = 0, bags = 0, micro = 0 }
 local fading, hiddenOn, barExcluded, textHidden = {}, {}, {}, {}
 local minimapShown = true
 local chatList = {}
@@ -134,6 +168,8 @@ local function trace(msg)
 end
 local armEntry
 
+local applyMouseWatch
+
 local function discoverBars()
 	discovered = {}
 	for k, v in pairs(_G) do
@@ -146,7 +182,22 @@ local function discoverBars()
 	table.sort(discovered)
 end
 
+-- Frames the pixel shift checkboxes add to the shift group. They are protected frames, so they only move out of combat.
+local SHIFT_FRAMES = {
+	bars = {
+		"MainActionBar", "MultiBarBottomLeft", "MultiBarBottomRight", "MultiBarRight", "MultiBarLeft", "MultiBar5", "MultiBar6",
+		"MultiBar7", "MultiBar8", "StanceBar", "PetActionBar", "PossessActionBar", "StatusTrackingBarManager", "MicroMenuContainer",
+		"BagsBar",
+	},
+	units = { "PlayerFrame", "PlayerCastingBarFrame", "TargetFrame", "FocusFrame", "PetFrame", "PartyFrame" },
+}
 local function rebuildLists()
+	local before = {}
+	for g, list in pairs(LISTS) do
+		if g ~= "nav" and g ~= "shift" then
+			for _, n in ipairs(list) do before[n] = true end
+		end
+	end
 	for _, g in ipairs(ALL_LISTS) do
 		local merged, seen = {}, {}
 		local function add(n)
@@ -161,8 +212,35 @@ local function rebuildLists()
 				if not KNOWN_BAR_FRAMES[n] then add(n) end
 			end
 		end
+		if g == "shift" then
+			if DB.shiftBars then for _, n in ipairs(SHIFT_FRAMES.bars) do add(n) end end
+			if DB.shiftUnits then for _, n in ipairs(SHIFT_FRAMES.units) do add(n) end end
+		end
+		-- The RestedXP windows are added by their checkboxes. The frames do not have to exist yet: they are looked up
+		-- by name every time they are faded.
+		if g == "rxp" then
+			if DB.rxpGuide then add("RXPFrame") end
+			if DB.rxpTargets then
+				add("RXPTargetFrame")
+				add("RXPItemFrame")
+			end
+		elseif g == "nav" and DB.rxpArrow then
+			add("RXPG_ARROW")
+		end
 		for _, n in ipairs(DB.extra[g] or {}) do add(n) end
 		LISTS[g] = merged
+	end
+	-- A frame that left a group (a box unticked, /qhud remove) is no longer faded, so it gets its opacity back.
+	-- The nav group does this itself, when it takes a frame out of its container.
+	local stillListed = {}
+	for g, list in pairs(LISTS) do
+		if g ~= "shift" then
+			for _, n in ipairs(list) do stillListed[n] = true end
+		end
+	end
+	for n in pairs(before) do
+		local f = not stillListed[n] and _G[n]
+		if f and f.SetAlpha then f:SetAlpha(1) end
 	end
 	barHover = {}
 	local seen = {}
@@ -199,15 +277,20 @@ local function getCVarString()
 	return ok and value or nil
 end
 
+-- Only the settings that differ from their default are stored. The macro that holds them is limited to 255
+-- characters, and storing every setting used most of it, which pushed the list of frames you added (/qhud add) out.
+local warnedTooLong = false
 local function encodeSettings()
 	local parts = {}
 	for _, f in ipairs(FIELDS) do
 		local v = DB[f.key]
+		local text, default
 		if f.kind == "bool" then
-			parts[#parts + 1] = f.code .. "=" .. (v and "1" or "0")
+			text, default = (v and "1" or "0"), (f.def and "1" or "0")
 		else
-			parts[#parts + 1] = f.code .. "=" .. string.format("%.3g", v or f.def)
+			text, default = string.format("%.3g", v or f.def), string.format("%.3g", f.def)
 		end
+		if text ~= default then parts[#parts + 1] = f.code .. "=" .. text end
 	end
 	local base = table.concat(parts, ";")
 	local extras = {}
@@ -218,6 +301,10 @@ local function encodeSettings()
 	if #extras > 0 then
 		local full = base .. ";" .. table.concat(extras, ";")
 		if #MACRO_PREFIX + #full <= 255 then return full end
+		if not warnedTooLong then
+			warnedTooLong = true
+			print("QuietHUD: your settings and added frames are too long to be saved together, so the added frames will be forgotten on the next reload")
+		end
 	end
 	return base
 end
@@ -273,6 +360,8 @@ local function restoreFromStore()
 	if not s or s == "" then return end
 	restored = true
 	if userChanged then return end
+	local legacyInstance, legacyMapInstance, sawTrigMap = false, false, false
+	local legacyMapMoving, legacyMapDim, legacyMapDimOpacity
 	for part in s:gmatch("[^;]+") do
 		local k, v = part:match("^%s*([^=%s]+)%s*=%s*(.-)%s*$")
 		if k then
@@ -282,7 +371,33 @@ local function restoreFromStore()
 					DB[f.key] = (v == "1")
 				else
 					DB[f.key] = tonumber(v) or DB[f.key]
+					if k == "tm" then sawTrigMap = true end
 				end
+			elseif k == "m" then
+				-- Until 1.1.4 the minimap had four modes, set by these fields; they are boxes of its row in the grid now.
+				legacyMapMoving = (v == "1")
+			elseif k == "md" then
+				legacyMapDim = (v == "1")
+			elseif k == "mo" then
+				legacyMapDimOpacity = tonumber(v)
+			elseif k == "mi" then
+				legacyMapInstance = (v == "1")
+			elseif k == "ba" then
+				-- An opacity slider for the bags bar and the menu bar existed for a short while; anything below 1 is hidden when idle now.
+				if (tonumber(v) or 1) < 0.999 then DB.fadeBags, DB.trigBagsBar = true, 0 end
+			elseif k == "ma" then
+				if (tonumber(v) or 1) < 0.999 then DB.fadeMicro, DB.trigMicro = true, 0 end
+			elseif k == "hb" then
+				-- 1.1.4 and earlier hid the bags bar and the menu bar with checkboxes; they are rows of the grid now, hidden when idle.
+				if v == "1" then DB.fadeBags, DB.trigBagsBar = true, 0 end
+			elseif k == "hm" then
+				if v == "1" then DB.fadeMicro, DB.trigMicro = true, 0 end
+			elseif k == "ii" then
+				-- 1.1.0 to 1.1.4 had one "always show in dungeons and raids" option; it is a column per element now.
+				legacyInstance = (v == "1")
+			elseif k == "o" then
+				-- 1.1.4 stored "action bars on mouse over" on its own; it is a column of the trigger grid now.
+				if v == "0" then DB.trigBars = 1 end
 			elseif k:sub(1, 1) == "x" then
 				local g = k:sub(2)
 				DB.extra[g] = {}
@@ -290,8 +405,28 @@ local function restoreFromStore()
 			end
 		end
 	end
+	if not sawTrigMap then
+		if legacyMapDim then
+			DB.trigMap = 15
+			DB.mapIdle = legacyMapDimOpacity or 0.3
+		elseif legacyMapMoving == false then
+			DB.trigMap = 13
+		end
+	end
+	local function addInstanceBit(key)
+		local mask = DB[key] or 0
+		if math.floor(mask / 32) % 2 == 0 then DB[key] = mask + 32 end
+	end
+	if legacyInstance then
+		for _, key in ipairs({ "trigBars", "trigPlayer", "trigUnits", "trigTracker", "trigRxp", "trigMap" }) do
+			addInstanceBit(key)
+		end
+	elseif legacyMapInstance then
+		addInstanceBit("trigMap")
+	end
 	rebuildLists()
 	if onRestored then onRestored() end
+	if applyMouseWatch then applyMouseWatch() end
 	if armEntry then armEntry() end
 end
 
@@ -304,6 +439,7 @@ local function initDB()
 	DB.extra = DB.extra or {}
 	DB.trace, DB.debug = nil, nil
 	if source then restored = true else restoreFromStore() end
+	if applyMouseWatch then applyMouseWatch() end
 	rebuildLists()
 end
 
@@ -319,8 +455,11 @@ local function applyList(name, a)
 	setAlpha(LISTS[name], a)
 end
 
+-- Also fades the frames you added to the chat group (/qhud add chat <frame name>), for example the window or
+-- background of a chat replacement addon.
 local function applyChat(a)
 	for i = 1, #chatList do chatList[i]:SetAlpha(a) end
+	setAlpha(LISTS.chat, a)
 end
 
 -- Per-bar options are stored as a bitmask: bit i is Action Bar i.
@@ -341,10 +480,10 @@ local function applyBars(a, respectMask)
 	end
 end
 
-local function step(v, target, dt)
-	local d = dt / FADE
-	if v < target then return math.min(target, v + d) end
-	return math.max(target, v - d)
+-- Fading in and out both take FADE, unless a group is given its own fade-out time (the chat has one).
+local function step(v, target, dt, outSeconds)
+	if v < target then return math.min(target, v + dt / FADE) end
+	return math.max(target, v - dt / math.max(0.05, outSeconds or FADE))
 end
 
 local function hovered(f)
@@ -358,12 +497,61 @@ local function anyHovered(names)
 	return false
 end
 
-local function chatActive()
-	if ChatEdit_GetActiveWindow and ChatEdit_GetActiveWindow() then return true end
+-- Some windows are a small frame with their panels hanging off it as children (the RestedXP guide is a bar with the
+-- steps above it), so the frame's own rectangle is only part of what you see. This checks the children too. It looks
+-- about ten times a second, because listing the children makes garbage.
+local deepAt, deepResult = 0, false
+local function anyHoveredDeep(names)
+	local now = GetTime()
+	if now - deepAt < 0.1 then return deepResult end
+	deepAt, deepResult = now, false
+	for i = 1, #names do
+		local f = _G[names[i]]
+		if hovered(f) then
+			deepResult = true
+			break
+		end
+		if f and f.GetChildren and f:IsShown() then
+			local kids = { f:GetChildren() }
+			for j = 1, #kids do
+				local c = kids[j]
+				if c.IsShown and c.IsMouseOver and c:IsShown() and c:IsMouseOver() then
+					deepResult = true
+					break
+				end
+			end
+			if deepResult then break end
+		end
+	end
+	return deepResult
+end
+
+-- What brings an element up comes from its row of the trigger grid (bit i of the mask is trigger i): awake, while
+-- moving, new info, mouse over, hide in combat, which beats the rest, and being inside a dungeon or raid.
+local T = { AWAKE = 1, MOVING = 2, NEWS = 3, HOVER = 4, COMBAT = 5, INST = 6 }
+local function triggered(mask, awake, moved, news, combat, inside, names, deep, hoverNow)
+	if barBit(mask, T.COMBAT) and combat then return false end
+	if barBit(mask, T.AWAKE) and awake then return true end
+	if barBit(mask, T.MOVING) and moved then return true end
+	if barBit(mask, T.NEWS) and news then return true end
+	if barBit(mask, T.INST) and inside then return true end
+	if barBit(mask, T.HOVER) then
+		if hoverNow ~= nil then return hoverNow and true or false end
+		if deep then return anyHoveredDeep(names) end
+		return anyHovered(names) and true or false
+	end
+	return false
+end
+
+local function chatTyping()
+	return ChatEdit_GetActiveWindow and ChatEdit_GetActiveWindow() and true or false
+end
+
+local function chatHovered()
 	for i = 1, #chatList do
 		if hovered(chatList[i]) then return true end
 	end
-	return false
+	return anyHovered(LISTS.chat)
 end
 
 local function bumpChat()
@@ -443,6 +631,45 @@ local function isMoving()
 	return reason ~= "none"
 end
 
+-- Frames in the nav group (for example the direction arrow of a quest guide) are moved under a small host frame of
+-- ours, and the host is what fades. A frame that sets its own opacity to show and hide itself would fight with a fade
+-- applied to it directly; under a host the two opacities multiply instead, so it can still show and hide itself.
+local navHosts, navLastError = {}, nil
+local navForce = false   -- /qhud arrow: keeps the nav group visible whatever else is going on
+local function applyNav(a)
+	local wanted = {}
+	for _, name in ipairs(LISTS.nav) do
+		local f = _G[name]
+		if f and f.SetParent then
+			wanted[f] = true
+			local rec = navHosts[f]
+			if not rec then
+				local okHost, made = pcall(function()
+					local host = CreateFrame("Frame", nil, UIParent)
+					host:SetAllPoints(UIParent)
+					local original = f:GetParent()
+					f:SetParent(host)
+					return { host = host, parent = original }
+				end)
+				if okHost then
+					rec = made
+					navHosts[f] = rec
+				else
+					navLastError = tostring(made)
+				end
+			end
+			if rec then rec.host:SetAlpha(a) end
+		end
+	end
+	-- frames taken out of the group go back where they were
+	for f, rec in pairs(navHosts) do
+		if not wanted[f] then
+			pcall(function() f:SetParent(rec.parent or UIParent) end)
+			rec.host:SetAlpha(1)
+			navHosts[f] = nil
+		end
+	end
+end
 -- A short log of the minimap decisions, saved with the settings on /reload. It is kept even without debug mode,
 -- so a minimap that does not show can be diagnosed afterwards.
 local function mapLog(msg)
@@ -530,6 +757,25 @@ local function applyMinimapAlpha(a)
 		if f and f.SetAlpha then f:SetAlpha(a) end
 	end
 end
+-- A faded-out minimap is shrunk to almost nothing (see below), so its own rectangle can no longer be hovered. The rectangle
+-- it has at full size is remembered, and the mouse is compared with that one instead. The values are in UIParent units.
+local mapRect
+local function rememberMapRect()
+	local f = MinimapCluster
+	if not (f and f.GetRect and f:GetScale() > 0.5) then return end
+	local l, b, w, h = f:GetRect()
+	if not (l and b and w and h and w > 20 and h > 20) then return end
+	local k = f:GetEffectiveScale() / UIParent:GetEffectiveScale()
+	mapRect = { l * k, b * k, (l + w) * k, (b + h) * k }
+end
+local function mouseInMapRect()
+	if not mapRect or not GetCursorPosition then return false end
+	local x, y = GetCursorPosition()
+	local k = UIParent:GetEffectiveScale()
+	x, y = x / k, y / k
+	return x >= mapRect[1] and x <= mapRect[3] and y >= mapRect[2] and y <= mapRect[4]
+end
+
 -- Hiding the Minimap frame and showing it again breaks the map in cities and interiors (it does not come back until
 -- the game redraws it), and the player arrow, quest arrow and quest-area overlays ignore opacity, so a faded minimap
 -- can be neither hidden nor made transparent. Instead it is shrunk to almost nothing, which takes those along, and
@@ -543,6 +789,7 @@ local function setMinimapVisible(visible, alpha)
 			mapSavedScale = nil
 		end
 	else
+		pcall(rememberMapRect)
 		if not mapSavedScale then mapSavedScale = MinimapCluster:GetScale() end
 		MinimapCluster:SetScale(0.001)
 	end
@@ -630,56 +877,250 @@ local function inDungeonOrRaid()
 	return ok and result and true or false
 end
 
+-- Pixel shift (opt-in, experimental). OLED panels can burn in from shapes that stay in one place, so every few minutes the
+-- frames in the shift group are moved a couple of pixels along a small circle. Nothing saved is ever changed: a frame's
+-- anchors are remembered when it is first moved and put back exactly when the option is turned off, when Edit Mode opens
+-- and at logout. Nothing is moved during combat. If the game or another addon moves a frame while it is shifted, the shift
+-- steps aside and takes the new position as the normal one, so a restore can never drag a frame back to an old spot.
+-- Everything lives inside one block and only five functions come out of it: a Lua file can have only 200 top-level
+-- local variables, and the addon had reached that limit.
+local tickShift, restoreShift, shiftNow, shiftReport, applyTooltips
+do
+	local SHIFT_STEPS = { { 0, 0 }, { 1, 0 }, { 1, 1 }, { 0, 1 }, { -1, 1 }, { -1, 0 }, { -1, -1 }, { 0, -1 }, { 1, -1 } }
+	local shiftIndex, shiftNextAt, shiftWantX, shiftWantY, shiftClock, lastEdit = 1, 0, 0, 0, 0, false
+	local shiftState, shiftLastError = {}, nil
+
+	local function anchorList(f)
+		local t = {}
+		for i = 1, f:GetNumPoints() do
+			local point, rel, relPoint, x, y = f:GetPoint(i)
+			t[i] = { point, rel, relPoint, x or 0, y or 0 }
+		end
+		return t
+	end
+
+	local function anchorSig(t)
+		local parts = {}
+		for i, a in ipairs(t) do
+			parts[i] = tostring(a[1]) .. "|" .. tostring(a[2]) .. "|" .. tostring(a[3]) .. "|" .. string.format("%.3f|%.3f", a[4], a[5])
+		end
+		return table.concat(parts, ";")
+	end
+
+	local function setAnchors(f, t, dx, dy)
+		f:ClearAllPoints()
+		for _, a in ipairs(t) do
+			f:SetPoint(a[1], a[2], a[3], a[4] + dx, a[5] + dy)
+		end
+	end
+
+	local function anchoredToListed(t, listed, f)
+		for _, a in ipairs(t) do
+			if a[2] and a[2] ~= f and listed[a[2]] then return true end
+		end
+		return false
+	end
+
+	local function syncFrame(f, listed)
+		local now = anchorList(f)
+		if #now == 0 then return end
+		local sig = anchorSig(now)
+		local st = shiftState[f]
+		if st and st.sig ~= sig then
+			-- Something else moved it since: that position is the new normal, and ours is forgotten.
+			st = nil
+			shiftState[f] = nil
+		end
+		-- A frame anchored to another frame of the group moves along with it, so it is not shifted a second time.
+		if anchoredToListed(now, listed, f) then
+			if st then
+				setAnchors(f, st.base, 0, 0)
+				shiftState[f] = nil
+			end
+			return
+		end
+		if shiftWantX == 0 and shiftWantY == 0 then
+			if st then
+				setAnchors(f, st.base, 0, 0)
+				shiftState[f] = nil
+			end
+			return
+		end
+		-- Offsets are in the frame's own units. A frame that is shrunk (the faded minimap) is left alone until it is back to size.
+		local k = f:GetEffectiveScale() / UIParent:GetEffectiveScale()
+		if not (k >= 0.5 and k <= 2) then return end
+		if not st then st = { base = now } end
+		if st.wx ~= shiftWantX or st.wy ~= shiftWantY then
+			setAnchors(f, st.base, shiftWantX / k, shiftWantY / k)
+			st.wx, st.wy = shiftWantX, shiftWantY
+			st.sig = anchorSig(anchorList(f))
+			shiftState[f] = st
+		end
+	end
+
+	local function syncShift()
+		if InCombatLockdown() then return end
+		local listed, frames = {}, {}
+		for _, name in ipairs(LISTS.shift) do
+			local f = _G[name]
+			if f and f.GetNumPoints and f.GetPoint and not (f.IsForbidden and f:IsForbidden()) and not listed[f] then
+				listed[f] = true
+				frames[#frames + 1] = { f, name }
+			end
+		end
+		for _, rec in ipairs(frames) do
+			local ok, err = pcall(syncFrame, rec[1], listed)
+			if not ok then shiftLastError = rec[2] .. ": " .. tostring(err) end
+		end
+		-- Frames taken out of the group are put back.
+		for f, st in pairs(shiftState) do
+			if not listed[f] then
+				pcall(function()
+					if anchorSig(anchorList(f)) == st.sig then setAnchors(f, st.base, 0, 0) end
+				end)
+				shiftState[f] = nil
+			end
+		end
+	end
+
+	local function stepShift(now, edit)
+		if not DB.pixelShift and next(shiftState) == nil then return end
+		if DB.pixelShift and not edit then
+			if now >= shiftNextAt then
+				shiftIndex = shiftIndex % #SHIFT_STEPS + 1
+				shiftNextAt = now + (DB.shiftMinutes or 3) * 60
+			end
+			local s = SHIFT_STEPS[shiftIndex]
+			local px = DB.shiftPixels or 2
+			shiftWantX, shiftWantY = s[1] * px, s[2] * px
+		else
+			shiftWantX, shiftWantY = 0, 0
+		end
+		syncShift()
+	end
+
+	-- Once a second, and at once when Edit Mode opens or closes.
+	tickShift = function(dt, now, edit)
+		shiftClock = shiftClock + dt
+		if shiftClock > 1 or edit ~= lastEdit then
+			shiftClock = 0
+			lastEdit = edit
+			local ok, err = pcall(stepShift, now, edit)
+			if not ok then shiftLastError = tostring(err) end
+		end
+	end
+
+	restoreShift = function()
+		shiftWantX, shiftWantY = 0, 0
+		syncShift()
+	end
+
+	shiftNow = function()
+		shiftNextAt = 0
+	end
+
+	shiftReport = function()
+		print("QuietHUD pixel shift (experimental): " .. (DB.pixelShift and "on" or "off") .. ", offset now " .. shiftWantX .. "," .. shiftWantY .. " pixels, a move every " .. (DB.shiftMinutes or 3) .. " minutes, /qhud shift on, off or now")
+		for _, name in ipairs(LISTS.shift) do
+			local f = _G[name]
+			local st = f and shiftState[f]
+			print("  " .. name .. ": " .. (not f and "no frame with that name" or (st and ("shifted by " .. (st.wx or 0) .. "," .. (st.wy or 0)) or "at its normal position")))
+		end
+		if shiftLastError then print("  last problem: " .. shiftLastError) end
+	end
+
+	-- Tooltip opacity: the whole tooltip is faded, text included. Untouched while the setting is at 1.
+	local TOOLTIPS = { "GameTooltip", "ItemRefTooltip", "ShoppingTooltip1", "ShoppingTooltip2", "EmbeddedItemTooltip" }
+	local tooltipTouched = false
+	applyTooltips = function()
+		local a = DB.tooltipAlpha or 1
+		if a >= 0.999 then
+			if not tooltipTouched then return end
+			a = 1
+		end
+		for i = 1, #TOOLTIPS do
+			local f = _G[TOOLTIPS[i]]
+			if f and f.SetAlpha and f.GetAlpha and math.abs(f:GetAlpha() - a) > 0.01 then f:SetAlpha(a) end
+		end
+		tooltipTouched = a < 1
+	end
+end
+-- The Issue Reporter button is hidden or not, with a checkbox, outside the fade. This turns the stored value into an
+-- opacity: 1 leaves the frame alone, 0 hides it.
+local function fixedAlpha(key)
+	local v = DB[key]
+	if type(v) == "boolean" then return v and 0 or 1 end
+	return v or 1
+end
+
 local function update(dt)
 	local now = GetTime()
 	local edit = EditModeManagerFrame and EditModeManagerFrame:IsShown() or false
 	local combat = UnitAffectingCombat("player") and true or false
 	local enabled = DB.enabled
 
-	local instanceOn = DB.inInstance and inDungeonOrRaid()
+	local inside = inDungeonOrRaid()
 	local active = edit or (DB.inCombat and (combat or now < combatEnd)) or (DB.sheathShows and drawn)
-		or (DB.showOnTarget and UnitExists("target")) or instanceOn
+		or (DB.showOnTarget and UnitExists("target"))
 	lastActive = active and true or false
 	local okMove, moving = pcall(isMoving)
 	if okMove and moving then moveUntil = now + MOVE_LINGER end
 	if (okMove and moving and true or false) ~= lastLoggedMoving then
 		lastLoggedMoving = okMove and moving and true or false
-		mapLog(string.format("moving=%s by %s (speed %s, fade=%s, movingMode=%s, dim=%s)", tostring(lastLoggedMoving),
-			lastMoveReason, lastSpeedText, tostring(DB.fadeMinimap), tostring(DB.minimapMoving), tostring(DB.minimapDim)))
+		mapLog(string.format("moving=%s by %s (speed %s, fade=%s, triggers=%s, idle opacity=%s)", tostring(lastLoggedMoving),
+			lastMoveReason, lastSpeedText, tostring(DB.fadeMinimap), tostring(DB.trigMap), tostring(DB.mapIdle)))
 	end
 
 	local vis = {}
-	vis.bars = active or (DB.barsMouseover and anyHovered(barHover))
-	vis.player = active
-	vis.hud = active
-	vis.quest = active or now < questUntil or hovered(_G.ObjectiveTrackerFrame)
-	local mapShow = now < mapUntil or hovered(_G.MinimapCluster) or instanceOn
-	if DB.minimapDim then
-		mapShow = mapShow or active or now < moveUntil
-	elseif DB.minimapMoving then
-		mapShow = mapShow or now < moveUntil
-	else
-		mapShow = mapShow or active
-	end
-	vis.map = mapShow
-	vis.chat = now < chatUntil or chatActive()
-	if edit then
+	local moved = now < moveUntil
+	vis.bars = triggered(DB.trigBars, active, moved, false, combat, inside, barHover)
+	vis.player = triggered(DB.trigPlayer, active, moved, false, combat, inside, LISTS.player)
+	vis.hud = triggered(DB.trigUnits, active, moved, false, combat, inside, LISTS.hud)
+	vis.bags = triggered(DB.trigBagsBar, active, moved, false, combat, inside, LISTS.bags)
+	vis.micro = triggered(DB.trigMicro, active, moved, false, combat, inside, LISTS.micro)
+	vis.quest = triggered(DB.trigTracker, active, moved, now < questUntil, combat, inside, LISTS.quest)
+	vis.map = triggered(DB.trigMap, active, moved, now < mapUntil, combat, inside, LISTS.map, false,
+		mouseInMapRect() or anyHovered(LISTS.map))
+	-- Chat is the one element whose hover is a list of frames, and typing always brings it up, even in combat.
+	local chatMask = DB.trigChat
+	local chatWanted = (barBit(chatMask, T.AWAKE) and active) or (barBit(chatMask, T.MOVING) and moved)
+		or (barBit(chatMask, T.NEWS) and now < chatUntil) or (barBit(chatMask, T.INST) and inside)
+		or (barBit(chatMask, T.HOVER) and chatHovered())
+	if barBit(chatMask, T.COMBAT) and combat then chatWanted = false end
+	vis.chat = (chatWanted or chatTyping()) and true or false
+	vis.nav = navForce or triggered(DB.trigNav, active, moved, false, combat, inside, LISTS.nav)
+	vis.rxp = triggered(DB.trigRxp, active, moved, now < questUntil, combat, inside, LISTS.rxp, true)
+	if edit or now < peekUntil or (DB.peekAlt and IsAltKeyDown()) or (DB.peekCtrl and IsControlKeyDown()) or (DB.peekShift and IsShiftKeyDown()) then
 		for g in pairs(vis) do vis[g] = true end
 	end
 
 	local flags = {
 		bars = DB.fadeBars, player = DB.fadePlayer, hud = DB.fadeUnits,
-		quest = DB.fadeTracker, map = DB.fadeMinimap, chat = DB.fadeChat,
+		quest = DB.fadeTracker, map = DB.fadeMinimap, chat = DB.fadeChat, nav = true, rxp = true,
+		bags = DB.fadeBags, micro = DB.fadeMicro,
 	}
 	local idle = DB.idle or 0
 	local mapAlpha = 1
 	for _, g in ipairs(FADE_ORDER) do
 		if enabled and flags[g] then
-			cur[g] = step(cur[g], vis[g] and 1 or 0, dt)
+			cur[g] = step(cur[g], vis[g] and 1 or 0, dt, g == "chat" and DB.chatFadeSeconds or nil)
 			local peak = DB.base or 0.6
-			if edit or (g == "chat" and not DB.chatDim) or (g == "map" and not DB.mapFollowsHud) then peak = 1 end
+			if edit or (g == "map" and not DB.mapFollowsHud) then
+				peak = 1
+			elseif g == "chat" and not DB.chatDim then
+				peak = DB.chatOpacity or 1
+			elseif g == "rxp" then
+				peak = DB.rxpShown or 0.7
+			elseif g == "nav" then
+				peak = DB.navShown or 0.6
+			end
 			local floor = idle
-			if g == "map" and DB.minimapDim then floor = DB.mapDimOpacity or 0.3 end
+			if g == "rxp" then
+				floor = DB.rxpIdle or 0
+			elseif g == "nav" then
+				floor = DB.navIdle or 0
+			end
+			if g == "map" then floor = DB.mapIdle or 0 end
 			local low = math.min(floor, peak)
 			local a = low + (peak - low) * cur[g]
 			local dimHere = false
@@ -694,6 +1135,8 @@ local function update(dt)
 				applyChat(a)
 			elseif g == "bars" then
 				applyBars(a, true)
+			elseif g == "nav" then
+				applyNav(a)
 			elseif g == "map" then
 				if dimHere then
 					applyMinimapAlpha(a)
@@ -713,6 +1156,8 @@ local function update(dt)
 				applyBars(1, false)
 			elseif g == "map" then
 				applyMinimapAlpha(1)
+			elseif g == "nav" then
+				applyNav(1)
 			else
 				applyList(g, 1)
 			end
@@ -728,9 +1173,9 @@ local function update(dt)
 	end
 
 	for _, pair in ipairs(HIDE_TOGGLES) do
-		local on = enabled and DB[pair[2]] and not edit
-		if on then
-			applyList(pair[1], 0)
+		local fixed = enabled and not edit and fixedAlpha(pair[2]) or 1
+		if fixed < 0.999 then
+			applyList(pair[1], fixed)
 			hiddenOn[pair[1]] = true
 		elseif hiddenOn[pair[1]] then
 			applyList(pair[1], 1)
@@ -745,16 +1190,22 @@ local function update(dt)
 		hiddenOn.hidden = false
 	end
 
+	-- Pixel shift: once a second, and at once when Edit Mode opens or closes.
+	tickShift(dt, now, edit)
+	applyTooltips()
+
 	hotkeyClock = hotkeyClock + dt
 	if hotkeyClock > 0.5 then
 		hotkeyClock = 0
+		if MinimapCluster and MinimapCluster:GetScale() > 0.5 then pcall(rememberMapRect) end
 		if MinimapCluster and mapSavedScale and MinimapCluster:GetScale() > 0.01 then MinimapCluster:SetScale(0.001) end
 		local wantShort = enabled and DB.shortHotkeys
 		for i = 1, #BAR_DEFS do
 			for j = 1, 12 do
 				local fs = _G[BAR_DEFS[i].buttons .. j .. "HotKey"]
 				if fs and (wantShort or shortened[fs]) then shortenOne(fs, wantShort) end
-			end			for _, spec in ipairs(TEXT_SPECS) do
+			end
+			for _, spec in ipairs(TEXT_SPECS) do
 				local on = enabled and barBit(DB[spec[2]], i)
 				local tag = spec[1] .. i
 				if on or textHidden[tag] then
@@ -791,36 +1242,62 @@ local PAGES = {
 		{ "check", "enabled", "Enable QuietHUD" },
 		{ "slider", "base", "Opacity when active (combat, target...)", 0.1, 1, 0.05, "%.2f" },
 		{ "slider", "idle", "Opacity when idle (0 = fully hidden)", 0, 1, 0.05, "%.2f" },
+		{ "note", "These three decide when the HUD counts as awake. Which elements come up when it is awake is set per element in the Awake column of the Elements page." },
 		{ "check", "inCombat", "Show in combat" },
 		{ "check", "sheathShows", "Show while my weapon is drawn" },
 		{ "check", "showOnTarget", "Show while I have a target" },
-		{ "check", "inInstance", "Always show in dungeons and raids" },
-		{ "check", "barsMouseover", "Show action bars on mouse over" },
 		{ "slider", "linger", "Stay visible after combat (seconds)", 0, 15, 1, "%.0f" },
 	} },
 	{ title = "Elements", items = {
-		{ "check", "fadeBars", "Fade action bars" },
-		{ "check", "fadePlayer", "Fade player frame" },
-		{ "check", "fadeUnits", "Fade target, party, raid frames and buffs" },
-		{ "check", "fadeTracker", "Fade objective tracker" },
-		{ "check", "fadeChat", "Fade chat" },
-		{ "check", "chatDim", "Chat uses the HUD opacity when active" },
-		{ "minimap" },
+		{ "grid", "elements" },
+		{ "note", "Awake: combat, a drawn weapon or a target. Dungeon or raid: while you are inside one. New info: chat messages, quest progress, a zone change (minimap). Hide in combat beats the rest. For mouse over only, leave just that box ticked." },
+		{ "note", "Enemy, party, buffs: the frame of whatever you click on (enemy, NPC or player), your focus and pet, party and raid frames, buff and debuff icons, totems, cooldown trackers, the damage meter, the durability icon and the loss of control alert." },
+		{ "slider", "mapIdle", "Minimap opacity when idle (0 = hidden)", 0, 1, 0.05, "%.2f" },
+		{ "check", "mapFollowsHud", "Minimap: use the HUD opacity when shown, not solid" },
+		{ "check", "mapDarken", "Minimap: darken it instead of fading it" },
 	} },
 	{ title = "Bars", items = {
+		{ "note", "Fade picks which action bars fade. It only counts while Fade is ticked for Action bars on the Elements page, which is the master switch (the stance, pet and XP bars follow that switch)." },
 		{ "bargrid" },
 		{ "check", "shortHotkeys", "Shorten hotkey text (Num Pad 1 shows N1)" },
 	} },
 	{ title = "Chat", items = {
+		{ "note", "Fading the chat, and what brings it up, is on the Elements page." },
+		{ "check", "chatDim", "Chat uses the HUD opacity when active" },
+		{ "slider", "chatOpacity", "Chat opacity when active (if not the HUD's)", 0.1, 1, 0.05, "%.2f" },
 		{ "slider", "chatSeconds", "Chat stays after a message (seconds)", 2, 30, 1, "%.0f" },
+		{ "slider", "chatFadeSeconds", "Chat fade out animation (seconds)", 0.3, 5, 0.1, "%.1f" },
 		{ "kinds" },
 	} },
+	{ title = "RXP", items = {
+		{ "check", "rxpGuide", "Fade the RestedXP guide window" },
+		{ "check", "rxpTargets", "Fade the RestedXP targets and items windows" },
+		{ "check", "rxpArrow", "Fade the RestedXP waypoint arrow" },
+		{ "slider", "rxpShown", "Guide, targets, items: opacity when shown", 0.1, 1, 0.05, "%.2f" },
+		{ "slider", "rxpIdle", "Guide, targets, items: opacity when idle (0 = hidden)", 0, 1, 0.05, "%.2f" },
+		{ "slider", "navShown", "Arrow: opacity when shown", 0.1, 1, 0.05, "%.2f" },
+		{ "slider", "navIdle", "Arrow: opacity when idle (0 = hidden)", 0, 1, 0.05, "%.2f" },
+		{ "grid", "rxp" },
+		{ "note", "The same columns as on the Elements page. At idle opacity 0 the windows are hidden completely, so a small value helps you find them." },
+	} },
 	{ title = "Extras", items = {
-		{ "slider", "questSeconds", "Tracker and minimap stay (seconds)", 3, 30, 1, "%.0f" },
-		{ "check", "hideBags", "Always hide the bags bar" },
-		{ "check", "hideMicro", "Always hide the menu bar" },
+		{ "heading", "Show the whole HUD" },
+		{ "check", "peekAlt", "While I hold Alt" },
+		{ "check", "peekCtrl", "While I hold Ctrl" },
+		{ "check", "peekShift", "While I hold Shift" },
+		{ "heading", "Timing and tooltips" },
+		{ "slider", "questSeconds", "New info stays, for quests and zone changes (seconds)", 3, 30, 1, "%.0f" },
+		{ "slider", "tooltipAlpha", "Tooltip opacity (1 = normal)", 0.3, 1, 0.05, "%.2f" },
+		{ "heading", "Pixel shift (OLED, experimental)" },
+		{ "check", "pixelShift", "Move the minimap and tracker a little every few minutes" },
+		{ "check", "shiftBars", "Also the action bars, bags and menu bar" },
+		{ "check", "shiftUnits", "Also the player, target and party frames" },
+		{ "slider", "shiftPixels", "Distance (pixels)", 1, 4, 1, "%.0f" },
+		{ "slider", "shiftMinutes", "Minutes between moves", 1, 10, 1, "%.0f" },
+		{ "heading", "Other" },
 		{ "check", "hideReporter", "Hide the beta Issue Reporter button" },
 		{ "check", "questTarget", "Enable quest-mob targeting key (experimental)" },
+		{ "note", "Targets the nearest mob your highlighted quest needs and marks it with the skull. Needs enemy nameplates on. After ticking this, bind the key: Esc, Options, Keybindings, AddOns, QuietHUD, \"Target highlighted quest mob\"." },
 	} },
 }
 
@@ -839,6 +1316,7 @@ local function makeCheck(parent, y, label, key)
 		DB[key] = not DB[key]
 		self:SetChecked(DB[key] and true or false)
 		persistSoon()
+		rebuildLists()
 		if armEntry then armEntry() end
 	end)
 	local text = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
@@ -914,7 +1392,7 @@ local function makeChatKinds(parent, y)
 	heading:SetPoint("TOPLEFT", 16, y)
 	heading:SetText("What brings the chat up")
 	for i, kind in ipairs(CHAT_KINDS) do
-		local check = makeMaskCheck(parent, 12, y - 14 - (i - 1) * 26, "chatKinds", i)
+		local check = makeMaskCheck(parent, 12, y - 14 - (i - 1) * 22, "chatKinds", i)
 		local text = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 		text:SetPoint("LEFT", check, "RIGHT", 4, 0)
 		text:SetText(kind[1])
@@ -942,57 +1420,92 @@ local function makeBarGrid(parent, y)
 	end
 end
 
--- One button instead of overlapping checkboxes. Each mode: name, fadeMinimap, minimapMoving, minimapDim, description.
-local MINIMAP_MODES = {
-	{ "follows the HUD", true, false, false, "Fades with everything else." },
-	{ "only while I am moving", true, true, false, "Hidden while you stand still, shown when you move or change zone." },
-	{ "always shown", false, false, false, "Never fades." },
-	{ "always on, dimmed", true, false, true, "Stays faintly visible and brightens when you move or the HUD wakes." },
+-- The trigger grid: a row per element, a column per thing that can bring it up. Each cell is one bit of the row's
+-- number, like the bar grid, and only the cells that mean something for that element are drawn. The columns are
+-- ordered so that no row has a gap: the ones every element has come first, then hide in combat, then new info.
+local TRIGGER_COLS = {
+	{ "Awake", 1 }, { "While\nmoving", 2 }, { "Mouse\nover", 4 }, { "Dungeon\nor raid", 6 },
+	{ "Hide in\ncombat", 5 }, { "New\ninfo", 3 },
+}
+local COL_AT = {}
+for position, col in ipairs(TRIGGER_COLS) do COL_AT[col[2]] = position end
+local GRIDS = {
+	elements = {
+		fade = true,
+		rows = {
+			{ "Action bars", "fadeBars", "trigBars", { 1, 2, 4, 6, 5 } },
+			{ "Player frame", "fadePlayer", "trigPlayer", { 1, 2, 4, 6, 5 } },
+			{ "Enemy, party, buffs", "fadeUnits", "trigUnits", { 1, 2, 4, 6, 5 } },
+			{ "Objective tracker", "fadeTracker", "trigTracker", { 1, 2, 3, 4, 5, 6 } },
+			{ "Chat", "fadeChat", "trigChat", { 1, 2, 3, 4, 5, 6 } },
+			{ "Minimap", "fadeMinimap", "trigMap", { 1, 2, 3, 4, 5, 6 } },
+			{ "Bags bar", "fadeBags", "trigBagsBar", { 1, 2, 4, 6, 5 } },
+			{ "Menu bar", "fadeMicro", "trigMicro", { 1, 2, 4, 6, 5 } },
+		},
+	},
+	rxp = {
+		rows = {
+			{ "Guide, targets, items", false, "trigRxp", { 1, 2, 3, 4, 5, 6 } },
+			{ "Arrow", false, "trigNav", { 1, 2, 4, 5, 6 } },
+		},
+	},
 }
 
-local function minimapMode()
-	if not DB.fadeMinimap then return 3 end
-	if DB.minimapDim then return 4 end
-	return DB.minimapMoving and 2 or 1
+local function makeFadeCell(parent, x, y, key)
+	local check = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
+	check:SetPoint("TOPLEFT", x, y)
+	check:SetScript("OnClick", function(self)
+		DB[key] = not DB[key]
+		self:SetChecked(DB[key] and true or false)
+		persistSoon()
+	end)
+	controls[#controls + 1] = function() check:SetChecked(DB[key] and true or false) end
+	controls[#controls]()
 end
 
--- A "Minimap" row (label + mode button), a line describing the current mode, and the dimmed-opacity
--- slider, which only shows in the dimmed mode. Takes 108 px of the page.
-local function makeMinimapMode(parent, y)
-	local label = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-	label:SetPoint("TOPLEFT", 16, y - 5)
-	label:SetText("Minimap")
-	local button = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
-	button:SetPoint("TOPLEFT", 84, y)
-	button:SetSize(250, 22)
-	local hint = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	hint:SetPoint("TOPLEFT", 16, y - 28)
-	hint:SetWidth(318)
-	hint:SetJustifyH("LEFT")
-	local shownBox = CreateFrame("Frame", nil, parent)
-	shownBox:SetPoint("TOPLEFT", 0, y - 54)
-	shownBox:SetSize(340, 54)
-	makeCheck(shownBox, 0, "Use the HUD opacity on the minimap", "mapFollowsHud")
-	makeCheck(shownBox, -26, "Darken it instead of fading it", "mapDarken")
-	local dimBox = CreateFrame("Frame", nil, parent)
-	dimBox:SetPoint("TOPLEFT", 0, y - 112)
-	dimBox:SetSize(340, 46)
-	makeSlider(dimBox, 0, "Minimap opacity when dimmed", "mapDimOpacity", 0.05, 1, 0.05, "%.2f")
-	local function refresh()
-		local mode = minimapMode()
-		button:SetText(MINIMAP_MODES[mode][1])
-		hint:SetText(MINIMAP_MODES[mode][5])
-		shownBox:SetShown(mode ~= 3)
-		dimBox:SetShown(mode == 4)
+-- Returns the height it took.
+local function makeTriggerGrid(parent, y, grid)
+	local fadeX, firstX, pitch = 144, 190, 46
+	local function header(x, text)
+		local h = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+		h:SetPoint("TOP", parent, "TOPLEFT", x + 16, y)
+		h:SetWidth(64)
+		h:SetJustifyH("CENTER")
+		h:SetText(text)
 	end
-	button:SetScript("OnClick", function()
-		local nextMode = MINIMAP_MODES[minimapMode() % #MINIMAP_MODES + 1]
-		DB.fadeMinimap, DB.minimapMoving, DB.minimapDim = nextMode[2], nextMode[3], nextMode[4]
-		persistSoon()
-		refresh()
-	end)
-	controls[#controls + 1] = refresh
-	refresh()
+	if grid.fade then header(fadeX, "Fade") end
+	for position, col in ipairs(TRIGGER_COLS) do header(firstX + (position - 1) * pitch, col[1]) end
+	local rowY = y - 30
+	for _, row in ipairs(grid.rows) do
+		local label = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+		label:SetPoint("TOPLEFT", 16, rowY - 8)
+		label:SetText(row[1])
+		if row[2] then makeFadeCell(parent, fadeX, rowY, row[2]) end
+		for _, i in ipairs(row[4]) do
+			makeMaskCheck(parent, firstX + (COL_AT[i] - 1) * pitch, rowY, row[3], i)
+		end
+		rowY = rowY - 28
+	end
+	return 30 + #grid.rows * 28 + 6
+end
+
+-- A section heading. Returns the height it took.
+local function makeHeading(parent, y, text)
+	local heading = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
+	heading:SetPoint("TOPLEFT", 16, y - 2)
+	heading:SetText(text)
+	return 22
+end
+
+-- A paragraph of small grey text. Returns the height it took.
+local function makeNote(parent, y, text)
+	local note = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	note:SetPoint("TOPLEFT", 16, y)
+	note:SetWidth(424)
+	note:SetJustifyH("LEFT")
+	note:SetTextColor(0.75, 0.75, 0.75)
+	note:SetText(text)
+	return math.max(16, math.ceil(note:GetStringHeight())) + 8
 end
 
 local function showPage(index)
@@ -1005,13 +1518,14 @@ end
 local function resetDefaults()
 	for _, f in ipairs(FIELDS) do DB[f.key] = f.def end
 	persistSoon()
+	rebuildLists()
 	syncControls()
 	if armEntry then armEntry() end
 end
 
 local function buildConfig()
 	config = CreateFrame("Frame", "QuietHUDConfig", UIParent)
-	config:SetSize(360, 442)
+	config:SetSize(460, 660)
 	config:SetPoint("CENTER")
 	config:SetFrameStrata("DIALOG")
 	config:SetMovable(true)
@@ -1034,20 +1548,24 @@ local function buildConfig()
 		frame:SetPoint("TOPLEFT", 0, -68)
 		frame:SetPoint("BOTTOMRIGHT", 0, 44)
 		local y = -4
-		for _, item in ipairs(page.items) do
+		for idx, item in ipairs(page.items) do
 			if item[1] == "check" then
 				makeCheck(frame, y, item[3], item[2])
 				y = y - 26
-			elseif item[1] == "minimap" then
-				makeMinimapMode(frame, y - 8)
-				y = y - 116
 			elseif item[1] == "kinds" then
 				makeChatKinds(frame, y)
-				y = y - (18 + #CHAT_KINDS * 26)
+				y = y - (18 + #CHAT_KINDS * 22)
 			elseif item[1] == "bargrid" then
 				makeBarGrid(frame, y)
 				y = y - 220
+			elseif item[1] == "grid" then
+				y = y - makeTriggerGrid(frame, y, GRIDS[item[2]])
+			elseif item[1] == "note" then
+				y = y - makeNote(frame, y, item[2])
+			elseif item[1] == "heading" then
+				y = y - makeHeading(frame, y, item[2])
 			else
+				if page.items[idx - 1] and page.items[idx - 1][1] == "check" then y = y - 6 end
 				makeSlider(frame, y, item[3], item[2], item[4], item[5], item[6], item[7])
 				y = y - 46
 			end
@@ -1306,7 +1824,10 @@ targetButton:SetScript("PreClick", function(self, _, down)
 	local mobs = questMobsOnScreen(names, needles)
 	if not mobs then
 		self:SetAttribute("macrotext", "")
-		print("QuietHUD: no enemy nameplates to look at. Turn on enemy nameplates so the key can find quest mobs.")
+		if not run.plateWarned then
+			run.plateWarned = true
+			print("QuietHUD quest key: no enemy nameplates to look at. Turn on enemy nameplates so the key can find quest mobs (shown once per session, or untick the quest key in /qhud, Extras).")
+		end
 		trace("QuietHUD: there are no nameplates, so nothing was pressed")
 		return
 	end
@@ -1418,11 +1939,17 @@ local function scanForText(needle)
 end
 
 local function reportHits(text, hits)
-	print('QuietHUD: "' .. text .. '" is shown by (frame, then the frames that hold it):')
-	for i = 1, math.min(#hits, 6) do
-		print("  " .. hits[i].chain .. ' : "' .. hits[i].text:sub(1, 60) .. '"')
+	-- Also kept in the trace, so it can be read from the saved-variables file after a /reload.
+	local function say(msg)
+		print(msg)
+		DB.trace = DB.trace or {}
+		DB.trace[#DB.trace + 1] = string.format("%.1f find: %s", GetTime(), tostring(msg))
 	end
-	print("QuietHUD: to hide one, use /qhud add hidden <a frame name from the list>")
+	say('QuietHUD: "' .. text .. '" is shown by (frame, then the frames that hold it):')
+	for i = 1, math.min(#hits, 6) do
+		say("  " .. hits[i].chain .. ' : "' .. hits[i].text:sub(1, 60) .. '"')
+	end
+	say("QuietHUD: to hide one, use /qhud add hidden <a frame name from the list>")
 end
 
 local finder
@@ -1436,7 +1963,7 @@ local function findText(text)
 		reportHits(text, hits)
 		return
 	end
-	print('QuietHUD: nothing on screen contains "' .. text .. '" right now. Watching for 10 minutes, I will report when it shows up.')
+	print('QuietHUD: nothing on screen contains "' .. text .. '" right now. Watching for 30 minutes, I will report when it shows up.')
 	if not (C_Timer and C_Timer.NewTicker) then return end
 	local tries = 0
 	finder = C_Timer.NewTicker(1, function(ticker)
@@ -1446,7 +1973,7 @@ local function findText(text)
 			ticker:Cancel()
 			finder = nil
 			reportHits(text, found)
-		elseif tries >= 600 then
+		elseif tries >= 1800 then
 			ticker:Cancel()
 			finder = nil
 			print('QuietHUD: stopped watching for "' .. text .. '"')
@@ -1455,6 +1982,56 @@ local function findText(text)
 end
 
 -- Events
+-- /qhud mouse: for each right-click, prints the frame that received it, what it is like, and whether the camera started
+-- to turn. For finding out what takes a right-click that should turn the camera. The setting survives a reload.
+local mouseRegistered = false
+local function describeFrame(f)
+	local parts = {}
+	local okW, w = pcall(f.GetWidth, f)
+	local okH, h = pcall(f.GetHeight, f)
+	if okW and okH and type(w) == "number" and type(h) == "number" then parts[#parts + 1] = string.format("%.0fx%.0f", w, h) end
+	if f.IsMouseEnabled then
+		local ok, v = pcall(f.IsMouseEnabled, f)
+		if ok then parts[#parts + 1] = "mouse=" .. tostring(v) end
+	end
+	if f.IsMouseClickEnabled then
+		local ok, v = pcall(f.IsMouseClickEnabled, f)
+		if ok then parts[#parts + 1] = "clicks=" .. tostring(v) end
+	end
+	local okShown, shown = pcall(f.IsShown, f)
+	if okShown then parts[#parts + 1] = "shown=" .. tostring(shown) end
+	local okA, a = pcall(f.GetEffectiveAlpha, f)
+	if okA and type(a) == "number" then parts[#parts + 1] = string.format("alpha=%.2f", a) end
+	return table.concat(parts, ", ")
+end
+local function reportRightClick()
+	local list
+	if GetMouseFoci then
+		list = GetMouseFoci()
+	elseif GetMouseFocus then
+		list = { GetMouseFocus() }
+	end
+	local frame = list and list[1]
+	if not frame or frame == WorldFrame then
+		-- The click went to the game world, which is what should happen. Stay quiet unless the camera then fails to turn.
+		if C_Timer and C_Timer.After and IsMouselooking and IsMouseButtonDown then
+			C_Timer.After(0.3, function()
+				if IsMouseButtonDown("RightButton") and not IsMouselooking() then
+					print("QuietHUD: right-click went to the game world but the camera is not turning")
+				end
+			end)
+		end
+		return
+	end
+	print("QuietHUD: right-click landed on: " .. frameChain(frame) .. "  [" .. describeFrame(frame) .. "]")
+	for i = 2, math.min(#list, 4) do
+		print("QuietHUD:   also under the mouse: " .. frameChain(list[i]))
+	end
+	local okT, owner = pcall(function() return GameTooltip:IsShown() and GameTooltip:GetOwner() end)
+	if okT and owner then print("QuietHUD:   a tooltip is showing, owned by: " .. frameChain(owner) .. "  [" .. describeFrame(owner) .. "]") end
+	local okM, mm = pcall(function() return MinimapCluster:GetScale() end)
+	if okM and type(mm) == "number" then print(string.format("QuietHUD:   minimap size factor %.3f", mm)) end
+end
 local ev = CreateFrame("Frame")
 ev:RegisterEvent("ADDON_LOADED")
 ev:RegisterEvent("PLAYER_LOGIN")
@@ -1474,6 +2051,16 @@ for _, e in ipairs({ "ZONE_CHANGED", "ZONE_CHANGED_INDOORS", "ZONE_CHANGED_NEW_A
 end
 for e in pairs(kindOf) do pcall(ev.RegisterEvent, ev, e) end
 for e in pairs(chatKindOf) do pcall(ev.RegisterEvent, ev, e) end
+-- The mouse press event is only listened to while the watcher is on, so none of this runs for anyone who has not asked.
+applyMouseWatch = function()
+	if DB.watchMouse and not mouseRegistered then
+		mouseRegistered = pcall(ev.RegisterEvent, ev, "GLOBAL_MOUSE_DOWN")
+	elseif not DB.watchMouse and mouseRegistered then
+		pcall(ev.UnregisterEvent, ev, "GLOBAL_MOUSE_DOWN")
+		mouseRegistered = false
+	end
+end
+applyMouseWatch()
 
 ev:SetScript("OnEvent", function(_, event, arg1, _, _, arg4)
 	if event == "ADDON_LOADED" then
@@ -1485,6 +2072,7 @@ ev:SetScript("OnEvent", function(_, event, arg1, _, _, arg4)
 		discoverBars()
 		rebuildLists()
 	elseif event == "PLAYER_LOGOUT" then
+		pcall(restoreShift)
 		persist()
 		writeMacro()
 		QuietHUDDB = DB
@@ -1501,6 +2089,8 @@ ev:SetScript("OnEvent", function(_, event, arg1, _, _, arg4)
 			hooksecurefunc("ToggleSheath", function() sheathToggled("hook") end)
 			hooked = true
 		end
+	elseif event == "GLOBAL_MOUSE_DOWN" then
+		if DB.watchMouse and arg1 == "RightButton" then reportRightClick() end
 	elseif event == "PLAYER_REGEN_DISABLED" then
 		if DB.inCombat then drawn = true end
 	elseif event == "PLAYER_REGEN_ENABLED" then
@@ -1530,6 +2120,7 @@ end)
 
 BINDING_HEADER_QUIETHUD = "QuietHUD"
 BINDING_NAME_QUIETHUD_TOGGLE = "Show/hide HUD"
+BINDING_NAME_QUIETHUD_PEEK = "Hold to show the whole HUD"
 _G["BINDING_NAME_CLICK QuietHUDTargetButton:LeftButton"] = "Target highlighted quest mob"
 
 SLASH_QUIETHUD1 = "/qhud"
@@ -1578,23 +2169,98 @@ SlashCmdList["QUIETHUD"] = function(msg)
 				.. ", TargetFrame=" .. alpha("TargetFrame") .. ", MinimapCluster=" .. alpha("MinimapCluster"))
 			local okSpeed, speed = pcall(GetUnitSpeed, "player")
 			local speedText = not okSpeed and "unreadable" or ((issecretvalue and issecretvalue(speed)) and "hidden by the game" or tostring(speed))
-			print(string.format("QuietHUD minimap: mode=%s, Minimap shown=%s, alpha=%s, walking speed=%s, moving detected by=%s, moving window left=%.1fs, zone-change window=%s, indoors=%s, in %s / %s",
-				MINIMAP_MODES[minimapMode()][1], tostring(Minimap and Minimap:IsShown()), alpha("Minimap"), speedText,
+			print(string.format("QuietHUD minimap: trigger number=%s, Minimap shown=%s, alpha=%s, walking speed=%s, moving detected by=%s, moving window left=%.1fs, zone-change window=%s, indoors=%s, in %s / %s",
+				tostring(DB.trigMap), tostring(Minimap and Minimap:IsShown()), alpha("Minimap"), speedText,
 				lastMoveReason, math.max(0, moveUntil - GetTime()), tostring(GetTime() < mapUntil),
 				tostring(IsIndoors and IsIndoors() or false), tostring(GetZoneText()), tostring(GetSubZoneText())))
+				print("QuietHUD minimap area (remembered): " .. (mapRect and string.format("%.0f,%.0f to %.0f,%.0f", mapRect[1], mapRect[2], mapRect[3], mapRect[4]) or "nothing yet")
+					.. ", mouse over it now: " .. tostring(mouseInMapRect()))
 		end)
 		if not ok then print("QuietHUD: could not read the state (" .. tostring(err) .. ")") end
 	elseif cmd == "instance" then
 		local ok, line = pcall(function()
 			local inside, kind = IsInInstance()
-			return "IsInInstance = " .. tostring(inside) .. ", " .. tostring(kind) .. ", option on: "
-				.. tostring(DB.inInstance and true or false) .. ", HUD forced on: " .. tostring(inDungeonOrRaid())
+			return "IsInInstance = " .. tostring(inside) .. ", " .. tostring(kind) .. ", counts as a dungeon or raid: "
+				.. tostring(inDungeonOrRaid())
 		end)
 		print("QuietHUD: " .. (ok and line or "could not read the instance state"))
 	elseif cmd == "bars" then
 		print("QuietHUD action bar frames found: " .. table.concat(discovered, ", "))
 	elseif cmd == "where" then
-		print("QuietHUD: frame under mouse = " .. tostring(frameUnderMouse()))
+		-- Prints the frame under the mouse and the frames that hold it. With a number, waits that many seconds first,
+		-- so the mouse can be moved onto a frame after the command is typed.
+		local function report()
+			local frame
+			if GetMouseFoci then
+				local list = GetMouseFoci()
+				frame = list and list[1]
+			elseif GetMouseFocus then
+				frame = GetMouseFocus()
+			end
+			if not frame then
+				print("QuietHUD: nothing is under the mouse")
+			else
+				print("QuietHUD: under the mouse: " .. frameChain(frame) .. "  (frame names you can use are the words that are not in <angle brackets>)")
+			end
+		end
+		local delay = tonumber(rest)
+		if delay and delay > 0 and C_Timer and C_Timer.After then
+			print("QuietHUD: move the mouse onto the frame now, reporting in " .. delay .. " seconds")
+			C_Timer.After(delay, report)
+		else
+			report()
+		end
+	elseif cmd == "mouse" then
+		DB.watchMouse = not DB.watchMouse
+		applyMouseWatch()
+		if DB.watchMouse and not mouseRegistered then
+			DB.watchMouse = false
+			print("QuietHUD: this client does not tell addons about mouse presses. Use /qhud where 6 instead and leave the mouse where the camera will not turn")
+		else
+			persistSoon()
+			print(DB.watchMouse and "QuietHUD: watching right-clicks, and it stays on after a reload. It says nothing while the camera works; when a right-click is taken by something else it prints what. /qhud mouse again stops" or "QuietHUD: stopped watching right-clicks")
+		end
+	elseif cmd == "peek" then
+		-- The "hold to show" key sends "down" when it is pressed and "up" when it is released. Typed without either, it toggles.
+		-- It runs out after two minutes, so a key release the game never saw (focus lost) cannot leave the HUD stuck on.
+		local peekNow = GetTime()
+		if rest == "down" then
+			peekUntil = peekNow + 120
+		elseif rest == "up" then
+			peekUntil = 0
+		else
+			peekUntil = peekNow < peekUntil and 0 or peekNow + 120
+		end
+	elseif cmd == "shift" then
+		if rest == "on" or rest == "off" then
+			DB.pixelShift = (rest == "on")
+			persistSoon()
+			print("QuietHUD: pixel shift is " .. (DB.pixelShift and "on" or "off, and the frames go back where they were (out of combat)"))
+		elseif rest == "now" then
+			shiftNow()
+			print("QuietHUD: pixel shift moves on to its next position within a second")
+		else
+			shiftReport()
+		end
+	elseif cmd == "arrow" then
+		navForce = not navForce
+		print("QuietHUD: the nav group (the arrow) is now " .. (navForce and "kept ON until you use /qhud arrow again" or "back to its automatic behavior"))
+	elseif cmd == "nav" then
+		print("QuietHUD nav group: " .. (#LISTS.nav == 0 and "empty, add a frame with /qhud add nav <frame name>" or table.concat(LISTS.nav, ", ")))
+		for _, name in ipairs(LISTS.nav) do
+			local f = _G[name]
+			if not f then
+				print("  " .. name .. ": there is no frame with that name (yet)")
+			else
+				local rec = navHosts[f]
+				local okP, parent = pcall(f.GetParent, f)
+				local parentName = (okP and parent and (parent.GetName and parent:GetName() or "<unnamed>")) or "?"
+				print(string.format("  %s: moved into our container=%s, parent=%s, own opacity %.2f, container opacity %s, effective opacity %.2f, shown=%s",
+					name, tostring(rec ~= nil), tostring(parentName), f:GetAlpha(), rec and string.format("%.2f", rec.host:GetAlpha()) or "n/a",
+					f:GetEffectiveAlpha(), tostring(f:IsShown())))
+			end
+		end
+		if navLastError then print("QuietHUD: the last problem moving a frame into the container: " .. navLastError) end
 	elseif cmd == "alpha" then
 		local name, value = rest:match("^(%S+)%s+([%d%.]+)$")
 		local frame = name and _G[name]
@@ -1673,6 +2339,63 @@ SlashCmdList["QUIETHUD"] = function(msg)
 			print("QuietHUD: " .. #found .. " method(s) of " .. name .. (filter ~= "" and (' matching "' .. filter .. '"') or "")
 				.. ": " .. table.concat(found, ", "))
 		end
+	elseif cmd == "around" then
+		-- Lists the frames and background images that sit over the same area as a frame, to find things like the
+		-- background box of a chat window. Everything printed is also kept in the trace (read after a /reload).
+		local function say(msg)
+			print(msg)
+			DB.trace = DB.trace or {}
+			DB.trace[#DB.trace + 1] = string.format("%.1f around: %s", GetTime(), tostring(msg))
+		end
+		local target = rest ~= "" and _G[rest] or nil
+		if not (target and target.GetRect) then
+			print("QuietHUD: usage /qhud around <frame name>, for example /qhud around ChattynatorHyperlinkHandler")
+		else
+			local function rectOf(object)
+				if object.GetScaledRect then return object:GetScaledRect() end
+				return object:GetRect()
+			end
+			local L, B, W, H = rectOf(target)
+			if not L then
+				print("QuietHUD: that frame has no position on the screen right now")
+			else
+				local area = W * H
+				local function overlap(l, b, w, h)
+					local x = math.max(0, math.min(L + W, l + w) - math.max(L, l))
+					local y = math.max(0, math.min(B + H, b + h) - math.max(B, b))
+					return x * y
+				end
+				local found = {}
+				local frame = EnumerateFrames()
+				while frame do
+					pcall(function()
+						if (frame.IsForbidden and frame:IsForbidden()) or not frame:IsVisible() then return end
+						if frame ~= target then
+							local l, b, w, h = rectOf(frame)
+							if l and w > 0 and h > 0 and overlap(l, b, w, h) >= 0.6 * area and w * h <= 3 * area then
+								found[#found + 1] = { size = w * h, text = string.format("frame  %s  (%.0fx%.0f, strata %s, level %d, alpha %.2f)",
+									frameChain(frame), w, h, tostring(frame:GetFrameStrata()), frame:GetFrameLevel(), frame:GetAlpha()) }
+							end
+						end
+						for _, region in ipairs({ frame:GetRegions() }) do
+							if region.GetObjectType and region:GetObjectType() == "Texture" and region:IsVisible() then
+								local l, b, w, h = rectOf(region)
+								if l and w > 0 and h > 0 and overlap(l, b, w, h) >= 0.6 * area and w * h <= 3 * area then
+									local okColor, r, g, bl, a = pcall(region.GetVertexColor, region)
+									found[#found + 1] = { size = w * h, text = string.format("texture on  %s  (%.0fx%.0f, layer %s, alpha %.2f, colour %s)",
+										frameChain(frame), w, h, tostring(region:GetDrawLayer()), region:GetAlpha(),
+										okColor and string.format("%.2f/%.2f/%.2f/%.2f", r or 0, g or 0, bl or 0, a or 0) or "?") }
+								end
+							end
+						end
+					end)
+					frame = EnumerateFrames(frame)
+				end
+				table.sort(found, function(x, y) return math.abs(x.size - area) < math.abs(y.size - area) end)
+				say(string.format("QuietHUD around %s (%.0fx%.0f): %d frame(s) or image(s) cover the same area", rest, W, H, #found))
+				for i = 1, math.min(#found, 14) do say("  " .. found[i].text) end
+			end
+		end
 	elseif cmd == "find" then
 		if rest == "" then
 			print("QuietHUD: usage /qhud find <part of the text>, for example /qhud find refresh")
@@ -1688,7 +2411,7 @@ SlashCmdList["QUIETHUD"] = function(msg)
 			if g == group then valid = true end
 		end
 		if not valid then
-			print("QuietHUD: usage /qhud add bars|player|hud|quest|map|hidden [frame name] (or hover the frame first)")
+			print("QuietHUD: usage /qhud add bars|player|hud|quest|map|chat|nav|rxp|shift|hidden [frame name] (or hover the frame first)")
 		elseif not name then
 			print("QuietHUD: no named frame under the mouse")
 		elseif not _G[name] then
@@ -1704,6 +2427,6 @@ SlashCmdList["QUIETHUD"] = function(msg)
 			print("QuietHUD " .. g .. " extras: " .. table.concat(DB.extra[g] or {}, ", "))
 		end
 	else
-		print("QuietHUD: /qhud (menu), toggle, reset, target, quest, map, chat, bars, instance, state, debug, where, hotkeys, alpha <frame> <0-1>, chain <frame>, find <text>, methods <frame> [text], add <group> [name], remove <name>, list")
+		print("QuietHUD: /qhud (menu), toggle, peek, shift, reset, target, quest, map, chat, bars, instance, state, debug, where, hotkeys, arrow, nav, mouse, alpha <frame> <0-1>, chain <frame>, around <frame>, find <text>, methods <frame> [text], add <group> [name], remove <name>, list")
 	end
 end

@@ -6,22 +6,30 @@ optional, and nothing is hidden unless you turn it on.
 
 ## What it does
 
-Open the settings with `/qhud`. There are five pages.
+Open the settings with `/qhud`. There are six pages.
 
 **Show when** (what brings the HUD back)
 - Master on/off switch, opacity when active (something woke the HUD), and opacity when idle (nothing is
   going on, 0 hides it completely). Both apply to everything that fades, not just one element.
-- Show in combat, while your weapon is drawn, while you have a target, or always in dungeons and raids.
-- Show the action bars on mouse over, and how long the HUD stays after combat.
+- Show in combat, while your weapon is drawn, or while you have a target. These three decide when the HUD is "awake".
+- How long the HUD stays after combat. Together these decide when the HUD is "awake", one of the things that
+  can bring each element up (see Elements).
 
-**Elements** (what fades, each one optional)
-- Action bars, player frame, target/party/raid frames and buffs, minimap, objective tracker, chat.
-- The minimap has its own row with a button that cycles four modes: follows the HUD (fades with everything
-  else), only while you are moving, always shown, or always on but dimmed. Chat can either stay fully opaque
-  or use the HUD opacity.
+**Elements** (what fades, and what brings each one back)
+- A grid with a row for the action bars, player frame, enemy, party and other frames and buffs, objective tracker,
+  chat, minimap, bags bar and menu bar. Each row has a Fade box, then one box per thing that can bring that element
+  up: Awake (combat, a drawn weapon or a target, from the Show when page), While moving, Mouse over and Dungeon or
+  raid (while you are inside one), and Hide in combat, which beats the rest. The tracker, chat and minimap also have New
+  info (quest progress for the tracker, new messages for chat, a zone change for the minimap).
+- Mouse over is optional for every element. For "only on mouse over", leave just that one box ticked in the row.
+  The defaults are what each element did before the grid existed. The durability icon and the loss of control alert follow the Enemy, party, buffs row. An element with only Fade ticked sits at the idle
+  opacity all the time, so with idle at 0 it stays hidden, which is a way to keep the bags bar or the menu bar off.
+- The minimap has no mode button any more. Awake makes it follow the HUD, While moving shows it only while you
+  move, an unticked Fade never fades it, and "Minimap opacity when idle" above 0 keeps it faintly visible. Chat can
+  either stay fully opaque or use the HUD opacity.
 
 **Bars** (per action bar, Action Bars 1 to 8)
-- Whether each bar fades, and whether to hide its hotkey text or its macro names.
+- Whether each bar fades (while Fade is ticked for Action bars on the Elements page, the master switch), and whether to hide its hotkey text or its macro names.
 - Optionally shorten the hotkey text on all bars, and on the pet, stance and possess bars: Num Pad 1 shows N1, Mouse Button 4 shows M4, Ctrl plus Num Pad 1 shows cN1, Shift plus 1
   shows s1, and so on, so long key names no longer show as "NUM...". Turning it off puts the original text back.
 
@@ -32,8 +40,9 @@ Open the settings with `/qhud`. There are five pages.
   channel chatter, loot and nearby players do not keep waking it. `/qhud debug` prints the event that woke it.
 
 **Extras**
-- How long the tracker and minimap stay after new activity.
-- Optional hiding of the bags bar, the menu bar and the beta Issue Reporter.
+- How long new quest progress keeps the tracker up, and a zone change keeps the minimap up. (After you stop moving, the "While moving" boxes hold for a fixed 1.5 seconds.)
+- A checkbox to hide the beta Issue Reporter. (The bags bar and the menu bar are rows of the Elements grid.)
+- A tooltip opacity slider (the whole tooltip, text included), and an experimental pixel shift (below).
 - The quest-mob targeting key (work in progress), off by default.
 - Reset to defaults.
 
@@ -63,27 +72,28 @@ your Toggle Sheath key. Draw your weapon to bring the HUD up, sheathe it to send
 **Show while I have a target.** For people who want the HUD whenever they are interacting with something,
 whether or not it is a fight.
 
-**Always show in dungeons and raids.** Inside a dungeon or raid instance (any instance except battlegrounds
-and arenas) the HUD stays fully shown, including the minimap even if it is set to show only while moving,
-and fades again when you leave. Chat still follows its own rules. If it does not seem to work, run
-`/qhud instance` inside the instance and report what it prints.
+**Dungeons and raids.** Every row of the Elements grid has a Dungeon or raid box. Tick one and that element stays shown while you are inside a dungeon or raid
+instance (any instance except battlegrounds and arenas), and fades again when you leave. If it does not seem to
+work, run `/qhud instance` inside the instance and report what it prints.
 
-**Minimap mode.** Click the button on the Elements page to cycle. "Follows the HUD" treats the minimap like
-every other element. "Only while I am moving" fades it out the moment you stand still and brings it back when
-you move or change zone, which suits a minimap that is only really useful while travelling. "Always shown"
-never fades it. "Always on, dimmed" keeps it faintly visible at its own opacity (a slider appears when you pick
-this mode) and brightens it when you move or the rest of the HUD wakes up. The minimap can be made transparent, with catches. The game draws a blank map in building interiors if the minimap
-is hidden and shown again, or is partly transparent while it redraws the interior. So a faded-out minimap is shrunk to
-almost nothing instead of hidden, and indoors the map stays fully opaque and is dimmed with a dark layer instead
-(which also dims the player and quest arrows, which ignore transparency). Outdoors it uses real transparency. By
-default it stays fully solid while showing; tick "Use the HUD opacity on the minimap" (Elements page) to make it
-follow "Opacity when active". "Darken it instead of fading it" uses the dark layer everywhere, not just indoors.
-
+**Minimap.** Its row in the Elements grid works like any other. Awake makes it follow the HUD. While moving fades it
+out when you stand still and brings it back when you move, which suits a minimap that is only really useful while
+travelling, and New info brings it back for a few seconds after a zone change. Untick Fade to never fade it, and set
+"Minimap opacity when idle" above 0 to keep it faintly visible. The minimap can be made transparent, with catches. The
+game draws a blank map in building interiors if the minimap is hidden and shown again, or is partly transparent while
+it redraws the interior. So a faded-out minimap is shrunk to almost nothing instead of hidden, and indoors the map
+stays fully opaque and is dimmed with a dark layer instead (which also dims the player and quest arrows, which ignore
+transparency). Outdoors it uses real transparency. By default it stays fully solid while showing; tick "Minimap: use
+the HUD opacity when shown, not solid" to make it follow "Opacity when active". "Minimap: darken it instead of
+fading it" uses the dark layer everywhere, not just indoors.
 **Chat uses the HUD opacity.** By default chat is fully opaque when it appears, so it stays readable.
 Tick this if you want it dimmed to the same level as everything else.
 
-**Hide bags, menu bar, Issue Reporter.** These sit on screen permanently and burn in fastest. Hiding them
-does not disable them: their keybinds still work.
+**Bags bar, menu bar, Issue Reporter.** These sit on screen permanently and burn in fastest. The bags bar and the menu
+bar are rows of the Elements grid: tick Fade and leave the other boxes empty to keep one hidden (at idle opacity 0), or
+tick Awake and Mouse over to have it appear when needed. Hiding them does not disable them: their keybinds still work.
+
+**Pixel shift (Extras page, experimental, off by default).** OLED panels can burn in from shapes that stay in one place. With this on, the minimap and the objective tracker (plus any frame you add with `/qhud add shift <frame name>`, and two checkboxes for the action bars, bags and menu bar and for the player, target and party frames) move a couple of pixels every few minutes, around a small circle, so the wear is spread out. You choose the distance (1 to 4 pixels) and the minutes between moves. It never changes a saved position: a frame is put back exactly where it was when you turn the option off, when Edit Mode opens and when you log out, and nothing is moved during combat. The action bars and unit frames are protected, so they only move when you are out of combat: in a long fight they stay where they are, and the shift benefits you across fights, not within one. A frame that is anchored to another shifted frame moves with it instead of being shifted twice. If another addon or the game moves a frame while it is shifted, the shift steps aside and takes the new position as the normal one. `/qhud shift` shows what it is doing and `/qhud shift off` puts everything back at once.
 
 ## Quest-mob targeting (work in progress)
 
@@ -129,24 +139,45 @@ the nameplates to show. The message "quest targeting is off" means the Extras ch
 | --- | --- |
 | `/qhud` | Open the settings menu |
 | `/qhud toggle` | Flip the "weapon drawn" state by hand |
+| `/qhud peek` | Show the whole HUD for two minutes, or until you use it again. The "Hold to show the whole HUD" key uses `peek down` and `peek up` |
+| `/qhud shift [on\|off\|now]` | Pixel shift (experimental): show what it is doing, turn it on or off, or move to its next position now. Off puts every frame back where it was |
 | `/qhud reset` | Reset all settings to defaults |
 | `/qhud quest`, `/qhud map`, `/qhud chat` | Show that element for a few seconds |
 | `/qhud bars` | List the action bar frames the addon found |
 | `/qhud state` | Print whether the HUD is currently active or idle, what triggered it, and the real opacity of a few frames |
 | `/qhud instance` | Print what the game says about your instance, and whether the HUD is being held on |
-| `/qhud where` | Print the name of the frame under the mouse |
+| `/qhud where [seconds]` | Print the frame under the mouse and the frames that hold it. With a number of seconds it waits first, so you can move the mouse onto a frame |
+| `/qhud mouse` | Watches your right-clicks and prints which frame took one that should have turned the camera, with details about that frame. It says nothing while the camera works. It stays on after a reload until you type it again |
+| `/qhud arrow` | Keep the nav group (the arrow) visible until you use it again. Handy as a macro |
 | `/qhud hotkeys` | Show the hotkey text of a few action buttons: what the game gives, what is shown, and what the shortening rules make of it |
 | `/qhud methods <frame> [text]` | List the functions a frame offers, optionally only those whose name contains some text. For finding out what can be changed on a frame |
-| `/qhud find <text>` | Find which frame is showing some text, e.g. a notice you want to hide. If it is not on screen it keeps watching for 10 minutes |
-| `/qhud add bars\|player\|hud\|quest\|map\|hidden [frame name]` | Put a frame into a group (saved). Without a name it uses the frame under the mouse |
+| `/qhud find <text>` | Find which frame is showing some text, e.g. a notice you want to hide. If it is not on screen it keeps watching for 30 minutes |
+| `/qhud add bars\|player\|hud\|quest\|map\|chat\|nav\|shift\|hidden [frame name]` | Put a frame into a group (saved). Without a name it uses the frame under the mouse |
 | `/qhud remove <name>`, `/qhud list` | Take a frame you added back out, or list them |
 | `/qhud debug` | Toggle debug output for the sheath detection and quest targeting |
+
+The `nav` group is for a direction arrow or similar, for example a quest guide's waypoint arrow. Its row of the trigger grid (on the RXP tab) chooses when it
+shows: while you move, when the HUD is awake, on mouse over, and whether it hides in combat. It is faded otherwise. `/qhud nav` says whether a frame is hooked up. Frames in it are faded through a container of ours, so a frame that
+sets its own opacity to show and hide itself does not fight with the fade.
+
+**RXP** (only useful with the RestedXP guide addon installed)
+- Fade its guide window, its active targets and active items windows (one checkbox for both) and its waypoint arrow.
+  No commands needed.
+- Two sliders set how solid the guide, targets and items windows are when shown and when idle (0 hides them completely, a
+  small value leaves them faintly visible), and the arrow has its own pair.
+- A row of trigger columns for the guide, targets and items together, and one for the arrow, the same as on the Elements
+  page. Mouse over counts the whole guide window, not only its bottom bar.
+
+The `chat` group is for other chat frames that should fade with the chat, such as the window or background of a chat
+replacement addon: find the frame with `/qhud find <text from a chat message>`, then `/qhud add chat <frame name>`.
 
 `/qhud add` is for frames the addon does not know about, such as a frame from another addon: hover
 over it and run the command with the group you want it to fade with (or `hidden` to always hide it).
 
-Keybinds: Esc, Options, Keybindings, AddOns, QuietHUD. You can bind "Show/hide HUD" and, if you turn
-the feature on, "Target highlighted quest mob".
+Keybinds: Esc, Options, Keybindings, AddOns, QuietHUD. You can bind "Show/hide HUD", "Hold to show the whole
+HUD" (hold it to see everything at once, let go and it fades again), and, if you turn the feature on, "Target highlighted
+quest mob". If you would rather not use a key binding, the Extras page has three checkboxes that show the whole HUD while
+you hold Alt, Ctrl or Shift.
 
 ## Notes and limits
 
