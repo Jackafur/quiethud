@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.6
+
+- The quest key (experimental, off by default) now works more like Tab, but only through quest mobs. When every enemy with a nameplate around you is a quest mob, the press is the game's own Tab, which only has quest mobs to choose from and steps through identical ones too. When other enemies are mixed in, it goes to the next kind of quest mob by name and puts the skull on it, so those enemies are skipped. The game does not let an addon target a nameplate directly and a name cannot tell identical mobs apart, so in that mixed case a pack of the same mob counts as one stop. In combat the key uses what it prepared before the fight: a plain Tab if only quest mobs were near, otherwise the nearest quest mob by name.
+- Fixed the right mouse button failing to turn the camera near RestedXP's minimap pins. Fading the minimap shrinks it to almost nothing, and an addon that measures text on it during that time (RestedXP's step pins) ended up with a frame as big as the screen that took the mouse when the minimap came back. Frames on the minimap that are far bigger than the minimap are now cut back to a small size when it comes back, so their tooltips still work.
+- Fixed the tooltip opacity setting making tooltips flash at full opacity when an addon re-shows them many times a second (RestedXP's map pin tooltips did). The opacity is now applied the moment a tooltip is shown, and a tooltip the game is fading out is left alone.
+- The quest key stays on the quest you picked. The game re-tracks quests by itself when one makes progress (a kill, a loot), which used to send the key to a different quest's mobs. Now a change that comes right after quest progress is ignored, and clicking a quest yourself still switches the key. The quest is dropped once it is complete or gone from the log. With debug mode on, every press names the quest the key is working from. Outside debug mode the key stays quiet and only says why when a press does nothing, at most once every 3 seconds.
+- When no quest mob is on a nameplate, a "kill X" objective is now targeted by name, which reaches as far as /target does, even with enemy nameplates off or the mob too far for one. Item-drop quests still need a nameplate.
+
 ## 1.1.5
 
 - New trigger grid on the Elements page. The action bars, player frame, enemy, party and other frames, objective tracker

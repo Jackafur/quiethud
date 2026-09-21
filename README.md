@@ -43,7 +43,7 @@ Open the settings with `/qhud`. There are six pages.
 - How long new quest progress keeps the tracker up, and a zone change keeps the minimap up. (After you stop moving, the "While moving" boxes hold for a fixed 1.5 seconds.)
 - A checkbox to hide the beta Issue Reporter. (The bags bar and the menu bar are rows of the Elements grid.)
 - A tooltip opacity slider (the whole tooltip, text included), and an experimental pixel shift (below).
-- The quest-mob targeting key (work in progress), off by default.
+- The quest-mob targeting key (experimental), off by default.
 - Reset to defaults.
 
 Chat comes back on a new message, when you press Enter, or when the mouse is over it. The objective
@@ -95,38 +95,35 @@ tick Awake and Mouse over to have it appear when needed. Hiding them does not di
 
 **Pixel shift (Extras page, experimental, off by default).** OLED panels can burn in from shapes that stay in one place. With this on, the minimap and the objective tracker (plus any frame you add with `/qhud add shift <frame name>`, and two checkboxes for the action bars, bags and menu bar and for the player, target and party frames) move a couple of pixels every few minutes, around a small circle, so the wear is spread out. You choose the distance (1 to 4 pixels) and the minutes between moves. It never changes a saved position: a frame is put back exactly where it was when you turn the option off, when Edit Mode opens and when you log out, and nothing is moved during combat. The action bars and unit frames are protected, so they only move when you are out of combat: in a long fight they stay where they are, and the shift benefits you across fights, not within one. A frame that is anchored to another shifted frame moves with it instead of being shifted twice. If another addon or the game moves a frame while it is shifted, the shift steps aside and takes the new position as the normal one. `/qhud shift` shows what it is doing and `/qhud shift off` puts everything back at once.
 
-## Quest-mob targeting (work in progress)
+## Quest-mob targeting (experimental)
 
-A key that targets a mob your quest needs and puts the skull marker on it. **It is a work in progress**: it
-depends on how the beta reports quest and tooltip data, and it cannot do everything a Tab key can (see below).
-It is off by default, and bug reports are welcome. Here is how to use it.
+A key that works like Tab, but only through the mobs your quest needs. **It is experimental**: it depends on how
+the beta reports quest and tooltip data. It is off by default, and bug reports are welcome. Here is how to use it.
 
 1. **Turn it on.** Open `/qhud`, go to the **Extras** page, and tick "Enable quest-mob targeting key".
 2. **Bind a key.** Esc, Options, Keybindings, AddOns, QuietHUD, "Target highlighted quest mob". (In a
    macro, `/click QuietHUDTargetButton` does the same.)
-3. **Turn on enemy nameplates.** The key reads the nameplates of the enemies around you to find quest mobs.
-   With nameplates off it tells you so and does nothing. If no nearby enemy is a quest mob it also does
-   nothing: no target change and no skull.
+3. **Turn on enemy nameplates.** The key reads the nameplates of the enemies around you to find quest mobs. With
+   nameplates off it can still reach a "kill X" objective by name (see below), but not item-drop quests.
 4. **Select the quest.** In the objective tracker, click the quest you are working on so it is the
    highlighted (tracked) quest. Its icon gets a glow, and the key then only looks for mobs that quest needs.
-   This works for both "kill X" and item-drop quests. If no quest is highlighted, the key tries every quest in
-   your log, but that is less tested, so clicking the quest is the reliable way.
-5. **Stand near the mobs and press the key.** It targets the nearest mob the quest needs and puts the skull on
-   it. It never targets a mob that is not a quest mob. Press it again and it moves to a different kind of
-   quest mob if there is one.
+   This works for both "kill X" and item-drop quests. The key stays on the quest you picked, even when the game tracks a different one by itself after quest progress, until you click another quest or the quest is done. If no quest is tracked, the key tries every quest in your log, but that is less tested, so clicking the quest is the reliable way. With `/qhud debug` on, each press says which quest it used.
+5. **Stand near the mobs and press the key.** It targets a quest mob and puts the skull on it. Press it again and it goes to the next one, nearest first, then round again, the way Tab does. It never targets a mob that is not a quest mob.
 
 What counts as a quest mob: for "kill X" objectives, mobs with that name. For objectives such as "collect
 X", mobs whose tooltip mentions the quest or the item. It skips mobs that another player has already tagged.
 
-What it cannot do: pick one mob out of several that share the same name. It targets by name, so with a pack
-of identical mobs it goes to the nearest one. Kill it and press again for the next. This is a limit of the
-game, which lets an addon change the target only once per key press, so it cannot press Tab repeatedly until
-it reaches a quest mob. Pressing Tab yourself has the same problem, because it cycles through every enemy.
+How it targets: the game does not let an addon target a nameplate directly (the attempt ends with your own character targeted), and a name cannot tell identical mobs apart. So the key looks at the enemies with a nameplate around you and picks one of two ways (with `/qhud debug` on, each press says which).
 
-In combat the key still works, but as a plain Tab plus the skull marker. The game locks addon changes to
-secure buttons during combat, so the addon cannot look at the mobs and pick a quest mob there. It goes back
-to the full quest-aware behavior as soon as combat ends.
+- **Only quest mobs are around.** If two or more quest mobs have a nameplate and no other attackable enemy does, the press is the game's own Tab. Tab then only has quest mobs to choose from, and it steps through identical ones too, so a pack of the same mob is a row of stops.
+- **Other enemies are mixed in.** The key targets a quest mob by name, so it can skip the others, but a name always goes to the nearest mob with that name. It steps between different kinds of quest mob, for example a boar, then a nightsaber, then a boar again, and skips the identical ones. To reach a second mob of the same kind, move so it is the nearest, or use Tab or click it.
 
+Range: the key only sees mobs that have a nameplate, and how far nameplates show is a game setting (the
+`nameplateMaxDistance` setting), which is often shorter than what Tab or `/target` reach. When no quest mob is on a
+nameplate, a "kill X" objective is targeted by name, which reaches as far as `/target` does. It cannot do that for
+item-drop quests, because it does not know which mobs drop the item.
+
+In combat the game locks addon changes to the key, so the key uses what it prepared before the fight. If every enemy near you was a quest mob it is a plain Tab. Otherwise it targets the nearest quest mob it had seen (or the quest's first kill objective) by name with the skull, and it cannot step to other kinds until combat ends. If it knew of no quest mob it is a plain Tab plus the skull.
 Troubleshooting: "no quest mob found among the nearby enemies" means none of the enemies with a nameplate
 matches the highlighted quest. Check that the right quest is highlighted and that you are close enough for
 the nameplates to show. The message "quest targeting is off" means the Extras checkbox is not ticked.
@@ -184,7 +181,7 @@ you hold Alt, Ctrl or Shift.
 - WoW does not expose whether your weapon is sheathed, so the addon follows the Toggle Sheath key and
   assumes the weapon is drawn when combat starts. If it drifts, use `/qhud toggle`.
 - Hidden frames still work with their keybinds.
-- Quest-mob targeting is a work in progress, and in combat it is only a plain Tab plus the skull.
+- Quest-mob targeting is experimental. When other enemies are mixed in with the quest mobs it steps between kinds of quest mob but not between identical ones, and in combat it can only use what it prepared before the fight.
 
 ## Settings on the Forever beta
 
