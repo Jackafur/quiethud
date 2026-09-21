@@ -6,50 +6,42 @@ optional, and nothing is hidden unless you turn it on.
 
 ## What it does
 
-Open the settings with `/qhud`. There are six pages.
+Open the settings with `/qhud`. There are seven pages.
 
 **Show when** (what brings the HUD back)
-- Master on/off switch, opacity when active (something woke the HUD), and opacity when idle (nothing is
-  going on, 0 hides it completely). Both apply to everything that fades, not just one element.
-- Show in combat, while your weapon is drawn, or while you have a target. These three decide when the HUD is "awake".
-- How long the HUD stays after combat. Together these decide when the HUD is "awake", one of the things that
-  can bring each element up (see Elements).
+- Master on/off switch.
+- Show in combat, while your weapon is drawn, or while you have a target, and how long the HUD stays after combat. These decide when the HUD is "awake", one of the things that can bring each element up (see Elements).
+- Show the whole HUD on demand: while you hold Alt, Ctrl or Shift, or with a key you bind (Esc, Options, Keybindings, AddOns, QuietHUD).
 
 **Elements** (what fades, and what brings each one back)
-- A grid with a row for the action bars, player frame, enemy, party and other frames and buffs, objective tracker,
-  chat, minimap, bags bar and menu bar. Each row has a Fade box, then one box per thing that can bring that element
-  up: Awake (combat, a drawn weapon or a target, from the Show when page), While moving, Mouse over and Dungeon or
-  raid (while you are inside one), and Hide in combat, which beats the rest. The tracker, chat and minimap also have New
-  info (quest progress for the tracker, new messages for chat, a zone change for the minimap).
-- Mouse over is optional for every element. For "only on mouse over", leave just that one box ticked in the row.
-  The defaults are what each element did before the grid existed. The durability icon and the loss of control alert follow the Enemy, party, buffs row. An element with only Fade ticked sits at the idle
-  opacity all the time, so with idle at 0 it stays hidden, which is a way to keep the bags bar or the menu bar off.
-- The minimap has no mode button any more. Awake makes it follow the HUD, While moving shows it only while you
-  move, an unticked Fade never fades it, and "Minimap opacity when idle" above 0 keeps it faintly visible. Chat can
-  either stay fully opaque or use the HUD opacity.
+- A grid with a row for the action bars, player frame, target and focus, pet frame, party and raid, buffs and debuffs, cooldown trackers, damage meter, alerts (the durability icon, the loss of control alert and external defensives), bags bar, menu bar, frames you added, objective tracker, chat and minimap. Each row has a Fade box, then one box per thing that can bring that element up: Awake (combat, a drawn weapon or a target, from the Show when page), While moving, Mouse over and Dungeon or raid (while you are inside one), and Hide in combat, which beats the rest. The tracker, chat and minimap also have New info (quest progress for the tracker, new messages for chat, a zone change for the minimap).
+- Mouse over is optional for every element. For "only on mouse over", leave just that one box ticked in the row. An element with only Fade ticked sits at the idle opacity all the time, so with idle at 0 it stays hidden, which is a way to keep the bags bar or the menu bar off.
+- The cast bar and the breath bar (the underwater timer, which also shows fatigue and feign death) are not in the grid. They appear by themselves when needed: casting shows the cast bar and a running timer shows the breath bar, even when the HUD is idle, so they only have an opacity.
+- The minimap has no mode button. Awake makes it follow the HUD, While moving shows it only while you move, an unticked Fade never fades it, and its idle opacity above 0 keeps it faintly visible.
+
+**Opacity** (how solid each thing is)
+- One global value for when the HUD is active and one for when it is idle (0 hides it completely). Every element follows the global active value unless it has its own: there is a row for each element, where Global (the far left of the slider) follows the global value and any number uses that instead.
+- Chat, the minimap, the open bag windows and tooltips are solid until you change them. The minimap also has its own idle value.
+- Open bags: you can drag an open bag by its title bar or an empty part of it to move all the open bags together, and where you put them is remembered. The default UI does not let you move them. `/qhud bags reset` puts them back.
 
 **Bars** (per action bar, Action Bars 1 to 8)
 - Whether each bar fades (while Fade is ticked for Action bars on the Elements page, the master switch), and whether to hide its hotkey text or its macro names.
-- Optionally shorten the hotkey text on all bars, and on the pet, stance and possess bars: Num Pad 1 shows N1, Mouse Button 4 shows M4, Ctrl plus Num Pad 1 shows cN1, Shift plus 1
-  shows s1, and so on, so long key names no longer show as "NUM...". Turning it off puts the original text back.
+- Optionally shorten the hotkey text on all bars, and on the pet, stance and possess bars: Num Pad 1 shows N1, Mouse Button 4 shows M4, Ctrl plus Num Pad 1 shows cN1, Shift plus 1 shows s1, and so on, so long key names no longer show as "NUM...". Turning it off puts the original text back.
 
 **Chat**
-- How long chat stays after a message, and which kinds of message bring it up: whispers, party/raid/instance
-  chat, guild chat, say/yell/emotes from players, channels such as General and Trade, loot/money/XP/reputation,
-  system messages, and NPC speech. By default only whispers, group chat, guild chat and system messages do, so
-  channel chatter, loot and nearby players do not keep waking it. `/qhud debug` prints the event that woke it.
+- How long chat stays after a message, the fade out time, and which kinds of message bring it up: whispers, party/raid/instance chat, guild chat, say/yell/emotes from players, channels such as General and Trade, loot/money/XP/reputation, system messages, and NPC speech. By default only whispers, group chat, guild chat and system messages do, so channel chatter, loot and nearby players do not keep waking it. `/qhud debug` prints the event that woke it. Chat's opacity is on the Opacity page.
+
+**RXP** (RestedXP)
+- Tick to fade its guide window, its targets and items windows and its waypoint arrow. They have their own opacity when shown and when idle, and a trigger row each, like the Elements page.
 
 **Extras**
 - How long new quest progress keeps the tracker up, and a zone change keeps the minimap up. (After you stop moving, the "While moving" boxes hold for a fixed 1.5 seconds.)
 - A checkbox to hide the beta Issue Reporter. (The bags bar and the menu bar are rows of the Elements grid.)
-- A tooltip opacity slider (the whole tooltip, text included), and an experimental pixel shift (below).
+- An experimental pixel shift (below).
 - The quest-mob targeting key (experimental), off by default.
 - Reset to defaults.
 
-Chat comes back on a new message, when you press Enter, or when the mouse is over it. The objective
-tracker comes back briefly after quest progress. The minimap comes back for a few seconds after a zone
-change.
-
+Chat comes back on a new message, when you press Enter, or when the mouse is over it. The objective tracker comes back briefly after quest progress. The minimap comes back for a few seconds after a zone change.
 ## Why you might want each option
 
 **Hide hotkey text (Bars page).** Action buttons print the key bound to them in their corner. If you play
@@ -86,8 +78,8 @@ stays fully opaque and is dimmed with a dark layer instead (which also dims the 
 transparency). Outdoors it uses real transparency. By default it stays fully solid while showing; tick "Minimap: use
 the HUD opacity when shown, not solid" to make it follow "Opacity when active". "Minimap: darken it instead of
 fading it" uses the dark layer everywhere, not just indoors.
-**Chat uses the HUD opacity.** By default chat is fully opaque when it appears, so it stays readable.
-Tick this if you want it dimmed to the same level as everything else.
+**Chat opacity.** By default chat is fully opaque when it appears, so it stays readable.
+On the Opacity page, set the Chat row to Global to dim it to the same level as everything else.
 
 **Bags bar, menu bar, Issue Reporter.** These sit on screen permanently and burn in fastest. The bags bar and the menu
 bar are rows of the Elements grid: tick Fade and leave the other boxes empty to keep one hidden (at idle opacity 0), or
@@ -151,6 +143,7 @@ the nameplates to show. The message "quest targeting is off" means the Extras ch
 | `/qhud find <text>` | Find which frame is showing some text, e.g. a notice you want to hide. If it is not on screen it keeps watching for 30 minutes |
 | `/qhud add bars\|player\|hud\|quest\|map\|chat\|nav\|shift\|hidden [frame name]` | Put a frame into a group (saved). Without a name it uses the frame under the mouse |
 | `/qhud remove <name>`, `/qhud list` | Take a frame you added back out, or list them |
+| `/qhud bags [reset]` | Show how far the open bags were moved, or put them back where the game puts them at full opacity |
 | `/qhud debug` | Toggle debug output for the sheath detection and quest targeting |
 
 The `nav` group is for a direction arrow or similar, for example a quest guide's waypoint arrow. Its row of the trigger grid (on the RXP tab) chooses when it

@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.2.0
+
+A bigger update: the settings are reorganized, and there is a lot more control over how solid each part of the HUD is. Your settings carry over, and the new rows start with the values of the old Enemy, party, buffs row, so nothing changes until you change it.
+
+### New
+
+- **Opacity page.** One global value for when the HUD is active and one for when it is idle. Every element follows the global value unless it has its own: a row for each element, where Global (the far left) follows the global value and a number uses that instead. Chat, the minimap, open bags and tooltips are solid until you change them.
+- **The Enemy, party, buffs row is split** into Target and focus, Pet frame, Party and raid, Buffs and debuffs, Cooldown trackers, Damage meter and Alerts (durability, loss of control, external defensives). Each has its own Fade box, triggers and opacity.
+- **Cast bar and breath bar** have their own opacity. Casting shows the cast bar, and a running breath, fatigue or feign death timer shows the breath bar, even when the HUD is idle. A finished cast bar no longer gets stuck on screen.
+- **Open bags can be moved and dimmed.** Drag any open bag by its title bar or an empty part of it and all the open bags move together. Where you put them is remembered, and `/qhud bags reset` puts them back.
+- **Show when** now holds everything about when the HUD appears, including the hold Alt, Ctrl or Shift options for showing the whole HUD.
+
+### Changed
+
+- The Elements grid rows are ordered so the ones with the most columns are together, and the tick boxes are one size on every page.
+- The settings window is wider and taller.
+- Chat's and the minimap's opacity checkboxes are folded into their rows on the Opacity page, so nothing is set in two places.
+
+### Fixed
+
+- Sliders stopped following the mouse when it drifted off the thin bar during a drag.
+- Tooltips flashing at full opacity when an addon re-shows them many times a second.
+
+### Good to know
+
+The new settings are kept in small macros named `QuietHUD bags`, `QuietHUD opacity` and `QuietHUD groups`, next to `QuietHUD data`. Please leave them alone.
+
 ## 1.1.6
 
 - The quest key (experimental, off by default) now works more like Tab, but only through quest mobs. When every enemy with a nameplate around you is a quest mob, the press is the game's own Tab, which only has quest mobs to choose from and steps through identical ones too. When other enemies are mixed in, it goes to the next kind of quest mob by name and puts the skull on it, so those enemies are skipped. The game does not let an addon target a nameplate directly and a name cannot tell identical mobs apart, so in that mixed case a pack of the same mob counts as one stop. In combat the key uses what it prepared before the fight: a plain Tab if only quest mobs were near, otherwise the nearest quest mob by name.

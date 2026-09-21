@@ -62,12 +62,49 @@ local FIELDS = {
 	{ key = "peekAlt", code = "pa", kind = "bool", def = false },
 	{ key = "peekCtrl", code = "pc", kind = "bool", def = false },
 	{ key = "peekShift", code = "pf", kind = "bool", def = false },
+	{ key = "bagAlpha", code = "bo", kind = "num", def = 1 },
 }
 local DEFAULTS, BY_CODE = {}, {}
 for _, f in ipairs(FIELDS) do
 	DEFAULTS[f.key] = f.def
 	BY_CODE[f.code] = f
 end
+-- Where the open bag windows were dragged to (see the bags block). Not in FIELDS: the position has a small macro of its own.
+DEFAULTS.bagX, DEFAULTS.bagY = 0, 0
+-- Own opacity for an element (0 = follow "Opacity when active"). Not in FIELDS: they have a small macro of their own (see the
+-- opacity block).
+DEFAULTS.ovBars, DEFAULTS.ovPlayer, DEFAULTS.ovCast, DEFAULTS.ovHud = 0, 0, 0, 0
+DEFAULTS.ovQuest, DEFAULTS.ovMap, DEFAULTS.ovBagsBar, DEFAULTS.ovMicro = 0, 0, 0, 0
+
+-- The rows that used to be one "Enemy, party, buffs" row, and the cast bar and breath bar that used to ride on the player row.
+-- Each has its own frames, its own row in the trigger grid (Fade and triggers) and its own opacity. Their values are not in
+-- FIELDS (the main settings macro is full): they are kept in a macro of their own, "QuietHUD groups". Until one has been saved a
+-- group takes the old "Enemy, party, buffs" values, so nothing changes for anyone. cols is which trigger columns the row offers
+-- (5 is Hide in combat). The cast bar is shown while you cast and the breath bar while a timer runs.
+local SPLIT = {
+	{ g = "target", label = "Target and focus", frames = { "TargetFrame", "FocusFrame" } },
+	{ g = "pet", label = "Pet frame", frames = { "PetFrame" } },
+	{ g = "party", label = "Party and raid", frames = { "PartyFrame", "CompactRaidFrameContainer", "CompactRaidFrameManager" } },
+	{ g = "auras", label = "Buffs and debuffs", frames = { "BuffFrame", "DebuffFrame", "TemporaryEnchantFrame", "TotemFrame" } },
+	{ g = "cooldowns", label = "Cooldown trackers", frames = { "EssentialCooldownViewer", "UtilityCooldownViewer", "BuffIconCooldownViewer", "BuffBarCooldownViewer" } },
+	{ g = "meter", label = "Damage meter", frames = { "DamageMeter" } },
+	{ g = "alerts", label = "Alerts", frames = { "DurabilityFrame", "LossOfControlFrame", "ExternalDefensivesFrame" } },
+	{ g = "cast", label = "Cast bar", frames = { "PlayerCastingBarFrame", "CastingBarFrame" }, cols = { 5 }, trig = 0, own = true, noGrid = true },
+	{ g = "breath", label = "Breath bar", frames = { "MirrorTimerContainer", "MirrorTimer1", "MirrorTimer2", "MirrorTimer3" }, cols = {}, trig = 0, own = true, noGrid = true },
+}
+local SPLIT_BY = {}
+for _, s in ipairs(SPLIT) do
+	local cap = s.g:sub(1, 1):upper() .. s.g:sub(2)
+	s.fadeKey, s.trigKey, s.ovKey = "fade" .. cap, "trig" .. cap, "ov" .. cap
+	s.cols = s.cols or { 1, 2, 4, 6, 5 }
+	DEFAULTS[s.ovKey] = 0
+	SPLIT_BY[s.g] = s
+end
+-- The rows of the Elements grid and of the Opacity page, in this order: the rows with five columns first, then the tracker, chat
+-- and minimap, which have the most. (The cast bar and the breath bar have no grid row: they only appear when they are needed.)
+SPLIT.order = { "Action bars", "Player frame", "Target and focus", "Pet frame", "Party and raid", "Buffs and debuffs",
+	"Cooldown trackers", "Damage meter", "Alerts", "Bags bar", "Menu bar", "Added frames", "Objective tracker", "Chat", "Minimap" }
+local inheritGroups -- fills in the split groups' fade and trigger values from the old row (defined with their macro, below)
 
 local FADE = 0.35
 local MOVE_LINGER = 1.5
@@ -75,14 +112,8 @@ local SKULL = 8
 
 local DEFAULT_LISTS = {
 	bars = { "StatusTrackingBarManager", "StanceBar", "PetActionBar", "PossessActionBar" },
-	player = { "PlayerFrame", "PlayerCastingBarFrame", "CastingBarFrame" },
-	hud = {
-		"TargetFrame", "FocusFrame", "PetFrame", "PartyFrame", "CompactRaidFrameContainer",
-		"CompactRaidFrameManager", "BuffFrame", "DebuffFrame", "TemporaryEnchantFrame", "DamageMeter",
-		"TotemFrame", "EssentialCooldownViewer", "UtilityCooldownViewer",
-		"BuffIconCooldownViewer", "BuffBarCooldownViewer",
-		"DurabilityFrame", "LossOfControlFrame", "ExternalDefensivesFrame",
-	},
+	player = { "PlayerFrame" },
+	hud = {}, -- frames you add with /qhud add hud (the old big list is split into the rows below)
 	quest = { "ObjectiveTrackerFrame" },
 	map = { "MinimapCluster" },
 	micro = { "MicroMenuContainer" },
@@ -95,6 +126,7 @@ local DEFAULT_LISTS = {
 	shift = { "MinimapCluster", "ObjectiveTrackerFrame" },
 }
 local ALL_LISTS = { "bars", "player", "hud", "quest", "map", "micro", "bags", "reporter", "hidden", "chat", "nav", "rxp", "shift" }
+for _, s in ipairs(SPLIT) do DEFAULT_LISTS[s.g] = s.frames; ALL_LISTS[#ALL_LISTS + 1] = s.g end
 -- Action Bars 1 to 8: the frame(s) of each bar and the prefix of its button names.
 local BAR_DEFS = {
 	{ frames = { "MainActionBar", "MainMenuBar" }, buttons = "ActionButton" },
@@ -114,6 +146,7 @@ for i, def in ipairs(BAR_DEFS) do
 end
 local EXTRA_GROUPS = { "bars", "player", "hud", "quest", "map", "hidden", "chat", "nav", "rxp", "shift" }
 local FADE_ORDER = { "bars", "player", "hud", "quest", "map", "chat", "nav", "rxp", "bags", "micro" }
+for _, s in ipairs(SPLIT) do FADE_ORDER[#FADE_ORDER + 1] = s.g end
 local HIDE_TOGGLES = { { "reporter", "hideReporter" } }
 local ACTION_BARS = {
 	"MainActionBar", "MainMenuBar", "MultiBarBottomLeft", "MultiBarBottomRight", "MultiBarRight",
@@ -147,10 +180,23 @@ end
 
 local DB = { extra = {} }
 for k, v in pairs(DEFAULTS) do DB[k] = v end
+
+-- Whether a split group fades, and what brings it up. Until a group has its own saved value it follows the old row.
+local function gFade(s)
+	local v = DB[s.fadeKey]
+	if v ~= nil then return v end
+	return s.own or DB.fadeUnits
+end
+local function gTrig(s)
+	local v = DB[s.trigKey]
+	if v ~= nil then return v end
+	return s.trig or DB.trigUnits
+end
 local LISTS = {}
 local drawn, questUntil, mapUntil, chatUntil, combatEnd, moveUntil = false, 0, 0, 0, 0, 0
 local peekUntil = 0   -- the "hold to show" key: everything is shown until this time
 local cur = { bars = 0, player = 0, hud = 0, quest = 0, map = 0, chat = 0, nav = 0, rxp = 0, bags = 0, micro = 0 }
+for _, s in ipairs(SPLIT) do cur[s.g] = 0 end
 local fading, hiddenOn, barExcluded, textHidden = {}, {}, {}, {}
 local minimapShown = true
 local chatList = {}
@@ -345,9 +391,12 @@ local function persist()
 	end
 end
 
+local persistBags -- applies the open bag opacity (defined in the bags block)
+
 local function persistSoon()
 	userChanged = true
 	persist()
+	if persistBags then persistBags() end
 	if C_Timer and C_Timer.After then
 		C_Timer.After(2, persist)
 		C_Timer.After(8, persist)
@@ -444,10 +493,56 @@ local function initDB()
 end
 
 -- Helpers
-local function setAlpha(names, a)
+-- The cast bar fades itself out after a cast: it lowers its own opacity a little each frame and hides itself at 0. Setting its
+-- opacity again on every tick would undo that, and the finished bar would stay on screen. So it only gets the group's opacity
+-- while a cast is in progress (the game sets it to full when a cast starts); before and after, the game is left alone.
+-- The breath, fatigue and feign death timers (the "mirror timers") are treated the same way: they are part of the player row,
+-- get its opacity while a timer is running, and a running timer shows the row (see the main loop).
+local SELF_FADING = { PlayerCastingBarFrame = "cast", CastingBarFrame = "cast", MirrorTimerContainer = "mirror",
+	MirrorTimer1 = "mirror", MirrorTimer2 = "mirror", MirrorTimer3 = "mirror" }
+	
+	-- The setting that gives a group its own opacity, in place of "Opacity when active".
+	local OVERRIDE_KEYS = { bars = "ovBars", player = "ovPlayer", hud = "ovHud", quest = "ovQuest", map = "ovMap", bags = "ovBagsBar", micro = "ovMicro" }
+	for _, s in ipairs(SPLIT) do OVERRIDE_KEYS[s.g] = s.ovKey end
+
+-- Whether a mirror timer (breath, fatigue, feign death) is running. Looked at about ten times a second.
+local mirror = { at = 0, active = false }
+local function mirrorTimerActive()
+	local now = GetTime()
+	if now - mirror.at < 0.1 then return mirror.active end
+	mirror.at, mirror.active = now, false
+	if GetMirrorTimerInfo then
+		for i = 1, 3 do
+			local ok, name = pcall(GetMirrorTimerInfo, i)
+			if ok and type(name) == "string" and name ~= "" and name ~= "UNKNOWN" and not (issecretvalue and issecretvalue(name)) then
+				mirror.active = true
+				break
+			end
+		end
+	else
+		for i = 1, 3 do
+			local f = _G["MirrorTimer" .. i]
+			if f and f.IsShown and f:IsShown() then
+				mirror.active = true
+				break
+			end
+		end
+	end
+	return mirror.active
+end
+
+local function setAlpha(names, a, onlySelfFading)
 	for i = 1, #names do
 		local f = _G[names[i]]
-		if f and f.SetAlpha then f:SetAlpha(a) end
+		if f and f.SetAlpha then
+			if SELF_FADING[names[i]] then
+				if (SELF_FADING[names[i]] == "cast" and (f.casting or f.channeling)) or (SELF_FADING[names[i]] == "mirror" and mirrorTimerActive()) then
+					f:SetAlpha(a)
+				end
+			else
+				if not onlySelfFading then f:SetAlpha(a) end
+			end
+		end
 	end
 end
 
@@ -1064,6 +1159,7 @@ do
 	local tooltipTouched = false
 	applyTooltips = function()
 		local a = DB.tooltipAlpha or 1
+		if a <= 0 then a = DB.base or 0.6 elseif a < 0.1 then a = 0.1 end -- 0 is Global: the "When active" opacity
 		local restoring = false
 		if a >= 0.999 then
 			if not tooltipTouched then return end
@@ -1115,6 +1211,14 @@ local function update(dt)
 	vis.bars = triggered(DB.trigBars, active, moved, false, combat, inside, barHover)
 	vis.player = triggered(DB.trigPlayer, active, moved, false, combat, inside, LISTS.player)
 	vis.hud = triggered(DB.trigUnits, active, moved, false, combat, inside, LISTS.hud)
+	for _, s in ipairs(SPLIT) do
+		vis[s.g] = triggered(gTrig(s), active, moved, false, combat, inside, LISTS[s.g])
+	end
+	-- Casting shows the cast bar (not when it is set to hide in combat and you are in combat). A running breath, fatigue or feign
+	-- death timer shows the breath bar whatever its settings: with the HUD idle the breath bar would be invisible while you drown.
+	local castBar = PlayerCastingBarFrame or CastingBarFrame
+	if castBar and (castBar.casting or castBar.channeling) and not (combat and barBit(gTrig(SPLIT_BY.cast), T.COMBAT)) then vis.cast = true end
+	if mirrorTimerActive() then vis.breath = true end
 	vis.bags = triggered(DB.trigBagsBar, active, moved, false, combat, inside, LISTS.bags)
 	vis.micro = triggered(DB.trigMicro, active, moved, false, combat, inside, LISTS.micro)
 	vis.quest = triggered(DB.trigTracker, active, moved, now < questUntil, combat, inside, LISTS.quest)
@@ -1138,6 +1242,7 @@ local function update(dt)
 		quest = DB.fadeTracker, map = DB.fadeMinimap, chat = DB.fadeChat, nav = true, rxp = true,
 		bags = DB.fadeBags, micro = DB.fadeMicro,
 	}
+	for _, s in ipairs(SPLIT) do flags[s.g] = gFade(s) end
 	local idle = DB.idle or 0
 	local mapAlpha = 1
 	for _, g in ipairs(FADE_ORDER) do
@@ -1153,6 +1258,9 @@ local function update(dt)
 			elseif g == "nav" then
 				peak = DB.navShown or 0.6
 			end
+			-- An element with its own opacity (Opacity page) uses that instead of the global "Opacity when active".
+			local ownKey = OVERRIDE_KEYS[g]
+			if ownKey and not edit and (DB[ownKey] or 0) > 0 then peak = math.max(DB[ownKey], 0.1) end
 			local floor = idle
 			if g == "rxp" then
 				floor = DB.rxpIdle or 0
@@ -1204,6 +1312,7 @@ local function update(dt)
 			cur[g] = 1
 		end
 	end
+
 
 	local wantMinimap = not (enabled and DB.fadeMinimap) or mapAlpha > 0.01
 	if MinimapCluster and wantMinimap ~= minimapShown then
@@ -1279,21 +1388,42 @@ end)
 local PAGES = {
 	{ title = "Show when", items = {
 		{ "check", "enabled", "Enable QuietHUD" },
-		{ "slider", "base", "Opacity when active (combat, target...)", 0.1, 1, 0.05, "%.2f" },
-		{ "slider", "idle", "Opacity when idle (0 = fully hidden)", 0, 1, 0.05, "%.2f" },
-		{ "note", "These three decide when the HUD counts as awake. Which elements come up when it is awake is set per element in the Awake column of the Elements page." },
+		{ "heading", "When the HUD counts as awake" },
+		{ "note", "These decide when the HUD counts as awake, one of the things that can bring an element up. Which elements come up when it is awake is set per element in the Awake column of the Elements page." },
 		{ "check", "inCombat", "Show in combat" },
 		{ "check", "sheathShows", "Show while my weapon is drawn" },
 		{ "check", "showOnTarget", "Show while I have a target" },
 		{ "slider", "linger", "Stay visible after combat (seconds)", 0, 15, 1, "%.0f" },
+		{ "heading", "Show the whole HUD on demand" },
+		{ "check", "peekAlt", "While I hold Alt" },
+		{ "check", "peekCtrl", "While I hold Ctrl" },
+		{ "check", "peekShift", "While I hold Shift" },
 	} },
 	{ title = "Elements", items = {
 		{ "grid", "elements" },
 		{ "note", "Awake: combat, a drawn weapon or a target. Dungeon or raid: while you are inside one. New info: chat messages, quest progress, a zone change (minimap). Hide in combat beats the rest. For mouse over only, leave just that box ticked." },
-		{ "note", "Enemy, party, buffs: the frame of whatever you click on (enemy, NPC or player), your focus and pet, party and raid frames, buff and debuff icons, totems, cooldown trackers, the damage meter, the durability icon and the loss of control alert." },
-		{ "slider", "mapIdle", "Minimap opacity when idle (0 = hidden)", 0, 1, 0.05, "%.2f" },
-		{ "check", "mapFollowsHud", "Minimap: use the HUD opacity when shown, not solid" },
+		{ "note", "Alerts: the durability icon, the loss of control alert and external defensives. Added frames: frames you put in the old HUD group with /qhud add hud. The cast bar and the breath bar appear by themselves when needed, so they only have an opacity, on the Opacity page." },
 		{ "check", "mapDarken", "Minimap: darken it instead of fading it" },
+	} },
+	{ title = "Opacity", items = {
+		{ "heading", "All elements" },
+		{ "slider", "base", "Active (combat, target)", 0.1, 1, 0.05, "%.2f", nil, true },
+		{ "slider", "idle", "Idle (0 = hidden)", 0, 1, 0.05, "%.2f", nil, true },
+		{ "heading", "Each element (Global = the active value)" },
+		{ "slider", "ovBars", "Action bars", 0, 1, 0.05, "%.2f", "Global", true },
+		{ "slider", "ovPlayer", "Player frame", 0, 1, 0.05, "%.2f", "Global", true },
+		{ "slider", "ovCast", "Cast bar and breath bar", 0, 1, 0.05, "%.2f", "Global", true },
+		{ "slider", "ovHud", "Enemy, party, buffs", 0, 1, 0.05, "%.2f", "Global", true },
+		{ "slider", "ovQuest", "Objective tracker", 0, 1, 0.05, "%.2f", "Global", true },
+		{ "slider", "chatOwn", "Chat (solid unless you change it)", 0, 1, 0.05, "%.2f", "Global", true },
+		{ "slider", "mapOwn", "Minimap (solid unless you change it)", 0, 1, 0.05, "%.2f", "Global", true },
+		{ "slider", "ovBagsBar", "Bags bar", 0, 1, 0.05, "%.2f", "Global", true },
+		{ "slider", "ovMicro", "Menu bar", 0, 1, 0.05, "%.2f", "Global", true },
+		{ "heading", "Windows and the minimap" },
+		{ "slider", "bagAlpha", "Open bag windows", 0, 1, 0.05, "%.2f", "Global", true },
+		{ "slider", "tooltipAlpha", "Tooltips", 0, 1, 0.05, "%.2f", "Global", true },
+		{ "slider", "mapIdle", "Minimap idle (0 = hidden)", 0, 1, 0.05, "%.2f", nil, true },
+		{ "note", "Global follows the active value at the top. Chat, the minimap, open bags and tooltips are solid until you change them. Drag an open bag by its title bar to move the bags (/qhud bags reset undoes it). RestedXP has its own opacity on its page." },
 	} },
 	{ title = "Bars", items = {
 		{ "note", "Fade picks which action bars fade. It only counts while Fade is ticked for Action bars on the Elements page, which is the master switch (the stance, pet and XP bars follow that switch)." },
@@ -1301,9 +1431,7 @@ local PAGES = {
 		{ "check", "shortHotkeys", "Shorten hotkey text (Num Pad 1 shows N1)" },
 	} },
 	{ title = "Chat", items = {
-		{ "note", "Fading the chat, and what brings it up, is on the Elements page." },
-		{ "check", "chatDim", "Chat uses the HUD opacity when active" },
-		{ "slider", "chatOpacity", "Chat opacity when active (if not the HUD's)", 0.1, 1, 0.05, "%.2f" },
+		{ "note", "Fading the chat, and what brings it up, is on the Elements page. Its opacity is on the Opacity page." },
 		{ "slider", "chatSeconds", "Chat stays after a message (seconds)", 2, 30, 1, "%.0f" },
 		{ "slider", "chatFadeSeconds", "Chat fade out animation (seconds)", 0.3, 5, 0.1, "%.1f" },
 		{ "kinds" },
@@ -1320,13 +1448,8 @@ local PAGES = {
 		{ "note", "The same columns as on the Elements page. At idle opacity 0 the windows are hidden completely, so a small value helps you find them." },
 	} },
 	{ title = "Extras", items = {
-		{ "heading", "Show the whole HUD" },
-		{ "check", "peekAlt", "While I hold Alt" },
-		{ "check", "peekCtrl", "While I hold Ctrl" },
-		{ "check", "peekShift", "While I hold Shift" },
-		{ "heading", "Timing and tooltips" },
+		{ "heading", "Timing" },
 		{ "slider", "questSeconds", "New info stays, for quests and zone changes (seconds)", 3, 30, 1, "%.0f" },
-		{ "slider", "tooltipAlpha", "Tooltip opacity (1 = normal)", 0.3, 1, 0.05, "%.2f" },
 		{ "heading", "Pixel shift (OLED, experimental)" },
 		{ "check", "pixelShift", "Move the minimap and tracker a little every few minutes" },
 		{ "check", "shiftBars", "Also the action bars, bags and menu bar" },
@@ -1340,6 +1463,34 @@ local PAGES = {
 	} },
 }
 
+-- The Opacity page lists every element that can have its own opacity, in the order of the Elements grid.
+do
+	local keyOf = { ["Objective tracker"] = "ovQuest", ["Chat"] = "chatOwn", ["Minimap"] = "mapOwn", ["Action bars"] = "ovBars",
+		["Player frame"] = "ovPlayer", ["Bags bar"] = "ovBagsBar", ["Menu bar"] = "ovMicro", ["Added frames"] = "ovHud" }
+	for _, s in ipairs(SPLIT) do keyOf[s.label] = s.ovKey end
+	local drop = { ovCast = true }
+	for _, k in pairs(keyOf) do drop[k] = true end
+	for _, page in ipairs(PAGES) do
+		if page.title == "Opacity" then
+			local out = {}
+			for _, item in ipairs(page.items) do
+				if not (item[1] == "slider" and drop[item[2]]) then
+					out[#out + 1] = item
+					if item[1] == "heading" and item[2]:find("^Each element") then
+						for _, label in ipairs(SPLIT.order) do
+							out[#out + 1] = { "slider", keyOf[label], label, 0, 1, 0.05, "%.2f", "Global", true }
+						end
+						-- the cast bar and the breath bar: no grid row, but their own opacity
+						for _, label in ipairs({ "Cast bar", "Breath bar" }) do
+							out[#out + 1] = { "slider", keyOf[label], label, 0, 1, 0.05, "%.2f", "Global", true }
+						end
+					end
+				end
+			end
+			page.items = out
+		end
+	end
+end
 local config
 local pages, tabs, controls = {}, {}, {}
 
@@ -1347,6 +1498,296 @@ local function syncControls()
 	for _, fn in ipairs(controls) do fn() end
 end
 onRestored = syncControls
+
+-- Open bags. The default UI stacks the open bag windows from a corner of the screen and does not let you move them: the first
+-- window is anchored to the screen and each next one sits on top of the one before. So moving the first window's anchor moves
+-- the whole stack. Dragging any open bag (by its title bar or an empty part of it) moves them all together, and where you put
+-- them is remembered, in a small macro of its own because the main settings macro is almost full. The offset is added after
+-- the game has placed the windows, and never twice. Nothing is moved during combat; it is applied afterwards. The opacity of
+-- the open bags is the Extras slider (bagAlpha).
+do
+	local BAG_MACRO = "QuietHUD bags"
+	local BAG_PREFIX = "#QuietHUD bag position, do not delete\n"
+	local dragging, writePending, restoredBags = nil, false, false
+	local driver = CreateFrame("Frame")
+
+	local function bagFrames()
+		local list = {}
+		for i = 1, (NUM_CONTAINER_FRAMES or 13) do
+			local f = _G["ContainerFrame" .. i]
+			if f then list[#list + 1] = f end
+		end
+		if ContainerFrameCombinedBags then list[#list + 1] = ContainerFrameCombinedBags end
+		return list
+	end
+
+	local function bagOpacity()
+		local a = DB.bagAlpha or 1
+		if a <= 0 then return DB.base or 0.6 end -- 0 is Global: the "When active" opacity
+		return math.max(a, 0.1)
+	end
+
+	local function applyBags()
+		local alpha = bagOpacity()
+		local dx, dy = DB.bagX or 0, DB.bagY or 0
+		local canMove = not InCombatLockdown()
+		for _, f in ipairs(bagFrames()) do
+			if canMove then
+				local ok, point, rel, relPoint, x, y = pcall(f.GetPoint, f, 1)
+				if ok and point and type(x) == "number" then
+					rel = rel or f:GetParent()
+					-- Only a window anchored to the screen side (the first of a column) is moved; the others follow it.
+					if rel == f:GetParent() or rel == UIParent then
+						local applied = f.qhApplied
+						if not (applied and applied.rel == rel and math.abs(x - applied.x) < 0.01 and math.abs(y - applied.y) < 0.01) then
+							f.qhBase = { point = point, rel = rel, relPoint = relPoint, x = x, y = y } -- the game placed it: its normal spot
+						end
+						local base = f.qhBase
+						local nx, ny = base.x + dx, base.y + dy
+						if math.abs(x - nx) > 0.01 or math.abs(y - ny) > 0.01 then
+							f:ClearAllPoints()
+							f:SetPoint(base.point, base.rel, base.relPoint, nx, ny)
+						end
+						f.qhApplied = { rel = rel, x = nx, y = ny }
+					else
+						f.qhBase, f.qhApplied = nil, nil
+					end
+				end
+			end
+			if alpha ~= 1 or f.qhAlpha then
+				f:SetAlpha(alpha)
+				f.qhAlpha = alpha ~= 1
+			end
+		end
+	end
+
+	local function endDrag()
+		if not dragging then return end
+		dragging = nil
+		driver:SetScript("OnUpdate", nil)
+		persistSoon()
+	end
+
+	local function dragStep()
+		if not dragging then return end
+		if not IsMouseButtonDown("LeftButton") then
+			endDrag()
+			return
+		end
+		local cx, cy = GetCursorPosition()
+		local scale = dragging.frame:GetEffectiveScale()
+		if scale and scale > 0 then
+			DB.bagX = dragging.x0 + (cx - dragging.cx) / scale
+			DB.bagY = dragging.y0 + (cy - dragging.cy) / scale
+			applyBags()
+		end
+	end
+
+	local function startDrag(frame, button)
+		if button ~= "LeftButton" or InCombatLockdown() then return end
+		local cx, cy = GetCursorPosition()
+		dragging = { frame = frame, cx = cx, cy = cy, x0 = DB.bagX or 0, y0 = DB.bagY or 0 }
+		driver:SetScript("OnUpdate", dragStep)
+	end
+
+	local function hookFrame(f)
+		if f.qhHooked then return end
+		f.qhHooked = true
+		f:EnableMouse(true)
+		f:HookScript("OnMouseDown", function(self, button) startDrag(self, button) end)
+		f:HookScript("OnMouseUp", endDrag)
+		f:HookScript("OnShow", function(self)
+			local alpha = bagOpacity()
+			if alpha ~= 1 then self:SetAlpha(alpha) end
+			if C_Timer and C_Timer.After then C_Timer.After(0, applyBags) end
+		end)
+		local title = f.TitleContainer
+		if title and title.HookScript then
+			title:EnableMouse(true)
+			title:HookScript("OnMouseDown", function(_, button) startDrag(f, button) end)
+			title:HookScript("OnMouseUp", endDrag)
+		end
+	end
+
+	local function writeBagMacro()
+		writePending = false
+		if InCombatLockdown() or not (CreateMacro and EditMacro and GetMacroIndexByName) then return end
+		local body = BAG_PREFIX .. string.format("x=%.1f;y=%.1f", DB.bagX or 0, DB.bagY or 0)
+		local ok, index = pcall(GetMacroIndexByName, BAG_MACRO)
+		if ok and index and index > 0 then
+			pcall(EditMacro, index, nil, nil, body)
+		elseif (DB.bagX or 0) ~= 0 or (DB.bagY or 0) ~= 0 then
+			pcall(CreateMacro, BAG_MACRO, "INV_Misc_Bag_08", body, false)
+		end
+	end
+
+	-- Applies the bag settings and saves the position. (Called after every settings change and when a drag ends.)
+	persistBags = function()
+		applyBags()
+		if C_Timer and C_Timer.After and not writePending then
+			writePending = true
+			C_Timer.After(1.5, writeBagMacro)
+		end
+	end
+
+	local function restoreBags()
+		if restoredBags then return end
+		local ok, index = pcall(GetMacroIndexByName, BAG_MACRO)
+		if not (ok and index and index > 0) then return end
+		local ok2, body = pcall(GetMacroBody, index)
+		if not ok2 or type(body) ~= "string" then return end
+		restoredBags = true
+		local x, y = body:match("x=(%-?[%d%.]+);y=(%-?[%d%.]+)")
+		if x then DB.bagX, DB.bagY = tonumber(x) or 0, tonumber(y) or 0 end
+		applyBags()
+	end
+
+	local bagEvents = CreateFrame("Frame")
+	for _, e in ipairs({ "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD", "UPDATE_MACROS", "PLAYER_REGEN_ENABLED" }) do
+		pcall(bagEvents.RegisterEvent, bagEvents, e)
+	end
+	bagEvents:SetScript("OnEvent", function()
+		for _, f in ipairs(bagFrames()) do pcall(hookFrame, f) end
+		restoreBags()
+		applyBags()
+	end)
+	-- The game lays the windows out again whenever a bag opens or closes.
+	if UpdateContainerFrameAnchors then
+		hooksecurefunc("UpdateContainerFrameAnchors", function() applyBags() end)
+	end
+	for _, f in ipairs(bagFrames()) do pcall(hookFrame, f) end
+end
+-- Own opacity per element (the Opacity page). The main settings macro is almost full, so these have a small macro of their own,
+-- "QuietHUD opacity". Only the ones that are set (above 0) are written.
+do
+	local OV_MACRO = "QuietHUD opacity"
+	local OV_PREFIX = "#QuietHUD opacity, do not delete\n"
+	local OV_KEYS = { "ovBars", "ovPlayer", "ovHud", "ovQuest", "ovMap", "ovBagsBar", "ovMicro" }
+	local writePending, restoredOv = false, false
+
+	local function writeOvMacro()
+		writePending = false
+		if InCombatLockdown() or not (CreateMacro and EditMacro and GetMacroIndexByName) then return end
+		local parts, any = {}, false
+		for _, k in ipairs(OV_KEYS) do
+			local v = DB[k] or 0
+			if v > 0 then
+				parts[#parts + 1] = k .. "=" .. string.format("%.2f", v)
+				any = true
+			end
+		end
+		local body = OV_PREFIX .. table.concat(parts, ";")
+		local ok, index = pcall(GetMacroIndexByName, OV_MACRO)
+		if ok and index and index > 0 then
+			pcall(EditMacro, index, nil, nil, body)
+		elseif any then
+			pcall(CreateMacro, OV_MACRO, "INV_Misc_Note_01", body, false)
+		end
+	end
+
+	local function restoreOv()
+		if restoredOv then return end
+		local ok, index = pcall(GetMacroIndexByName, OV_MACRO)
+		if not (ok and index and index > 0) then return end
+		local ok2, body = pcall(GetMacroBody, index)
+		if not ok2 or type(body) ~= "string" then return end
+		restoredOv = true
+		for k, v in body:gmatch("(ov%a+)=([%d%.]+)") do
+			if DEFAULTS[k] ~= nil then DB[k] = tonumber(v) or 0 end
+		end
+		if syncControls then syncControls() end
+	end
+
+	local previous = persistBags
+	persistBags = function()
+		if previous then previous() end
+		if C_Timer and C_Timer.After and not writePending then
+			writePending = true
+			C_Timer.After(1.5, writeOvMacro)
+		end
+	end
+
+	local ovEvents = CreateFrame("Frame")
+	for _, e in ipairs({ "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD", "UPDATE_MACROS" }) do
+		pcall(ovEvents.RegisterEvent, ovEvents, e)
+	end
+	ovEvents:SetScript("OnEvent", restoreOv)
+end
+-- The split groups (see SPLIT): their Fade, triggers and opacity, in a macro of their own, "QuietHUD groups". Written whenever a
+-- setting changes, once any of them has a value of its own; each group is written as name=fade,triggers,opacity.
+do
+	local G_MACRO = "QuietHUD groups"
+	local G_PREFIX = "#QuietHUD groups, do not delete\n"
+	local writePending = false
+
+	-- Gives every split group its own value, taken from what it follows now. Done when the settings window is first built and
+	-- when the groups are written, so a group keeps following the old "Enemy, party, buffs" row until then.
+	inheritGroups = function()
+		for _, s in ipairs(SPLIT) do
+			if DB[s.fadeKey] == nil then DB[s.fadeKey] = gFade(s) end
+			if DB[s.trigKey] == nil then DB[s.trigKey] = gTrig(s) end
+		end
+	end
+
+	local function writeGroupsMacro()
+		writePending = false
+		if InCombatLockdown() or not (CreateMacro and EditMacro and GetMacroIndexByName) then return end
+		local any = false
+		for _, s in ipairs(SPLIT) do
+			if DB[s.fadeKey] ~= nil or DB[s.trigKey] ~= nil or (DB[s.ovKey] or 0) > 0 then any = true end
+		end
+		local ok, index = pcall(GetMacroIndexByName, G_MACRO)
+		local exists = ok and index and index > 0
+		if not (any or exists) then return end
+		local parts = {}
+		for _, s in ipairs(SPLIT) do
+			parts[#parts + 1] = string.format("%s=%d,%d,%.2f", s.g, gFade(s) and 1 or 0, gTrig(s), DB[s.ovKey] or 0)
+		end
+		local body = G_PREFIX .. table.concat(parts, ";")
+		if exists then
+			pcall(EditMacro, index, nil, nil, body)
+		else
+			pcall(CreateMacro, G_MACRO, "INV_Misc_Note_01", body, false)
+		end
+	end
+
+	local function restoreGroups()
+		local ok, index = pcall(GetMacroIndexByName, G_MACRO)
+		if not (ok and index and index > 0) then return end
+		local ok2, body = pcall(GetMacroBody, index)
+		if not ok2 or type(body) ~= "string" then return end
+		for g, f, t, o in body:gmatch("(%a+)=(%d),(%d+),([%d%.]+)") do
+			local s = SPLIT_BY[g]
+			if s then
+				DB[s.fadeKey], DB[s.trigKey], DB[s.ovKey] = f == "1", tonumber(t) or 0, tonumber(o) or 0
+			end
+		end
+		if syncControls then syncControls() end
+	end
+
+	local previous = persistBags
+	persistBags = function()
+		if previous then previous() end
+		if C_Timer and C_Timer.After and not writePending then
+			writePending = true
+			C_Timer.After(1.5, writeGroupsMacro)
+		end
+	end
+
+	local groupEvents = CreateFrame("Frame")
+	for _, e in ipairs({ "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD", "UPDATE_MACROS" }) do
+		pcall(groupEvents.RegisterEvent, groupEvents, e)
+	end
+	local restoredG = false
+	groupEvents:SetScript("OnEvent", function()
+		if restoredG then return end
+		local ok, index = pcall(GetMacroIndexByName, G_MACRO)
+		if ok and index and index > 0 then
+			restoredG = true
+			restoreGroups()
+		end
+	end)
+end
 
 local function makeCheck(parent, y, label, key)
 	local check = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
@@ -1365,13 +1806,50 @@ local function makeCheck(parent, y, label, key)
 	controls[#controls]()
 end
 
-local function makeSlider(parent, y, label, key, minV, maxV, stepV, fmt)
+-- A slider that stands for more than one stored setting. The chat opacity is "Global" (the old "Chat uses the HUD opacity"
+-- checkbox) or a number (the old "Chat opacity when active" slider), so the two settings share one control.
+local VIRTUAL = {
+	chatOwn = {
+		get = function() return DB.chatDim and 0 or (DB.chatOpacity or 1) end,
+		set = function(v)
+			if v <= 0 then
+				DB.chatDim = true
+			else
+				DB.chatDim, DB.chatOpacity = false, math.max(v, 0.1)
+			end
+		end,
+	},
+	-- The minimap is solid when shown unless you change it: Global (the old "use the HUD opacity" checkbox) or a number.
+	mapOwn = {
+		get = function() return DB.mapFollowsHud and 0 or ((DB.ovMap or 0) > 0 and DB.ovMap or 1) end,
+		set = function(v)
+			if v <= 0 then
+				DB.mapFollowsHud, DB.ovMap = true, 0
+			else
+				DB.mapFollowsHud, DB.ovMap = false, math.max(v, 0.1)
+			end
+		end,
+	},
+}
+
+-- compact puts the label to the left of the slider on one short row (the Opacity page), instead of above it.
+local function makeSlider(parent, y, label, key, minV, maxV, stepV, fmt, zeroText, compact)
 	local title = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-	title:SetPoint("TOPLEFT", 16, y)
+	title:SetPoint("TOPLEFT", 16, compact and (y - 1) or y)
+	if compact then
+		title:SetWidth(200)
+		title:SetJustifyH("LEFT")
+		title:SetWordWrap(false)
+	end
 	title:SetText(label)
 	local s = CreateFrame("Slider", nil, parent)
-	s:SetPoint("TOPLEFT", 16, y - 22)
-	s:SetSize(220, 16)
+	if compact then
+		s:SetPoint("TOPLEFT", 232, y - 1)
+		s:SetSize(200, 16)
+	else
+		s:SetPoint("TOPLEFT", 16, y - 22)
+		s:SetSize(220, 16)
+	end
 	s:SetOrientation("HORIZONTAL")
 	s:SetMinMaxValues(minV, maxV)
 	local bar = s:CreateTexture(nil, "BACKGROUND")
@@ -1385,11 +1863,13 @@ local function makeSlider(parent, y, label, key, minV, maxV, stepV, fmt)
 	local readout = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 	readout:SetPoint("LEFT", s, "RIGHT", 12, 0)
 	s:SetScript("OnValueChanged", function(self, val)
-		local dragging = IsMouseButtonDown and IsMouseButtonDown("LeftButton") and self:IsMouseOver()
+		-- The mouse can drift off the thin bar while you drag, so the check is generous: 80 units above, below and to the sides.
+		local okOver, over = pcall(self.IsMouseOver, self, 80, -80, -80, 80)
+		local dragging = IsMouseButtonDown and IsMouseButtonDown("LeftButton") and (over or (not okOver and self:IsMouseOver()))
 		if not dragging then return end
 		val = math.floor(val / stepV + 0.5) * stepV
-		DB[key] = val
-		readout:SetText(string.format(fmt, val))
+		if VIRTUAL[key] then VIRTUAL[key].set(val) else DB[key] = val end
+		readout:SetText((zeroText and val == 0) and zeroText or string.format(fmt, val))
 		-- Idle can never be brighter than shown: dragging one past the other carries the other with it.
 		local carried = false
 		if key == "idle" and val > (DB.base or 0) + 0.001 then
@@ -1401,16 +1881,19 @@ local function makeSlider(parent, y, label, key, minV, maxV, stepV, fmt)
 		if carried then syncControls() end
 	end)
 	controls[#controls + 1] = function()
-		local v = DB[key]
+		local v = VIRTUAL[key] and VIRTUAL[key].get() or DB[key]
 		if v == nil then v = minV end
 		s:SetValue(v)
-		readout:SetText(string.format(fmt, v))
+		readout:SetText((zeroText and v == 0) and zeroText or string.format(fmt, v))
 	end
 	controls[#controls]()
 end
 
+local CELL = 24 -- the size of a tick box in the grids (the Bars page and the Elements page look the same)
+
 local function makeMaskCheck(parent, x, y, key, index)
 	local check = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
+	check:SetSize(CELL, CELL)
 	check:SetPoint("TOPLEFT", x, y)
 	check:SetScript("OnClick", function(self)
 		local mask = DB[key] or 0
@@ -1490,8 +1973,27 @@ local GRIDS = {
 	},
 }
 
+-- The rows of the Elements grid: the rows with five columns first, then the tracker, chat and minimap, which have the most. The
+-- cast bar and the breath bar have no row: they only appear when they are needed (see the main loop), so Fade and the triggers
+-- mean nothing for them. They keep their opacity setting on the Opacity page.
+do
+	local rows = GRIDS.elements.rows
+	for i, r in ipairs(rows) do
+		if r[1] == "Enemy, party, buffs" then
+			rows[i] = { "Added frames", "fadeUnits", "trigUnits", { 1, 2, 4, 6, 5 } }
+			break
+		end
+	end
+	for _, s in ipairs(SPLIT) do
+		if not s.noGrid then rows[#rows + 1] = { s.label, s.fadeKey, s.trigKey, s.cols } end
+	end
+	local rank = {}
+	for i, label in ipairs(SPLIT.order) do rank[label] = i end
+	table.sort(rows, function(a, b) return (rank[a[1]] or 99) < (rank[b[1]] or 99) end)
+end
 local function makeFadeCell(parent, x, y, key)
 	local check = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
+	check:SetSize(CELL, CELL)
 	check:SetPoint("TOPLEFT", x, y)
 	check:SetScript("OnClick", function(self)
 		DB[key] = not DB[key]
@@ -1517,15 +2019,15 @@ local function makeTriggerGrid(parent, y, grid)
 	local rowY = y - 30
 	for _, row in ipairs(grid.rows) do
 		local label = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-		label:SetPoint("TOPLEFT", 16, rowY - 8)
+		label:SetPoint("TOPLEFT", 16, rowY - 6)
 		label:SetText(row[1])
 		if row[2] then makeFadeCell(parent, fadeX, rowY, row[2]) end
 		for _, i in ipairs(row[4]) do
 			makeMaskCheck(parent, firstX + (COL_AT[i] - 1) * pitch, rowY, row[3], i)
 		end
-		rowY = rowY - 28
+		rowY = rowY - 24
 	end
-	return 30 + #grid.rows * 28 + 6
+	return 30 + #grid.rows * 24 + 6
 end
 
 -- A section heading. Returns the height it took.
@@ -1552,10 +2054,14 @@ local function showPage(index)
 		frame:SetShown(i == index)
 		if tabs[i].SetEnabled then tabs[i]:SetEnabled(i ~= index) end
 	end
+	-- The global opacity slider is on two pages, so what a page shows is refreshed when you switch to it.
+	syncControls()
 end
 
 local function resetDefaults()
 	for _, f in ipairs(FIELDS) do DB[f.key] = f.def end
+	for _, k in ipairs({ "ovBars", "ovPlayer", "ovHud", "ovQuest", "ovMap", "ovBagsBar", "ovMicro" }) do DB[k] = 0 end
+	for _, s in ipairs(SPLIT) do DB[s.fadeKey], DB[s.trigKey], DB[s.ovKey] = nil, nil, 0 end
 	persistSoon()
 	rebuildLists()
 	syncControls()
@@ -1563,8 +2069,9 @@ local function resetDefaults()
 end
 
 local function buildConfig()
+	if inheritGroups then inheritGroups() end
 	config = CreateFrame("Frame", "QuietHUDConfig", UIParent)
-	config:SetSize(460, 700)
+	config:SetSize(520, 790)
 	config:SetPoint("CENTER")
 	config:SetFrameStrata("DIALOG")
 	config:SetMovable(true)
@@ -1607,13 +2114,13 @@ local function buildConfig()
 				y = y - makeHeading(frame, y, item[2])
 			else
 				if page.items[idx - 1] and page.items[idx - 1][1] == "check" then y = y - 6 end
-				makeSlider(frame, y, item[3], item[2], item[4], item[5], item[6], item[7])
-				y = y - 46
+				makeSlider(frame, y, item[3], item[2], item[4], item[5], item[6], item[7], item[8], item[9])
+				y = y - (item[9] and 22 or 46)
 			end
 		end
 		pages[i] = frame
 		local tab = CreateFrame("Button", nil, config, "UIPanelButtonTemplate")
-		local tabWidth = math.max(44, math.floor(#page.title * 6.6 + 22))
+		local tabWidth = math.max(44, math.floor(#page.title * 6.4 + 18))
 		tab:SetSize(tabWidth, 22)
 		tab:SetPoint("TOPLEFT", tabX, -36)
 		tabX = tabX + tabWidth + 4
@@ -2386,6 +2893,16 @@ SlashCmdList["QUIETHUD"] = function(msg)
 			C_Timer.After(delay, report)
 		else
 			report()
+		end
+	elseif cmd == "bags" then
+		if rest == "reset" then
+			DB.bagX, DB.bagY, DB.bagAlpha = 0, 0, 1
+			syncControls()
+			persistBags()
+			print("QuietHUD: the open bags are back where the game puts them, at full opacity")
+		else
+			print(string.format("QuietHUD: open bags are moved %.0f, %.0f from their normal place, opacity %.2f. Drag one to move them all, /qhud bags reset puts them back",
+				DB.bagX or 0, DB.bagY or 0, DB.bagAlpha or 1))
 		end
 	elseif cmd == "mouse" then
 		DB.watchMouse = not DB.watchMouse
