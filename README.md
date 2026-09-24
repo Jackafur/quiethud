@@ -14,7 +14,7 @@ Open the settings with `/qhud`. There are seven pages.
 - Show the whole HUD on demand: while you hold Alt, Ctrl or Shift, or with a key you bind (Esc, Options, Keybindings, AddOns, QuietHUD).
 
 **Elements** (what fades, and what brings each one back)
-- A grid with a row for the action bars, player frame, target and focus, pet frame, party and raid, buffs and debuffs, cooldown trackers, damage meter, alerts (the durability icon, the loss of control alert and external defensives), bags bar, menu bar, frames you added, objective tracker, chat and minimap. Each row has a Fade box, then one box per thing that can bring that element up: Awake (combat, a drawn weapon or a target, from the Show when page), While moving, Mouse over and Dungeon or raid (while you are inside one), and Hide in combat, which beats the rest. The tracker, chat and minimap also have New info (quest progress for the tracker, new messages for chat, a zone change for the minimap).
+- A grid with a row for the action bars, player frame, target and focus, pet frame, party and raid, the party panel (the side panel that pops out of the arrow tab, with the party markers and Leave Party), buffs and debuffs, cooldown trackers, damage meter, alerts (the durability icon, the loss of control alert and external defensives), bags bar, menu bar, frames you added, objective tracker, chat and minimap. Each row has a Fade box, then one box per thing that can bring that element up: Awake (combat, a drawn weapon or a target, from the Show when page), While moving, Mouse over and Dungeon or raid (while you are inside one), and Hide in combat, which beats the rest. The tracker, chat and minimap also have New info (quest progress for the tracker, new messages for chat, a zone change for the minimap).
 - Mouse over is optional for every element. For "only on mouse over", leave just that one box ticked in the row. An element with only Fade ticked sits at the idle opacity all the time, so with idle at 0 it stays hidden, which is a way to keep the bags bar or the menu bar off.
 - The cast bar and the breath bar (the underwater timer, which also shows fatigue and feign death) are not in the grid. They appear by themselves when needed: casting shows the cast bar and a running timer shows the breath bar, even when the HUD is idle, so they only have an opacity.
 - The minimap has no mode button. Awake makes it follow the HUD, While moving shows it only while you move, an unticked Fade never fades it, and its idle opacity above 0 keeps it faintly visible.
@@ -37,6 +37,8 @@ Open the settings with `/qhud`. There are seven pages.
 **Extras**
 - How long new quest progress keeps the tracker up, and a zone change keeps the minimap up. (After you stop moving, the "While moving" boxes hold for a fixed 1.5 seconds.)
 - A checkbox to hide the beta Issue Reporter. (The bags bar and the menu bar are rows of the Elements grid.)
+- A checkbox to hide the minimap buttons that other addons add. This includes the loose buttons that sit on the screen and never fade with the minimap. The game's own minimap controls and map pins are left alone, and unticking it shows the buttons again. `/qhud minimapbuttons list` says which ones it hid.
+- A checkbox to hide the party panel completely (it is only made invisible, its arrow tab still works). Its row of the Elements grid is for fading it instead.
 - An experimental pixel shift (below).
 - The quest-mob targeting key (experimental), off by default.
 - Reset to defaults.
@@ -144,6 +146,8 @@ the nameplates to show. The message "quest targeting is off" means the Extras ch
 | `/qhud add bars\|player\|hud\|quest\|map\|chat\|nav\|shift\|hidden [frame name]` | Put a frame into a group (saved). Without a name it uses the frame under the mouse |
 | `/qhud remove <name>`, `/qhud list` | Take a frame you added back out, or list them |
 | `/qhud bags [reset]` | Show how far the open bags were moved, or put them back where the game puts them at full opacity |
+| `/qhud minimapbuttons [on\|off\|list]` | Hide or show the minimap buttons other addons add (the Extras checkbox), or list the ones it is hiding |
+| `/qhud hidepanel [on\|off]` | Hide or show the party panel completely (the Extras checkbox) |
 | `/qhud debug` | Toggle debug output for the sheath detection and quest targeting |
 
 The `nav` group is for a direction arrow or similar, for example a quest guide's waypoint arrow. Its row of the trigger grid (on the RXP tab) chooses when it
@@ -169,6 +173,10 @@ HUD" (hold it to see everything at once, let go and it fades again), and, if you
 quest mob". If you would rather not use a key binding, the Extras page has three checkboxes that show the whole HUD while
 you hold Alt, Ctrl or Shift.
 
+## Works with other addons
+
+QuietHUD only changes opacity, and hides what you ask it to hide, so it sits next to unit frame and nameplate addons such as BetterBlizzFrames, BetterBlizzPlates and HealthBarColor, and it fades the RestedXP windows on the RXP page. It fades frames by name. A frame from another addon that does not fade with the rest (one that ignores its parent's opacity, or one the addon keeps on the screen by itself) can be put into a group with `/qhud add`. It already knows BetterBlizzFrames' pet cast bar and fades it with the pet frame, and the checkbox on the Extras page hides the minimap buttons other addons add.
+
 ## Notes and limits
 
 - WoW does not expose whether your weapon is sheathed, so the addon follows the Toggle Sheath key and
@@ -178,10 +186,12 @@ you hold Alt, Ctrl or Shift.
 
 ## Settings on the Forever beta
 
-The Forever beta (build 1.60.1.69913) writes saved variables at logout but never reads them back, so
+The Forever beta (build 1.60.1.69977) writes saved variables at logout but never reads them back, so
 an addon's settings would reset every launch. QuietHUD keeps its normal saved variable, which starts
-working as soon as Blizzard fixes this, and also stores its settings in an account-wide macro named
-`QuietHUD data`, which the client does save and reload. Please leave that macro alone. Both
+working as soon as Blizzard fixes this, and also stores its settings in small account-wide macros,
+`QuietHUD data`, `QuietHUD bags`, `QuietHUD opacity` and `QuietHUD groups`, which the client does save
+and reload. Please leave those macros alone: deleting them resets the settings they hold. They use
+four of the account's macro slots, and they are written out of combat, a moment after a change. Both
 `QuietHUD.toc` and `QuietHUD_Camelot.toc` are shipped, because the client looks for the `_Camelot`
 manifest.
 

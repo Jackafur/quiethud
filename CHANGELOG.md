@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.2.1
+
+Small additions. Your settings carry over, and nothing changes until you use the new options, except that the party panel now fades with the rest of the HUD.
+
+### New
+
+- **Party panel row.** The side panel that pops out of the arrow tab on the left (Party 1/1, the markers, Leave Party) now has its own row on the Elements and Opacity pages, so it fades like the other elements. It starts with the values of the old Enemy, party, buffs row.
+- **Hide the party panel.** An Extras checkbox (and `/qhud hidepanel [on|off]`) that hides the panel completely. It is only made invisible, its arrow tab still works.
+- **Hide other addons' minimap buttons.** An Extras checkbox (and `/qhud minimapbuttons [on|off|list]`) that hides the round buttons other addons put around the minimap, including the loose ones that sit on the screen and never fade with the minimap. The game's own minimap controls and the map pins are left alone, untick it to show the buttons again, and `list` says which ones it hid. It is off by default.
+
+### Changed
+
+- BetterBlizzFrames' pet cast bar is a separate frame on the screen, so it did not fade with the pet frame. It is now part of the Pet frame row. Nothing changes without that addon.
+- The README says how settings are saved on the Forever beta (the four `QuietHUD` macros) and which addons QuietHUD works next to.
+
+### Good to know
+
+The two new checkboxes are kept in the small `QuietHUD groups` macro, next to the ones from 1.2.0. Please leave those macros alone.
 ## 1.2.0
 
 A bigger update: the settings are reorganized, and there is a lot more control over how solid each part of the HUD is. Your settings carry over, and the new rows start with the values of the old Enemy, party, buffs row, so nothing changes until you change it.

@@ -71,6 +71,8 @@ for _, f in ipairs(FIELDS) do
 end
 -- Where the open bag windows were dragged to (see the bags block). Not in FIELDS: the position has a small macro of its own.
 DEFAULTS.bagX, DEFAULTS.bagY = 0, 0
+DEFAULTS.hideMmButtons = false -- hide the minimap buttons of other addons (kept in the groups macro, see below)
+DEFAULTS.hidePanel = false -- hide the party panel completely (also kept in the groups macro)
 -- Own opacity for an element (0 = follow "Opacity when active"). Not in FIELDS: they have a small macro of their own (see the
 -- opacity block).
 DEFAULTS.ovBars, DEFAULTS.ovPlayer, DEFAULTS.ovCast, DEFAULTS.ovHud = 0, 0, 0, 0
@@ -83,8 +85,11 @@ DEFAULTS.ovQuest, DEFAULTS.ovMap, DEFAULTS.ovBagsBar, DEFAULTS.ovMicro = 0, 0, 0
 -- (5 is Hide in combat). The cast bar is shown while you cast and the breath bar while a timer runs.
 local SPLIT = {
 	{ g = "target", label = "Target and focus", frames = { "TargetFrame", "FocusFrame" } },
-	{ g = "pet", label = "Pet frame", frames = { "PetFrame" } },
-	{ g = "party", label = "Party and raid", frames = { "PartyFrame", "CompactRaidFrameContainer", "CompactRaidFrameManager" } },
+	-- PetSpellBar is BetterBlizzFrames' pet cast bar: a separate frame on the screen that would not fade with PetFrame
+	-- (the name means nothing without that addon, and is skipped then).
+	{ g = "pet", label = "Pet frame", frames = { "PetFrame", "PetSpellBar" } },
+	{ g = "party", label = "Party and raid", frames = { "PartyFrame", "CompactRaidFrameContainer" } },
+	{ g = "panel", label = "Party panel", frames = { "CompactRaidFrameManager" } },
 	{ g = "auras", label = "Buffs and debuffs", frames = { "BuffFrame", "DebuffFrame", "TemporaryEnchantFrame", "TotemFrame" } },
 	{ g = "cooldowns", label = "Cooldown trackers", frames = { "EssentialCooldownViewer", "UtilityCooldownViewer", "BuffIconCooldownViewer", "BuffBarCooldownViewer" } },
 	{ g = "meter", label = "Damage meter", frames = { "DamageMeter" } },
@@ -102,7 +107,7 @@ for _, s in ipairs(SPLIT) do
 end
 -- The rows of the Elements grid and of the Opacity page, in this order: the rows with five columns first, then the tracker, chat
 -- and minimap, which have the most. (The cast bar and the breath bar have no grid row: they only appear when they are needed.)
-SPLIT.order = { "Action bars", "Player frame", "Target and focus", "Pet frame", "Party and raid", "Buffs and debuffs",
+SPLIT.order = { "Action bars", "Player frame", "Target and focus", "Pet frame", "Party and raid", "Party panel", "Buffs and debuffs",
 	"Cooldown trackers", "Damage meter", "Alerts", "Bags bar", "Menu bar", "Added frames", "Objective tracker", "Chat", "Minimap" }
 local inheritGroups -- fills in the split groups' fade and trigger values from the old row (defined with their macro, below)
 
@@ -392,6 +397,7 @@ local function persist()
 end
 
 local persistBags -- applies the open bag opacity (defined in the bags block)
+local hiddenMmButtons -- names of the minimap buttons of other addons that are hidden now (defined in the minimap buttons block)
 
 local function persistSoon()
 	userChanged = true
@@ -1243,6 +1249,7 @@ local function update(dt)
 		bags = DB.fadeBags, micro = DB.fadeMicro,
 	}
 	for _, s in ipairs(SPLIT) do flags[s.g] = gFade(s) end
+	if DB.hidePanel then flags.panel = true end
 	local idle = DB.idle or 0
 	local mapAlpha = 1
 	for _, g in ipairs(FADE_ORDER) do
@@ -1270,6 +1277,7 @@ local function update(dt)
 			if g == "map" then floor = DB.mapIdle or 0 end
 			local low = math.min(floor, peak)
 			local a = low + (peak - low) * cur[g]
+			if g == "panel" and DB.hidePanel and not edit then a = 0 end
 			local dimHere = false
 			if g == "map" then
 				-- The game redraws the map of a building interior as you move through it, and draws a blank map if that
@@ -1402,7 +1410,7 @@ local PAGES = {
 	{ title = "Elements", items = {
 		{ "grid", "elements" },
 		{ "note", "Awake: combat, a drawn weapon or a target. Dungeon or raid: while you are inside one. New info: chat messages, quest progress, a zone change (minimap). Hide in combat beats the rest. For mouse over only, leave just that box ticked." },
-		{ "note", "Alerts: the durability icon, the loss of control alert and external defensives. Added frames: frames you put in the old HUD group with /qhud add hud. The cast bar and the breath bar appear by themselves when needed, so they only have an opacity, on the Opacity page." },
+		{ "note", "Party panel: the side panel that pops out of the arrow tab on the left (Party 1/1, markers, Leave Party). Alerts: the durability icon, the loss of control alert and external defensives. Added frames: frames you put in the old HUD group with /qhud add hud. The cast bar and the breath bar appear by themselves when needed, so they only have an opacity, on the Opacity page." },
 		{ "check", "mapDarken", "Minimap: darken it instead of fading it" },
 	} },
 	{ title = "Opacity", items = {
@@ -1458,6 +1466,8 @@ local PAGES = {
 		{ "slider", "shiftMinutes", "Minutes between moves", 1, 10, 1, "%.0f" },
 		{ "heading", "Other" },
 		{ "check", "hideReporter", "Hide the beta Issue Reporter button" },
+		{ "check", "hideMmButtons", "Hide other addons' minimap buttons" },
+		{ "check", "hidePanel", "Hide the party panel (Party 1/1, markers, Leave Party)" },
 		{ "check", "questTarget", "Enable quest-mob targeting key (experimental)" },
 		{ "note", "Works like Tab, but only through the mobs your highlighted quest needs: each press goes to the next one. Needs enemy nameplates on (a kill objective can still be reached by name without). After ticking this, bind the key: Esc, Options, Keybindings, AddOns, QuietHUD, \"Target highlighted quest mob\"." },
 	} },
@@ -1657,7 +1667,116 @@ do
 	end
 	for _, f in ipairs(bagFrames()) do pcall(hookFrame, f) end
 end
--- Own opacity per element (the Opacity page). The main settings macro is almost full, so these have a small macro of their own,
+-- Minimap buttons of other addons: the round icons that addons leave around the minimap. Some belong to the minimap and shrink with
+-- it when it fades, but many are loose buttons on the screen that never fade, which is what this option is for. With it on they are
+-- hidden, and when it is switched off the ones QuietHUD hid are shown again. Two ways of finding them: the LibDBIcon list (Leatrix,
+-- RestedXP, GSE, Auctionator and so on), and any small button on the screen or the minimap that wears the round minimap border,
+-- which catches the addons that make their own. The game's own minimap controls (inside the minimap cluster) and the map pins
+-- (RestedXP's waypoints, for example) are not touched, and neither are buttons that were already hidden by their own addon.
+do
+	local hiddenByUs, hooked = {}, {}
+	local found, checked = setmetatable({}, { __mode = "k" }), setmetatable({}, { __mode = "k" })
+	local BORDER_ID, BORDER_NAME = 136430, "minimap%-trackingborder"
+	local BLIZZARD = {
+		MinimapZoomIn = true, MinimapZoomOut = true, MiniMapTracking = true, MiniMapMailFrame = true, MiniMapBattlefieldFrame = true,
+		MiniMapWorldMapButton = true, MiniMapLFGFrame = true, MiniMapInstanceDifficulty = true, MinimapZoneTextButton = true,
+		GameTimeFrame = true, QueueStatusButton = true, ExpansionLandingPageMinimapButton = true, GarrisonLandingPageMinimapButton = true,
+	}
+
+	local function wearsBorder(frame)
+		for _, region in ipairs({ frame:GetRegions() }) do
+			if region.GetObjectType and region:GetObjectType() == "Texture" then
+				local tex = region:GetTexture()
+				if tex == BORDER_ID or (type(tex) == "string" and tex:lower():find(BORDER_NAME)) then return true end
+			end
+		end
+		return false
+	end
+
+	local function isAddonButton(frame)
+		if frame:GetObjectType() ~= "Button" or BLIZZARD[frame:GetName() or ""] or frame:IsProtected() then return false end
+		local w, h = frame:GetWidth(), frame:GetHeight()
+		return w > 0 and h > 0 and w <= 64 and h <= 64 and wearsBorder(frame)
+	end
+
+	-- Each button is looked at once, and again only if it gains a texture.
+	local function scanChildren(parent)
+		if not parent then return end
+		local ok, children = pcall(function() return { parent:GetChildren() } end)
+		if not ok then return end
+		for _, child in ipairs(children) do
+			local okN, count = pcall(child.GetNumRegions, child)
+			if okN and checked[child] ~= count then
+				checked[child] = count
+				local okB, isButton = pcall(isAddonButton, child)
+				if okB and isButton then found[child] = true end
+			end
+		end
+	end
+
+	local function buttons()
+		local set = {}
+		local lib = LibStub and LibStub("LibDBIcon-1.0", true)
+		if lib and lib.GetButtonList then
+			for _, name in ipairs(lib:GetButtonList()) do
+				local button = _G["LibDBIcon10_" .. name]
+				if button then set[button] = true end
+			end
+		end
+		scanChildren(UIParent)
+		scanChildren(Minimap)
+		for button in pairs(found) do set[button] = true end
+		return set
+	end
+
+	local function apply()
+		if DB.enabled and DB.hideMmButtons then
+			for button in pairs(buttons()) do
+				if not hooked[button] then
+					-- An addon can show its button again at any time; this hides it as it appears.
+					hooked[button] = true
+					pcall(button.HookScript, button, "OnShow", function(self)
+						if DB.enabled and DB.hideMmButtons then
+							hiddenByUs[self] = true
+							self:Hide()
+						end
+					end)
+				end
+				if button:IsShown() then
+					hiddenByUs[button] = true
+					pcall(button.Hide, button)
+				end
+			end
+		else
+			for button in pairs(hiddenByUs) do
+				pcall(button.Show, button)
+				hiddenByUs[button] = nil
+			end
+		end
+	end
+
+	hiddenMmButtons = function()
+		local names = {}
+		for button in pairs(hiddenByUs) do
+			local name = button:GetName()
+			names[#names + 1] = name or ("(unnamed button, " .. tostring(button:GetObjectType()) .. ")")
+		end
+		table.sort(names)
+		return names
+	end
+
+	local previous = persistBags
+	persistBags = function()
+		if previous then previous() end
+		apply()
+	end
+
+	local function tick()
+		apply()
+		C_Timer.After(2, tick)
+	end
+	if C_Timer and C_Timer.After then C_Timer.After(3, tick) end
+end-- Own opacity per element (the Opacity page). The main settings macro is almost full, so these have a small macro of their own,
 -- "QuietHUD opacity". Only the ones that are set (above 0) are written.
 do
 	local OV_MACRO = "QuietHUD opacity"
@@ -1736,6 +1855,7 @@ do
 		for _, s in ipairs(SPLIT) do
 			if DB[s.fadeKey] ~= nil or DB[s.trigKey] ~= nil or (DB[s.ovKey] or 0) > 0 then any = true end
 		end
+		if DB.hideMmButtons or DB.hidePanel then any = true end
 		local ok, index = pcall(GetMacroIndexByName, G_MACRO)
 		local exists = ok and index and index > 0
 		if not (any or exists) then return end
@@ -1743,6 +1863,8 @@ do
 		for _, s in ipairs(SPLIT) do
 			parts[#parts + 1] = string.format("%s=%d,%d,%.2f", s.g, gFade(s) and 1 or 0, gTrig(s), DB[s.ovKey] or 0)
 		end
+		if DB.hideMmButtons then parts[#parts + 1] = "mmbuttons=1" end
+		if DB.hidePanel then parts[#parts + 1] = "hidepanel=1" end
 		local body = G_PREFIX .. table.concat(parts, ";")
 		if exists then
 			pcall(EditMacro, index, nil, nil, body)
@@ -1762,6 +1884,8 @@ do
 				DB[s.fadeKey], DB[s.trigKey], DB[s.ovKey] = f == "1", tonumber(t) or 0, tonumber(o) or 0
 			end
 		end
+		DB.hideMmButtons = body:find("mmbuttons=1", 1, true) ~= nil
+		DB.hidePanel = body:find("hidepanel=1", 1, true) ~= nil
 		if syncControls then syncControls() end
 	end
 
@@ -2894,6 +3018,22 @@ SlashCmdList["QUIETHUD"] = function(msg)
 		else
 			report()
 		end
+	elseif cmd == "minimapbuttons" then
+		if rest == "on" then DB.hideMmButtons = true elseif rest == "off" then DB.hideMmButtons = false elseif rest ~= "list" then DB.hideMmButtons = not DB.hideMmButtons end
+		syncControls()
+		persistSoon()
+		if rest == "list" then
+			local names = hiddenMmButtons()
+			print("QuietHUD: " .. (#names > 0 and ("hiding " .. table.concat(names, ", ")) or "no minimap buttons are hidden") ..
+				". Untick the option (or /qhud minimapbuttons off) to bring them back")
+		else
+			print("QuietHUD: other addons' minimap buttons are " .. (DB.hideMmButtons and "hidden" or "shown again"))
+		end
+	elseif cmd == "hidepanel" then
+		if rest == "on" then DB.hidePanel = true elseif rest == "off" then DB.hidePanel = false else DB.hidePanel = not DB.hidePanel end
+		syncControls()
+		persistSoon()
+		print("QuietHUD: the party panel is " .. (DB.hidePanel and "hidden" or "shown again"))
 	elseif cmd == "bags" then
 		if rest == "reset" then
 			DB.bagX, DB.bagY, DB.bagAlpha = 0, 0, 1
