@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.2.2
+
+Fixes. Your settings carry over, and nothing changes unless you use the addon or option named below.
+
+### Fixed
+
+- **Frames you added with `/qhud add` were forgotten.** They were stored in the main settings macro, which holds only 255 characters. Once your settings had grown enough that one more frame did not fit, every added frame was dropped at the next reload (a chat window that had been added to the chat group faded until then, and then stopped). They now have a macro of their own, `QuietHUD frames`, and what you had added carries over by itself. If there are ever too many to fit, QuietHUD says so and keeps the ones that fit.
+- **Show/hide HUD now** (settings window) did nothing unless the weapon-sheath option was on. It now shows the whole HUD, the same as `/qhud peek`, and pressing it again puts things back.
+
+### Changed
+
+- **Chattynator's chat window** is part of the chat group by itself now, with no `/qhud add` needed. Its container frame has no size of its own (the window is a child of it), so "mouse over" for the chat now also looks at the children of the frames in the chat group. That also means a chat window you added by hand comes back when you point at it. Nothing changes without that addon.
+
+### Good to know
+
+The frames you add with `/qhud add` are kept in a fifth small macro, `QuietHUD frames`, next to `QuietHUD data`, `QuietHUD bags`, `QuietHUD opacity` and `QuietHUD groups`. Please leave it alone with the others.
+
 ## 1.2.1
 
 Small additions. Your settings carry over, and nothing changes until you use the new options, except that the party panel now fades with the rest of the HUD.

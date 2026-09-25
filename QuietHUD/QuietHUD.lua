@@ -277,6 +277,10 @@ local function rebuildLists()
 			end
 		elseif g == "nav" and DB.rxpArrow then
 			add("RXPG_ARROW")
+		elseif g == "chat" then
+			-- Chattynator's chat window hangs off this frame (it has no size of its own, its windows are its children).
+			-- Skipped when that addon is not there.
+			add("ChattynatorHyperlinkHandler")
 		end
 		for _, n in ipairs(DB.extra[g] or {}) do add(n) end
 		LISTS[g] = merged
@@ -306,6 +310,16 @@ local function rebuildLists()
 end
 rebuildLists()
 
+-- Adds a frame to the added frames of a group unless it is there already. Returns whether it was new.
+local function mergeExtra(g, name)
+	DB.extra[g] = DB.extra[g] or {}
+	for _, n in ipairs(DB.extra[g]) do
+		if n == name then return false end
+	end
+	DB.extra[g][#DB.extra[g] + 1] = name
+	return true
+end
+
 -- Persistence. The Forever beta writes saved variables at logout but never reads them back, so settings are
 -- also stored in an account-wide macro, which the client saves and reloads itself (no file path needed).
 local MACRO_NAME = "QuietHUD data"
@@ -328,9 +342,8 @@ local function getCVarString()
 	return ok and value or nil
 end
 
--- Only the settings that differ from their default are stored. The macro that holds them is limited to 255
--- characters, and storing every setting used most of it, which pushed the list of frames you added (/qhud add) out.
-local warnedTooLong = false
+-- Only the settings that differ from their default are stored, because the macro that holds them is limited to 255
+-- characters. The frames you added (/qhud add) are not in it: they have a macro of their own (see the frames block).
 local function encodeSettings()
 	local parts = {}
 	for _, f in ipairs(FIELDS) do
@@ -343,21 +356,7 @@ local function encodeSettings()
 		end
 		if text ~= default then parts[#parts + 1] = f.code .. "=" .. text end
 	end
-	local base = table.concat(parts, ";")
-	local extras = {}
-	for _, g in ipairs(EXTRA_GROUPS) do
-		local list = DB.extra and DB.extra[g]
-		if list and #list > 0 then extras[#extras + 1] = "x" .. g .. "=" .. table.concat(list, ",") end
-	end
-	if #extras > 0 then
-		local full = base .. ";" .. table.concat(extras, ";")
-		if #MACRO_PREFIX + #full <= 255 then return full end
-		if not warnedTooLong then
-			warnedTooLong = true
-			print("QuietHUD: your settings and added frames are too long to be saved together, so the added frames will be forgotten on the next reload")
-		end
-	end
-	return base
+	return table.concat(parts, ";")
 end
 
 local function readMacroString()
@@ -397,6 +396,7 @@ local function persist()
 end
 
 local persistBags -- applies the open bag opacity (defined in the bags block)
+local writeFrames -- saves the frames added with /qhud add (defined in the frames block, also called at logout)
 local hiddenMmButtons -- names of the minimap buttons of other addons that are hidden now (defined in the minimap buttons block)
 
 local function persistSoon()
@@ -454,9 +454,10 @@ local function restoreFromStore()
 				-- 1.1.4 stored "action bars on mouse over" on its own; it is a column of the trigger grid now.
 				if v == "0" then DB.trigBars = 1 end
 			elseif k:sub(1, 1) == "x" then
+				-- Up to 1.2.1 the added frames were stored here; they are in the "QuietHUD frames" macro now, and this is
+				-- only read so that they carry over. They move to the new macro the next time it is written.
 				local g = k:sub(2)
-				DB.extra[g] = {}
-				for name in v:gmatch("[^,]+") do DB.extra[g][#DB.extra[g] + 1] = name end
+				for name in v:gmatch("[^,]+") do mergeExtra(g, name) end
 			end
 		end
 	end
@@ -600,16 +601,23 @@ end
 
 -- Some windows are a small frame with their panels hanging off it as children (the RestedXP guide is a bar with the
 -- steps above it), so the frame's own rectangle is only part of what you see. This checks the children too. It looks
--- about ten times a second, because listing the children makes garbage.
-local deepAt, deepResult = 0, false
+-- about ten times a second, because listing the children makes garbage. Each list keeps its own answer, so two groups
+-- (the RestedXP windows, the chat) never answer for each other.
+local deepCache = setmetatable({}, { __mode = "k" })
 local function anyHoveredDeep(names)
+	if not names then return false end
 	local now = GetTime()
-	if now - deepAt < 0.1 then return deepResult end
-	deepAt, deepResult = now, false
+	local cache = deepCache[names]
+	if not cache then
+		cache = { at = 0, result = false }
+		deepCache[names] = cache
+	end
+	if now - cache.at < 0.1 then return cache.result end
+	cache.at, cache.result = now, false
 	for i = 1, #names do
 		local f = _G[names[i]]
 		if hovered(f) then
-			deepResult = true
+			cache.result = true
 			break
 		end
 		if f and f.GetChildren and f:IsShown() then
@@ -617,14 +625,14 @@ local function anyHoveredDeep(names)
 			for j = 1, #kids do
 				local c = kids[j]
 				if c.IsShown and c.IsMouseOver and c:IsShown() and c:IsMouseOver() then
-					deepResult = true
+					cache.result = true
 					break
 				end
 			end
-			if deepResult then break end
+			if cache.result then break end
 		end
 	end
-	return deepResult
+	return cache.result
 end
 
 -- What brings an element up comes from its row of the trigger grid (bit i of the mask is trigger i): awake, while
@@ -652,7 +660,8 @@ local function chatHovered()
 	for i = 1, #chatList do
 		if hovered(chatList[i]) then return true end
 	end
-	return anyHovered(LISTS.chat)
+	-- Deep, because a chat replacement addon's frame can be an empty container with the window as its child.
+	return anyHoveredDeep(LISTS.chat)
 end
 
 local function bumpChat()
@@ -1912,6 +1921,103 @@ do
 		end
 	end)
 end
+-- The frames you added with /qhud add (DB.extra), in a macro of their own, "QuietHUD frames", written as group=name,name;group=name.
+-- Up to 1.2.1 they were stored in the main settings macro. That one is limited to 255 characters, and once it was full every added
+-- frame was dropped at the next reload (a chat window added to the chat group faded until then and not any more). They carry over:
+-- the old macro is still read, and they move here the next time this one is written.
+do
+	local F_MACRO = "QuietHUD frames"
+	local F_PREFIX = "#QuietHUD frames, do not delete\n"
+	local writePending, warnedFull, restoredF = false, false, false
+
+	local function render(kept)
+		local parts = {}
+		for _, g in ipairs(EXTRA_GROUPS) do
+			if kept[g] and #kept[g] > 0 then parts[#parts + 1] = g .. "=" .. table.concat(kept[g], ",") end
+		end
+		return table.concat(parts, ";")
+	end
+
+	-- Everything that fits in the 255 characters; a name that does not fit is left out (and said so once).
+	local function encodeFrames()
+		local kept, dropped = {}, false
+		for _, g in ipairs(EXTRA_GROUPS) do
+			for _, n in ipairs(DB.extra[g] or {}) do
+				kept[g] = kept[g] or {}
+				kept[g][#kept[g] + 1] = n
+				if #F_PREFIX + #render(kept) > 255 then
+					table.remove(kept[g])
+					dropped = true
+				end
+			end
+		end
+		return render(kept), dropped
+	end
+
+	local function readFrames()
+		local ok, index = pcall(GetMacroIndexByName, F_MACRO)
+		if not (ok and index and index > 0) then return nil end
+		local ok2, body = pcall(GetMacroBody, index)
+		if not ok2 or type(body) ~= "string" then return nil end
+		return body, index
+	end
+
+	-- Adds what the macro holds to what is there already, so a frame added before this ran is not lost.
+	local function restoreFrames()
+		local body = readFrames()
+		if not body then return end
+		restoredF = true
+		local valid = {}
+		for _, g in ipairs(EXTRA_GROUPS) do valid[g] = true end
+		local changed = false
+		for g, list in body:gmatch("(%a+)=([^;\n]+)") do
+			if valid[g] then
+				for name in list:gmatch("[^,%s]+") do
+					if mergeExtra(g, name) then changed = true end
+				end
+			end
+		end
+		if changed then rebuildLists() end
+	end
+
+	writeFrames = function()
+		writePending = false
+		if InCombatLockdown() or not (CreateMacro and EditMacro and GetMacroIndexByName) then return end
+		-- Never write over a macro that has not been read yet, or what it holds would be replaced by an empty list.
+		if not restoredF then restoreFrames() end
+		local text, dropped = encodeFrames()
+		local old, index = readFrames()
+		if text == "" and not old then return end
+		if dropped and not warnedFull then
+			warnedFull = true
+			print("QuietHUD: there are too many added frames to save (the macro holds 255 characters), so the last ones will be forgotten on the next reload. /qhud remove <name> makes room")
+		end
+		local body = F_PREFIX .. text
+		if old == body then return end
+		if index then
+			pcall(EditMacro, index, nil, nil, body)
+		else
+			pcall(CreateMacro, F_MACRO, "INV_Misc_Note_01", body, false)
+		end
+	end
+
+	local previous = persistBags
+	persistBags = function()
+		if previous then previous() end
+		if C_Timer and C_Timer.After and not writePending then
+			writePending = true
+			C_Timer.After(1.5, writeFrames)
+		end
+	end
+
+	local frameEvents = CreateFrame("Frame")
+	for _, e in ipairs({ "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD", "UPDATE_MACROS" }) do
+		pcall(frameEvents.RegisterEvent, frameEvents, e)
+	end
+	frameEvents:SetScript("OnEvent", function()
+		if not restoredF then restoreFrames() end
+	end)
+end
 
 local function makeCheck(parent, y, label, key)
 	local check = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
@@ -2257,7 +2363,13 @@ local function buildConfig()
 	now:SetSize(150, 24)
 	now:SetPoint("BOTTOMLEFT", 16, 14)
 	now:SetText("Show/hide HUD now")
-	now:SetScript("OnClick", toggleDrawn)
+	-- Shows the whole HUD (the same as /qhud peek); pressing it again puts things back to normal. (It used to flip the "weapon
+	-- drawn" state, which does nothing unless "Show while my weapon is drawn" is ticked.) It also ends by itself after two minutes.
+	now:SetScript("OnClick", function()
+		local t = GetTime()
+		peekUntil = t < peekUntil and 0 or t + 120
+		print("QuietHUD: " .. (peekUntil > 0 and "the whole HUD is shown (press again to go back to normal)" or "back to normal"))
+	end)
 	local reset = CreateFrame("Button", nil, config, "UIPanelButtonTemplate")
 	reset:SetSize(140, 24)
 	reset:SetPoint("BOTTOMRIGHT", -16, 14)
@@ -2676,11 +2788,7 @@ local function frameUnderMouse()
 end
 
 local function addExtra(group, name)
-	DB.extra[group] = DB.extra[group] or {}
-	for _, n in ipairs(DB.extra[group]) do
-		if n == name then return end
-	end
-	DB.extra[group][#DB.extra[group] + 1] = name
+	if not mergeExtra(group, name) then return end
 	rebuildLists()
 	persistSoon()
 end
@@ -2877,6 +2985,7 @@ ev:SetScript("OnEvent", function(_, event, arg1, _, _, arg4)
 		pcall(restoreShift)
 		persist()
 		writeMacro()
+		if writeFrames then pcall(writeFrames) end
 		QuietHUDDB = DB
 	elseif event == "PLAYER_LOGIN" then
 		initDB()

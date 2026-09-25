@@ -177,7 +177,7 @@ you hold Alt, Ctrl or Shift.
 
 ## Works with other addons
 
-QuietHUD only changes opacity, and hides what you ask it to hide, so it sits next to unit frame and nameplate addons such as BetterBlizzFrames, BetterBlizzPlates and HealthBarColor, and it fades the RestedXP windows on the RXP page. It fades frames by name. A frame from another addon that does not fade with the rest (one that ignores its parent's opacity, or one the addon keeps on the screen by itself) can be put into a group with `/qhud add`. It already knows BetterBlizzFrames' pet cast bar and fades it with the pet frame, and the checkbox on the Extras page hides the minimap buttons other addons add.
+QuietHUD only changes opacity, and hides what you ask it to hide, so it sits next to unit frame and nameplate addons such as BetterBlizzFrames, BetterBlizzPlates and HealthBarColor, and it fades the RestedXP windows on the RXP page. It fades frames by name. A frame from another addon that does not fade with the rest (one that ignores its parent's opacity, or one the addon keeps on the screen by itself) can be put into a group with `/qhud add`. It already knows BetterBlizzFrames' pet cast bar and fades it with the pet frame, and Chattynator's chat window, which fades with the chat and comes back when you point at it (nothing to add by hand), and the checkbox on the Extras page hides the minimap buttons other addons add.
 
 ## Notes and limits
 
@@ -191,9 +191,10 @@ QuietHUD only changes opacity, and hides what you ask it to hide, so it sits nex
 The Forever beta (build 1.60.1.69977) writes saved variables at logout but never reads them back, so
 an addon's settings would reset every launch. QuietHUD keeps its normal saved variable, which starts
 working as soon as Blizzard fixes this, and also stores its settings in small account-wide macros,
-`QuietHUD data`, `QuietHUD bags`, `QuietHUD opacity` and `QuietHUD groups`, which the client does save
-and reload. Please leave those macros alone: deleting them resets the settings they hold. They use
-four of the account's macro slots, and they are written out of combat, a moment after a change. Both
+`QuietHUD data`, `QuietHUD bags`, `QuietHUD opacity`, `QuietHUD groups` and `QuietHUD frames` (the
+frames you added with `/qhud add`), which the client does save and reload. Please leave those macros
+alone: deleting them resets the settings they hold. They use five of the account's macro slots, and
+they are written out of combat, a moment after a change. Both
 `QuietHUD.toc` and `QuietHUD_Camelot.toc` are shipped, because the client looks for the `_Camelot`
 manifest.
 
