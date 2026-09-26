@@ -6,5 +6,5 @@ param(
 $src = Join-Path $PSScriptRoot 'QuietHUD'
 $dst = Join-Path $Game 'Interface\AddOns\QuietHUD'
 New-Item -ItemType Directory -Path $dst -Force | Out-Null
-Copy-Item (Join-Path $src '*') -Destination $dst -Force
+Copy-Item (Join-Path $src '*') -Destination $dst -Recurse -Force
 "Installed to $dst. Fully restart WoW so it reads the addon manifest."

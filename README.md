@@ -20,6 +20,7 @@ Open the settings with `/qhud`. There are seven pages.
 - Mouse over is optional for every element. For "only on mouse over", leave just that one box ticked in the row. An element with only Fade ticked sits at the idle opacity all the time, so with idle at 0 it stays hidden, which is a way to keep the bags bar or the menu bar off.
 - The cast bar and the breath bar (the underwater timer, which also shows fatigue and feign death) are not in the grid. They appear by themselves when needed: casting shows the cast bar and a running timer shows the breath bar, even when the HUD is idle, so they only have an opacity.
 - The minimap has no mode button. Awake makes it follow the HUD, While moving shows it only while you move, an unticked Fade never fades it, and its idle opacity above 0 keeps it faintly visible.
+- An element with Fade unticked is never faded. It stays at its own opacity from the Opacity page, or fully solid when that is Global. So to keep something at 0.5 all the time, untick its Fade and set its own opacity to 0.5.
 
 **Opacity** (how solid each thing is)
 - One global value for when the HUD is active and one for when it is idle (0 hides it completely). Every element follows the global active value unless it has its own: there is a row for each element, where Global (the far left of the slider) follows the global value and any number uses that instead.
@@ -74,14 +75,24 @@ work, run `/qhud instance` inside the instance and report what it prints.
 
 **Minimap.** Its row in the Elements grid works like any other. Awake makes it follow the HUD. While moving fades it
 out when you stand still and brings it back when you move, which suits a minimap that is only really useful while
-travelling, and New info brings it back for a few seconds after a zone change. Untick Fade to never fade it, and set
-"Minimap opacity when idle" above 0 to keep it faintly visible. The minimap can be made transparent, with catches. The
-game draws a blank map in building interiors if the minimap is hidden and shown again, or is partly transparent while
-it redraws the interior. So a faded-out minimap is shrunk to almost nothing instead of hidden, and indoors the map
-stays fully opaque and is dimmed with a dark layer instead (which also dims the player and quest arrows, which ignore
-transparency). Outdoors it uses real transparency. By default it stays fully solid while showing; tick "Minimap: use
-the HUD opacity when shown, not solid" to make it follow "Opacity when active". "Minimap: darken it instead of
-fading it" uses the dark layer everywhere, not just indoors.
+travelling, and New info brings it back for a few seconds after a zone change. Untick Fade to never fade it (it then
+stays at its own opacity), and set "Minimap idle" above 0 to keep it faintly visible. By default it is solid while
+showing; on the Opacity page, Global makes it follow the active value and any number gives it its own. Below full
+opacity the minimap is see-through everywhere. The game draws a blank map in buildings and cities when the minimap
+frame is partly transparent, and when it is hidden and shown again, so QuietHUD keeps the frame solid and makes the
+map see-through with its round mask instead (the ring, buttons and map pins follow it), and a faded-out minimap is
+shrunk to almost nothing rather than hidden. The game's own icons on the map (the player arrow, quest, tracking and
+party icons) stay solid, because the game does not let addons change their opacity; they only go away when the
+minimap fades out completely. "Minimap: darken instead of see-through" dims the map with a dark layer instead, which
+dims those icons too, but the map is not see-through. Use whichever you prefer. A square minimap (Leatrix Plus has
+that option) works the same way with square masks, and gets a square dark layer. A minimap of another shape keeps its
+own mask: it uses real transparency outdoors and the dark layer in buildings and cities.
+
+**A note on the minimap.** Finding a good way to fade the minimap has been an ongoing source of frustration. The game
+blanks the map in buildings and cities when it is partly transparent, the player arrow and the quest icons ignore
+transparency altogether, and I went back and forth for a long time on whether to just darken it instead. What is
+described above is what is in place now. I'll keep looking for better solutions.
+
 **Chat opacity.** By default chat is fully opaque when it appears, so it stays readable.
 On the Opacity page, set the Chat row to Global to dim it to the same level as everything else.
 
@@ -201,8 +212,8 @@ manifest.
 ## Install
 
 Run `.\install.ps1`, or copy the `QuietHUD` folder into
-`World of Warcraft\_classic_beta_\Interface\AddOns\` yourself, then fully restart the client (it only
-reads addon manifests at startup).
+`World of Warcraft\_classic_beta_\Interface\AddOns\` yourself, including the `masks` folder inside it, then fully
+restart the client (it only reads addon manifests and new image files at startup).
 
 ## About this addon
 

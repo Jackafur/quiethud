@@ -788,83 +788,234 @@ local function mapLog(msg)
 	if #DB.mapLog > 80 then table.remove(DB.mapLog, 1) end
 end
 
--- At partial opacity the game draws a blank map in cities and interiors, so the minimap cluster is never faded
--- with its own opacity. Instead a black overlay on the map darkens it (which also dims the player and quest arrows
--- the game draws on it), and the other parts of the cluster are faded one by one. The cluster and the frames the
--- map sits in keep opacity 1.
-local mapOverlay, mapParts, mapDimApplied, mapAncestors
+local applyMap, refreshMapMask
+do
+	-- At partial opacity the game draws a blank map in cities and interiors, so the minimap cluster is never faded
+	-- with its own opacity. The map itself is faded with its mask instead (see applyMinimapMask), or, for the "darken it"
+	-- option, with a black overlay on the map (which also dims the player and quest arrows the game draws on it). The other
+	-- parts of the cluster are faded one by one. The cluster and the frames the map sits in keep opacity 1.
+	local mapOverlay, mapParts, mapPartSet, mapDimApplied, mapAncestors
 
-local function getMapOverlay()
-	if mapOverlay then return mapOverlay end
-	local frame = CreateFrame("Frame", nil, Minimap)
-	frame:SetAllPoints(Minimap)
-	frame:SetFrameLevel(Minimap:GetFrameLevel() + 20)
-	local tex = frame:CreateTexture(nil, "OVERLAY")
-	tex:SetAllPoints()
-	tex:SetColorTexture(0, 0, 0, 1)
-	if frame.CreateMaskTexture then
-		local mask = frame:CreateMaskTexture()
-		mask:SetAllPoints(tex)
-		mask:SetTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
-		tex:AddMaskTexture(mask)
+	-- The minimap's shape. Addons that change it (Leatrix Plus's square minimap, for example) say so through GetMinimapShape,
+	-- which other addons read too.
+	local function mapShape()
+		local shapeFn = rawget(_G, "GetMinimapShape")
+		if shapeFn then
+			local ok, shape = pcall(shapeFn)
+			if ok and type(shape) == "string" then return shape end
+		end
+		return "ROUND"
 	end
-	frame:Hide()
-	mapOverlay = frame
-	return frame
-end
 
-local function fadeMapParts(frame, factor)
-	for _, child in ipairs({ frame:GetChildren() }) do
-		if child ~= Minimap and child ~= mapOverlay then
-			if mapAncestors[child] then
-				fadeMapParts(child, factor)
-			else
-				if mapParts[child] == nil then mapParts[child] = child:GetAlpha() end
-				child:SetAlpha(mapParts[child] * factor)
+	-- The dark layer, cut round, or square for a square minimap.
+	local function getMapOverlay()
+		if mapOverlay then return mapOverlay end
+		local frame = CreateFrame("Frame", nil, Minimap)
+		frame:SetAllPoints(Minimap)
+		frame:SetFrameLevel(Minimap:GetFrameLevel() + 20)
+		local round = frame:CreateTexture(nil, "OVERLAY")
+		round:SetAllPoints()
+		round:SetColorTexture(0, 0, 0, 1)
+		if frame.CreateMaskTexture then
+			local mask = frame:CreateMaskTexture()
+			mask:SetAllPoints(round)
+			mask:SetTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+			round:AddMaskTexture(mask)
+		end
+		local square = frame:CreateTexture(nil, "OVERLAY")
+		square:SetAllPoints()
+		square:SetColorTexture(0, 0, 0, 1)
+		square:Hide()
+		frame.round, frame.square = round, square
+		frame:Hide()
+		mapOverlay = frame
+		return frame
+	end
+
+	local function prepMapParts()
+		mapParts = mapParts or {}
+		mapPartSet = mapPartSet or {}
+		if not mapAncestors then
+			mapAncestors = {}
+			local f = Minimap:GetParent()
+			while f and f ~= UIParent do
+				mapAncestors[f] = true
+				f = f:GetParent()
 			end
 		end
 	end
-	for _, region in ipairs({ frame:GetRegions() }) do
-		if mapParts[region] == nil then mapParts[region] = region:GetAlpha() end
-		region:SetAlpha(mapParts[region] * factor)
-	end
-end
 
-local function applyMinimapAlpha(a)
-	if not (Minimap and MinimapCluster) then return end
-	mapParts = mapParts or {}
-	if not mapAncestors then
-		mapAncestors = {}
-		local f = Minimap:GetParent()
-		while f and f ~= UIParent do
-			mapAncestors[f] = true
-			f = f:GetParent()
+	-- A part keeps its own opacity (remembered the first time it is faded), and the fade multiplies it. When its owner changes
+	-- it while it is faded (an addon's map pin, for example), the new value is taken as its own opacity from then on.
+	local function fadeMapPart(part, factor)
+		local now = part:GetAlpha()
+		if mapParts[part] == nil or (mapPartSet[part] and math.abs(now - mapPartSet[part]) > 0.01) then mapParts[part] = now end
+		local want = mapParts[part] * factor
+		part:SetAlpha(want)
+		mapPartSet[part] = want
+	end
+
+	local function fadeMapParts(frame, factor)
+		for _, child in ipairs({ frame:GetChildren() }) do
+			if child ~= Minimap and child ~= mapOverlay then
+				if mapAncestors[child] then
+					fadeMapParts(child, factor)
+				else
+					fadeMapPart(child, factor)
+				end
+			end
+		end
+		for _, region in ipairs({ frame:GetRegions() }) do fadeMapPart(region, factor) end
+	end
+
+	-- Puts back the parts' own opacity, except on a part whose owner has changed it since.
+	local function restoreMapParts()
+		for part, alpha in pairs(mapParts or {}) do
+			if not (mapPartSet[part] and math.abs(part:GetAlpha() - mapPartSet[part]) > 0.01) then part:SetAlpha(alpha) end
+		end
+		mapParts, mapPartSet = {}, {}
+	end
+
+	-- Everything around the map at opacity a: the cluster stays at 1, its parts and the frames added to the map group fade.
+	local function fadeMapAround(a)
+		MinimapCluster:SetAlpha(1)
+		local ok, err = pcall(function()
+			fadeMapParts(MinimapCluster, a)
+			fadeMapParts(Minimap, a)
+		end)
+		if not ok then mapLog("could not fade the minimap parts: " .. tostring(err)) end
+		for _, name in ipairs(LISTS.map) do
+			local f = name ~= "MinimapCluster" and _G[name]
+			if f and f.SetAlpha then f:SetAlpha(a) end
 		end
 	end
-	if a >= 0.995 then
-		if mapDimApplied then
-			mapDimApplied = nil
-			if mapOverlay then mapOverlay:Hide() end
-			for part, alpha in pairs(mapParts) do part:SetAlpha(alpha) end
-			mapParts = {}
-		end
-		applyList("map", 1)
-		return
+
+	-- Building interiors and cities (the game's rest areas: Stormwind's streets count as outdoors, but are rest areas). The map is
+	-- redrawn as you move through them, so it must not be partly transparent there. Called through pcall, every frame.
+	local function mapNeedsSolidAlpha()
+		local okIn, indoors = pcall(IsIndoors)
+		if okIn and indoors then return true end
+		local okRest, resting = pcall(IsResting)
+		return (okRest and resting) and true or false
 	end
-	if mapDimApplied and math.abs(mapDimApplied - a) < 0.004 then return end
-	mapDimApplied = a
-	MinimapCluster:SetAlpha(1)
-	local overlay = getMapOverlay()
-	overlay:SetAlpha(1 - a)
-	overlay:Show()
-	local ok, err = pcall(function()
-		fadeMapParts(MinimapCluster, a)
-		fadeMapParts(Minimap, a)
-	end)
-	if not ok then mapLog("could not fade the minimap parts: " .. tostring(err)) end
-	for _, name in ipairs(LISTS.map) do
-		local f = name ~= "MinimapCluster" and _G[name]
-		if f and f.SetAlpha then f:SetAlpha(a) end
+
+	local function applyMinimapAlpha(a)
+		if not (Minimap and MinimapCluster) then return end
+		prepMapParts()
+		if a >= 0.995 then
+			if mapDimApplied then
+				mapDimApplied = nil
+				if mapOverlay then mapOverlay:Hide() end
+				restoreMapParts()
+			end
+			applyList("map", 1)
+			return
+		end
+		if mapDimApplied and math.abs(mapDimApplied - a) < 0.004 then return end
+		mapDimApplied = a
+		local overlay = getMapOverlay()
+		local square = mapShape() == "SQUARE"
+		overlay.square:SetShown(square)
+		overlay.round:SetShown(not square)
+		overlay:SetAlpha(1 - a)
+		overlay:Show()
+		fadeMapAround(a)
+	end
+
+	-- The game cuts the round map out of the square one with a mask image. QuietHUD swaps in one of its own masks
+	-- (masks\m0.tga to m100.tga for a round minimap, s0.tga to s100.tga for a square one, in 5% steps), which have the opacity
+	-- built into the image, so the map fades while every frame keeps opacity 1 and the map of a building or a city is never
+	-- drawn blank. Tested in the game on 2026-09-25: masks swapped 20 times a second while walking through Northshire Abbey
+	-- never blanked the map. The mask that was there before (Blizzard's, or another addon's) is put back when the map is fully
+	-- shown. mapMaskStep is nil while that mask is on, the step of ours otherwise, or -1 when ours has to be set again (after
+	-- the map was shrunk or moved, or something else changed the mask).
+	local mapMaskOrig, mapMaskStep, mapMaskOurs, mapMaskFactor, mapMaskPartsAt, mapMaskShape = nil, nil, false, nil, 0, nil
+
+	-- The mask to put back: the last one another addon set, or else the game's round one, or a plain square for a square
+	-- minimap whose addon set its mask before QuietHUD was loaded.
+	local function originalMask(shape)
+		if mapMaskOrig then return mapMaskOrig end
+		return shape == "SQUARE" and "Interface\\ChatFrame\\ChatFrameBackground" or "ui-hud-minimap-frame-generic-mask"
+	end
+
+	local function setMapMask(asset)
+		mapMaskOurs = true
+		local ok, err = pcall(Minimap.SetMaskTexture, Minimap, asset)
+		mapMaskOurs = false
+		if not ok then mapLog("could not set the minimap mask: " .. tostring(err)) end
+	end
+
+	if Minimap and Minimap.SetMaskTexture then
+		hooksecurefunc(Minimap, "SetMaskTexture", function(_, asset)
+			if mapMaskOurs then return end
+			mapMaskOrig = asset
+			if mapMaskStep then mapMaskStep = -1 end
+		end)
+	end
+
+	-- A round or a square minimap. Other shapes (SexyMap has some) keep their own mask.
+	local function mapMaskUsable()
+		if not (Minimap and Minimap.SetMaskTexture) then return false end
+		local shape = mapShape()
+		return shape == "ROUND" or shape == "SQUARE"
+	end
+
+	local function applyMinimapMask(a)
+		if not (Minimap and MinimapCluster) then return end
+		prepMapParts()
+		local shape = mapShape()
+		if a >= 0.995 then
+			if mapMaskStep then
+				mapMaskStep, mapMaskFactor = nil, nil
+				setMapMask(originalMask(mapMaskShape or shape))
+				restoreMapParts()
+			end
+			applyList("map", 1)
+			return
+		end
+		local level = math.max(0, math.floor(a * 20 + 0.5))
+		if level ~= mapMaskStep or shape ~= mapMaskShape then
+			mapMaskStep, mapMaskShape = level, shape
+			local prefix = shape == "SQUARE" and "s" or "m"
+			setMapMask(level >= 20 and originalMask(shape) or ("Interface\\AddOns\\QuietHUD\\masks\\" .. prefix .. level * 5 .. ".tga"))
+		end
+		-- The parts again every half second, for map pins that addons add or change while the map is faded.
+		local now = GetTime()
+		if mapMaskFactor and math.abs(mapMaskFactor - a) < 0.004 and now < mapMaskPartsAt then return end
+		mapMaskFactor, mapMaskPartsAt = a, now + 0.5
+		fadeMapAround(a)
+	end
+
+	-- How the minimap is faded: with the mask; with the dark layer for the "darken" option; and for a minimap that is neither
+	-- round nor square, the dark layer in buildings and cities and plain opacity in the open world.
+	local mapMode
+	applyMap = function(a)
+		local mode = "alpha"
+		if DB.mapDarken then
+			mode = "dark"
+		elseif mapMaskUsable() then
+			mode = "mask"
+		elseif mapNeedsSolidAlpha() then
+			mode = "dark"
+		end
+		if mode ~= mapMode then
+			mapLog("minimap fades with " .. (mode == "mask" and "its mask" or mode == "dark" and "the dark layer" or "its opacity"))
+			mapMode = mode
+		end
+		if mode ~= "mask" and mapMaskStep then applyMinimapMask(1) end
+		if mode ~= "dark" and mapDimApplied then applyMinimapAlpha(1) end
+		if mode == "mask" then
+			applyMinimapMask(a)
+		elseif mode == "dark" then
+			applyMinimapAlpha(a)
+		else
+			applyList("map", a)
+		end
+	end
+
+	-- After the map was shrunk or moved: our mask, if it is on, is set again at the next update.
+	refreshMapMask = function()
+		if mapMaskStep then mapMaskStep = -1 end
 	end
 end
 -- A faded-out minimap is shrunk to almost nothing (see below), so its own rectangle can no longer be hovered. The rectangle
@@ -922,7 +1073,14 @@ local function setMinimapVisible(visible, alpha)
 			MinimapCluster:SetScale(mapSavedScale)
 			mapSavedScale = nil
 			guardOversizedMinimapKids()
-			if C_Timer and C_Timer.After then C_Timer.After(0.5, guardOversizedMinimapKids) end
+			-- Our mask is set again at its new size, now and once more when the size has settled.
+			refreshMapMask()
+			if C_Timer and C_Timer.After then
+				C_Timer.After(0.5, function()
+					guardOversizedMinimapKids()
+					refreshMapMask()
+				end)
+			end
 		end
 	else
 		pcall(rememberMapRect)
@@ -1003,7 +1161,10 @@ local TEXT_SPECS = { { "HotKey", "barHotkeys" }, { "Name", "barNames" } }
 local hotkeyClock = 0
 -- Any instance that is not PvP counts, so instance types this client adds or names differently still work.
 -- The whole check is in a pcall and skips secret values, so it can never break the fade loop.
+-- A test switch (/qhud fakeinstance): for trying the "Dungeon or raid" column without being in one. Not saved, so a reload ends it.
+local fakeInstance = false
 local function inDungeonOrRaid()
+	if fakeInstance then return true end
 	if not IsInInstance then return false end
 	local ok, result = pcall(function()
 		local inside, kind = IsInInstance()
@@ -1048,6 +1209,7 @@ do
 		for _, a in ipairs(t) do
 			f:SetPoint(a[1], a[2], a[3], a[4] + dx, a[5] + dy)
 		end
+		refreshMapMask() -- the minimap's mask is set again where the map is now
 	end
 
 	local function anchoredToListed(t, listed, f)
@@ -1190,9 +1352,18 @@ do
 		end
 		tooltipTouched = a < 1
 	end
+	-- The game also puts a tooltip back to full opacity when it gets new content while it is already shown (moving the mouse
+	-- quickly from one thing to the next, even onto something new while the last tooltip is still fading out), which does
+	-- not count as being shown again and flickered. So the opacity is also applied right after every Show call and after
+	-- the tooltip's own update each frame.
+	local function onTip() applyTooltips() end
 	for i = 1, #TOOLTIPS do
 		local f = _G[TOOLTIPS[i]]
-		if f and f.HookScript then pcall(f.HookScript, f, "OnShow", function() applyTooltips() end) end
+		if f and f.HookScript then
+			pcall(f.HookScript, f, "OnShow", onTip)
+			pcall(f.HookScript, f, "OnUpdate", onTip)
+		end
+		if f and f.Show then pcall(hooksecurefunc, f, "Show", onTip) end
 	end
 end
 -- The Issue Reporter button is hidden or not, with a checkbox, outside the fade. This turns the stored value into an
@@ -1201,6 +1372,73 @@ local function fixedAlpha(key)
 	local v = DB[key]
 	if type(v) == "boolean" then return v and 0 or 1 end
 	return v or 1
+end
+
+-- The opacity an element has of its own on the Opacity page, or nil when it follows Global (or is solid). An element that
+-- does not fade (Fade unticked on the Elements page) stays at this opacity; without one it is left alone, fully solid.
+local function ownOpacity(g)
+	local v
+	if g == "chat" then
+		v = (not DB.chatDim) and DB.chatOpacity or nil
+	elseif g == "map" then
+		v = (not DB.mapFollowsHud) and DB.ovMap or nil
+	elseif OVERRIDE_KEYS[g] then
+		v = DB[OVERRIDE_KEYS[g]]
+	end
+	if v and v > 0 and v < 0.999 then return math.max(v, 0.1) end
+	return nil
+end
+
+-- RestedXP sets its targets frame to full opacity each time it redraws the list (on a target change, among others). The
+-- main loop would put QuietHUD's opacity back one frame later, which shows as a flicker, so the frames of the RXP group
+-- get it back the moment RestedXP (or anything else) changes it.
+local applyRxp
+do
+	local wanted, busy, seen = nil, false, {}
+	-- Still in the group right now (a frame taken out of it gets its own opacity back and is left alone).
+	local function listed(f)
+		for _, name in ipairs(LISTS.rxp) do
+			if _G[name] == f then return true end
+		end
+		return false
+	end
+	local function keep(f, a)
+		if busy or not wanted or not DB.enabled or type(a) ~= "number" or math.abs(a - wanted) < 0.01 or not listed(f) then return end
+		busy = true
+		pcall(f.SetAlpha, f, wanted)
+		busy = false
+	end
+	applyRxp = function(a)
+		wanted = a
+		for _, name in ipairs(LISTS.rxp) do
+			local f = _G[name]
+			if f and f.SetAlpha and not seen[f] then
+				seen[f] = true
+				hooksecurefunc(f, "SetAlpha", keep)
+			end
+		end
+		applyList("rxp", a)
+	end
+end
+
+-- Sets a group to opacity a. allBars: every action bar, not only the ones picked on the Bars page.
+local function applyGroup(g, a, allBars)
+	if g == "chat" then
+		applyChat(a)
+	elseif g == "rxp" then
+		applyRxp(a)
+	elseif g == "bars" then
+		applyBars(a, not allBars)
+	elseif g == "nav" then
+		applyNav(a)
+	elseif g == "map" then
+		-- The game redraws the map of a building interior, or of a city, as you move through it, and draws a blank map
+		-- if that happens while the minimap frame is partly transparent (which includes every fade in and out). So the
+		-- frame keeps opacity 1 and the map fades through its mask (see applyMap).
+		applyMap(a)
+	else
+		applyList(g, a)
+	end
 end
 
 local function update(dt)
@@ -1262,6 +1500,8 @@ local function update(dt)
 	local idle = DB.idle or 0
 	local mapAlpha = 1
 	for _, g in ipairs(FADE_ORDER) do
+		-- Fade is off for this element, but it has an opacity of its own: it stays at that opacity (Edit Mode shows it solid).
+		local fixedA = enabled and not edit and not flags[g] and ownOpacity(g)
 		if enabled and flags[g] then
 			cur[g] = step(cur[g], vis[g] and 1 or 0, dt, g == "chat" and DB.chatFadeSeconds or nil)
 			local peak = DB.base or 0.6
@@ -1287,44 +1527,15 @@ local function update(dt)
 			local low = math.min(floor, peak)
 			local a = low + (peak - low) * cur[g]
 			if g == "panel" and DB.hidePanel and not edit then a = 0 end
-			local dimHere = false
-			if g == "map" then
-				-- The game redraws the map of a building interior as you move through it, and draws a blank map if that
-				-- happens while the minimap is partly transparent. So indoors the map stays fully opaque and is dimmed
-				-- with a dark layer instead. Outdoors it uses real transparency.
-				local okIn, indoors = pcall(function() return IsIndoors and IsIndoors() end)
-				dimHere = (DB.mapDarken or (okIn and indoors)) and true or false
-			end
-			if g == "chat" then
-				applyChat(a)
-			elseif g == "bars" then
-				applyBars(a, true)
-			elseif g == "nav" then
-				applyNav(a)
-			elseif g == "map" then
-				if dimHere then
-					applyMinimapAlpha(a)
-				else
-					if mapDimApplied then applyMinimapAlpha(1) end
-					applyList(g, a)
-				end
-			else
-				applyList(g, a)
-			end
+			applyGroup(g, a, false)
 			if g == "map" then mapAlpha = a end
 			fading[g] = true
+		elseif fixedA then
+			applyGroup(g, fixedA, true)
+			fading[g] = true
+			cur[g] = 1
 		elseif fading[g] then
-			if g == "chat" then
-				applyChat(1)
-			elseif g == "bars" then
-				applyBars(1, false)
-			elseif g == "map" then
-				applyMinimapAlpha(1)
-			elseif g == "nav" then
-				applyNav(1)
-			else
-				applyList(g, 1)
-			end
+			applyGroup(g, 1, true)
 			fading[g] = false
 			cur[g] = 1
 		end
@@ -1418,9 +1629,10 @@ local PAGES = {
 	} },
 	{ title = "Elements", items = {
 		{ "grid", "elements" },
-		{ "note", "Awake: combat, a drawn weapon or a target. Dungeon or raid: while you are inside one. New info: chat messages, quest progress, a zone change (minimap). Hide in combat beats the rest. For mouse over only, leave just that box ticked." },
+		{ "note", "Awake: combat, a drawn weapon or a target. Dungeon or raid: while you are inside one. New info: chat messages, quest progress, a zone change (minimap). Hide in combat beats the rest. For mouse over only, leave just that box ticked. Fade unticked: never faded, it stays at its opacity from the Opacity page (fully solid on Global)." },
 		{ "note", "Party panel: the side panel that pops out of the arrow tab on the left (Party 1/1, markers, Leave Party). Alerts: the durability icon, the loss of control alert and external defensives. Added frames: frames you put in the old HUD group with /qhud add hud. The cast bar and the breath bar appear by themselves when needed, so they only have an opacity, on the Opacity page." },
-		{ "check", "mapDarken", "Minimap: darken it instead of fading it" },
+		{ "check", "mapDarken", "Minimap: darken instead of see-through" },
+		{ "note", "Below full opacity the minimap is see-through, but the game's own icons on it (the player arrow, quest, tracking and party icons) stay solid: the game does not let addons change their opacity. They only go away when the minimap fades out completely. Darkened dims them with the map, but the map is not see-through. Use whichever you prefer." },
 	} },
 	{ title = "Opacity", items = {
 		{ "heading", "All elements" },
@@ -1440,7 +1652,7 @@ local PAGES = {
 		{ "slider", "bagAlpha", "Open bag windows", 0, 1, 0.05, "%.2f", "Global", true },
 		{ "slider", "tooltipAlpha", "Tooltips", 0, 1, 0.05, "%.2f", "Global", true },
 		{ "slider", "mapIdle", "Minimap idle (0 = hidden)", 0, 1, 0.05, "%.2f", nil, true },
-		{ "note", "Global follows the active value at the top. Chat, the minimap, open bags and tooltips are solid until you change them. Drag an open bag by its title bar to move the bags (/qhud bags reset undoes it). RestedXP has its own opacity on its page." },
+		{ "note", "Global follows the active value at the top. Chat, the minimap, open bags and tooltips are solid until you change them. An element with Fade unticked on the Elements page stays at its own opacity here, without fading. Drag an open bag by its title bar to move the bags (/qhud bags reset undoes it). RestedXP has its own opacity on its page." },
 	} },
 	{ title = "Bars", items = {
 		{ "note", "Fade picks which action bars fade. It only counts while Fade is ticked for Action bars on the Elements page, which is the master switch (the stance, pet and XP bars follow that switch)." },
@@ -3098,9 +3310,15 @@ SlashCmdList["QUIETHUD"] = function(msg)
 		local ok, line = pcall(function()
 			local inside, kind = IsInInstance()
 			return "IsInInstance = " .. tostring(inside) .. ", " .. tostring(kind) .. ", counts as a dungeon or raid: "
-				.. tostring(inDungeonOrRaid())
+				.. tostring(inDungeonOrRaid()) .. (fakeInstance and " (the fakeinstance test switch is ON)" or "")
 		end)
 		print("QuietHUD: " .. (ok and line or "could not read the instance state"))
+	elseif cmd == "fakeinstance" then
+		-- Test switch, not listed in the help: QuietHUD behaves as if you were inside a dungeon or raid, so the "Dungeon or raid"
+		-- column can be tried anywhere. It only changes what QuietHUD believes, and a reload ends it.
+		if rest == "on" then fakeInstance = true elseif rest == "off" then fakeInstance = false else fakeInstance = not fakeInstance end
+		print("QuietHUD test switch: " .. (fakeInstance and "acting as if you were in a dungeon or raid (off again with /qhud fakeinstance off or a /reload)"
+			or "back to the real instance state"))
 	elseif cmd == "bars" then
 		print("QuietHUD action bar frames found: " .. table.concat(discovered, ", "))
 	elseif cmd == "where" then

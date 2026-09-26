@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.3.0
+
+Your settings carry over. This version adds a `masks` folder with image files, so restart the game fully once after updating (a `/reload` does not pick up new files).
+
+A word on the minimap first. Finding a good way to fade it has been an ongoing source of frustration. The game draws a blank map in buildings and cities whenever the minimap is partly transparent, and the map breaks the same way if it is hidden and shown again. On top of that, the player arrow and the quest icons the game draws on the map ignore transparency completely, and I went back and forth for a long time on whether to just darken the whole thing instead. I'll keep looking for better solutions. What is in place now: the map fades with real transparency everywhere, the game's own icons stay solid until the minimap has faded out completely, and if you would rather have everything dimmed together, the darken checkbox is still there. The details are below, along with the other changes.
+
+### Changed
+
+- **The minimap fades with real transparency everywhere**, in buildings and cities too, where it used to be dimmed with a dark layer. The game draws a blank map in cities and buildings when the minimap frame is partly transparent, so QuietHUD no longer fades that frame at all. The map fades through its round mask instead (QuietHUD brings mask images with the opacity built in, in 5% steps), and the ring, buttons, zone name, clock and map pins fade with it. This also fixes a blank minimap in cities such as Stormwind, whose streets count as outdoors. The game's own icons on the map (the player arrow, quest, tracking and party icons) stay solid, because the game does not let addons change their opacity; they go away when the minimap fades out completely. The "darken" checkbox, now called "Minimap: darken instead of see-through", dims them with the map, but the map is not see-through; a note on the Elements page explains the choice. A square minimap (Leatrix Plus has that option) gets the same see-through fade with square masks, and a square dark layer when darkened. A minimap of another shape keeps its own mask and fades the old way.
+
+### Added
+
+- **A fixed opacity without fading.** An element with Fade unticked on the Elements page now stays at its own opacity from the Opacity page, so to keep something at 0.5 all the time, untick its Fade and set its own opacity to 0.5. With its opacity on Global it stays fully solid, as before. If you had unticked Fade for something that has an opacity of its own, it now sits at that opacity instead of fully solid.
+- **`/qhud fakeinstance [on|off]`**, a test switch. QuietHUD acts as if you were inside a dungeon or raid, so the "Dungeon or raid" column on the Elements page can be tried without entering one. It only changes what QuietHUD believes, it is not saved, and a `/reload` ends it. `/qhud instance` says when it is on.
+
+### Fixed
+
+- **RestedXP's targets window flickered** when you changed target while it was faded. RestedXP sets it to full opacity each time it redraws the list, and QuietHUD only put its own opacity back a frame later. It now puts it back at once.
+- **Tooltips could flash at full opacity** when you moved the mouse quickly from one thing to the next. The game puts a tooltip back to full opacity when it gets new content while already shown, and QuietHUD only caught a tooltip being shown for the first time. It now puts its opacity back at once in that case too.
+
 ## 1.2.2
 
 Fixes. Your settings carry over, and nothing changes unless you use the addon or option named below.
