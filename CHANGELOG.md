@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.3.1
+
+Mostly for shamans. Your settings carry over.
+
+### Added
+
+- **The shaman totem bar** (the bar with the totem buttons) fades with the action bars now. It follows the Action bars row on the Elements page, like the stance and pet bars, counts for mouse over (its column of totems that opens above it too, so the bars stay up while you pick a totem; Blizzard's spell flyouts on the action bars count the same way), moves with the bars' pixel shift, and gets the shorter hotkey text. The small totem timers next to the player frame already faded with Buffs and debuffs.
+
+### Fixed
+
+- **A Lua error from the totem bar** (a Blizzard bug, worked around): when the totem bar comes up before the shaman has trained Call of the Elements and Totemic Recall (level 20), for example when it is turned on in Edit Mode on a new shaman, Blizzard leaves those two buttons visible without a spell, and pointing at one throws an error. While such a button has no spell it now ignores the mouse, and it works normally once the spell is learned. This is a temporary workaround until Blizzard fixes it.
+
 ## 1.3.0
 
 Your settings carry over. This version adds a `masks` folder with image files, so restart the game fully once after updating (a `/reload` does not pick up new files).

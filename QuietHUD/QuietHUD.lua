@@ -116,7 +116,7 @@ local MOVE_LINGER = 1.5
 local SKULL = 8
 
 local DEFAULT_LISTS = {
-	bars = { "StatusTrackingBarManager", "StanceBar", "PetActionBar", "PossessActionBar" },
+	bars = { "StatusTrackingBarManager", "StanceBar", "PetActionBar", "PossessActionBar", "MultiCastActionBarFrame" },
 	player = { "PlayerFrame" },
 	hud = {}, -- frames you add with /qhud add hud (the old big list is split into the rows below)
 	quest = { "ObjectiveTrackerFrame" },
@@ -153,9 +153,13 @@ local EXTRA_GROUPS = { "bars", "player", "hud", "quest", "map", "hidden", "chat"
 local FADE_ORDER = { "bars", "player", "hud", "quest", "map", "chat", "nav", "rxp", "bags", "micro" }
 for _, s in ipairs(SPLIT) do FADE_ORDER[#FADE_ORDER + 1] = s.g end
 local HIDE_TOGGLES = { { "reporter", "hideReporter" } }
+-- The frames that count for "mouse over" on the Action bars row. The flyouts (the totem bar's column of totems and the arrow
+-- that opens it, and Blizzard's spell flyout) open outside their bar, so they count too while they are shown, or the bars
+-- would fade the moment the mouse moves up into them.
 local ACTION_BARS = {
 	"MainActionBar", "MainMenuBar", "MultiBarBottomLeft", "MultiBarBottomRight", "MultiBarRight",
-	"MultiBarLeft", "MultiBar5", "MultiBar6", "MultiBar7", "MultiBar8", "StanceBar", "PetActionBar",
+	"MultiBarLeft", "MultiBar5", "MultiBar6", "MultiBar7", "MultiBar8", "StanceBar", "PetActionBar", "MultiCastActionBarFrame",
+	"MultiCastFlyoutFrame", "MultiCastFlyoutFrameOpenButton", "SpellFlyout",
 }
 local CHAT_EXTRAS = {
 	"GeneralDockManager", "ChatFrameMenuButton", "ChatFrameChannelButton",
@@ -238,9 +242,9 @@ local SHIFT_FRAMES = {
 	bars = {
 		"MainActionBar", "MultiBarBottomLeft", "MultiBarBottomRight", "MultiBarRight", "MultiBarLeft", "MultiBar5", "MultiBar6",
 		"MultiBar7", "MultiBar8", "StanceBar", "PetActionBar", "PossessActionBar", "StatusTrackingBarManager", "MicroMenuContainer",
-		"BagsBar",
+		"BagsBar", "MultiCastActionBarFrame",
 	},
-	units = { "PlayerFrame", "PlayerCastingBarFrame", "TargetFrame", "FocusFrame", "PetFrame", "PartyFrame" },
+	units ={ "PlayerFrame", "PlayerCastingBarFrame", "TargetFrame", "FocusFrame", "PetFrame", "PartyFrame" },
 }
 local function rebuildLists()
 	local before = {}
@@ -1127,8 +1131,38 @@ local function shortHotkey(text)
 end
 local shortened = {}
 
--- Buttons outside the eight action bars that show a hotkey too: the pet bar, the stance bar and the possess bar.
-local EXTRA_BUTTONS = { { "PetActionButton", 10 }, { "StanceButton", 10 }, { "PossessButton", 2 } }
+-- Buttons outside the eight action bars that show a hotkey too: the pet bar, the stance bar, the possess bar and the shaman totem bar.
+local EXTRA_BUTTONS = { { "PetActionButton", 10 }, { "StanceButton", 10 }, { "PossessButton", 2 }, { "MultiCastActionButton", 12 } }
+
+-- WORKAROUND for a Blizzard bug (added 2026-09-26; remove it once Blizzard fixes MultiCastActionBarFrame.lua). The totem
+-- bar's summon and recall buttons (Call of the Elements, Totemic Recall, trained at level 20) are only hidden while the bar
+-- is already shown, so when the bar comes up another way (turned on in Edit Mode on a new shaman, for example) they stay
+-- visible without a spell, and pointing at one throws a Lua error in Blizzard's tooltip code (SetSpellByID with no spell).
+-- A faded bar makes that easy to hit without seeing it. So while such a button has no spell it ignores the mouse, and it
+-- gets the mouse back as soon as it has one. Only out of combat, because the buttons are protected.
+do
+	local muted = {}
+	local function checkTotemButtons()
+		if InCombatLockdown() then return end
+		for _, name in ipairs({ "MultiCastSummonSpellButton", "MultiCastRecallSpellButton" }) do
+			local b = _G[name]
+			if b and b.EnableMouse and b.IsMouseEnabled then
+				if not b.spellId then
+					if not muted[b] and b:IsMouseEnabled() then
+						b:EnableMouse(false)
+						muted[b] = true
+					end
+				elseif muted[b] then
+					b:EnableMouse(true)
+					muted[b] = nil
+				end
+			end
+		end
+	end
+	if C_Timer and C_Timer.NewTicker then C_Timer.NewTicker(1, function() pcall(checkTotemButtons) end) end
+	local bar = _G.MultiCastActionBarFrame
+	if bar and bar.HookScript then pcall(bar.HookScript, bar, "OnShow", function() pcall(checkTotemButtons) end) end
+end
 
 -- Shortens (or, with wantShort false, restores) the hotkey text of one button.
 local function shortenOne(fs, wantShort)
@@ -1655,7 +1689,7 @@ local PAGES = {
 		{ "note", "Global follows the active value at the top. Chat, the minimap, open bags and tooltips are solid until you change them. An element with Fade unticked on the Elements page stays at its own opacity here, without fading. Drag an open bag by its title bar to move the bags (/qhud bags reset undoes it). RestedXP has its own opacity on its page." },
 	} },
 	{ title = "Bars", items = {
-		{ "note", "Fade picks which action bars fade. It only counts while Fade is ticked for Action bars on the Elements page, which is the master switch (the stance, pet and XP bars follow that switch)." },
+		{ "note", "Fade picks which action bars fade. It only counts while Fade is ticked for Action bars on the Elements page, which is the master switch (the stance, pet, totem and XP bars follow that switch)." },
 		{ "bargrid" },
 		{ "check", "shortHotkeys", "Shorten hotkey text (Num Pad 1 shows N1)" },
 	} },
