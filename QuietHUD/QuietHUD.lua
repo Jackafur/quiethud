@@ -905,6 +905,21 @@ do
 	-- option, with a black overlay on the map (which also dims the player and quest arrows the game draws on it). The other
 	-- parts of the cluster are faded one by one. The cluster and the frames the map sits in keep opacity 1.
 	local mapOverlay, mapParts, mapPartSet, mapDimApplied, mapAncestors
+	-- An addon that sets a part's opacity while the map is faded (RestedXP sets its step pin again as it redraws) would
+	-- show it at that opacity until the next half-second pass, which looks like blinking. So each part's SetAlpha is hooked
+	-- once, and an outside change is adopted as the part's own opacity and multiplied at once, before the frame is drawn.
+	local mapFactor, mapBusy = nil, false
+	local mapHooked = setmetatable({}, { __mode = "k" })
+	local function keepMapPart(part, a)
+		if mapBusy or not mapFactor or not mapParts or type(a) ~= "number" then return end
+		if mapPartSet[part] and math.abs(a - mapPartSet[part]) < 0.01 then return end
+		mapParts[part] = a
+		local want = a * mapFactor
+		mapBusy = true
+		pcall(part.SetAlpha, part, want)
+		mapBusy = false
+		mapPartSet[part] = want
+	end
 
 	-- The minimap's shape. Addons that change it (Leatrix Plus's square minimap, for example) say so through GetMinimapShape,
 	-- which other addons read too.
@@ -961,7 +976,13 @@ do
 		local now = part:GetAlpha()
 		if mapParts[part] == nil or (mapPartSet[part] and math.abs(now - mapPartSet[part]) > 0.01) then mapParts[part] = now end
 		local want = mapParts[part] * factor
+		if not mapHooked[part] and part.SetAlpha then
+			mapHooked[part] = true
+			pcall(hooksecurefunc, part, "SetAlpha", keepMapPart)
+		end
+		mapBusy = true
 		part:SetAlpha(want)
+		mapBusy = false
 		mapPartSet[part] = want
 	end
 
@@ -980,6 +1001,7 @@ do
 
 	-- Puts back the parts' own opacity, except on a part whose owner has changed it since.
 	local function restoreMapParts()
+		mapFactor = nil
 		for part, alpha in pairs(mapParts or {}) do
 			if not (mapPartSet[part] and math.abs(part:GetAlpha() - mapPartSet[part]) > 0.01) then part:SetAlpha(alpha) end
 		end
@@ -989,6 +1011,7 @@ do
 	-- Everything around the map at opacity a: the cluster stays at 1, its parts and the frames added to the map group fade.
 	local function fadeMapAround(a)
 		MinimapCluster:SetAlpha(1)
+		mapFactor = a
 		local ok, err = pcall(function()
 			fadeMapParts(MinimapCluster, a)
 			fadeMapParts(Minimap, a)

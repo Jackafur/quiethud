@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3.3
+
+Your settings carry over.
+
+### Fixed
+
+- **A minimap pin that its addon keeps setting back to full opacity blinked** (RestedXP's step pin on the minimap). QuietHUD only re-checked the map's pins every half second, so the pin showed at full opacity in between. A pin's opacity is now put back the moment its owner changes it, and an opacity the owner sets while the map is awake is kept as the pin's own, the same as before.
+
 ## 1.3.2
 
 Works with ClassicUI Forever's classic bar. Your settings carry over.
