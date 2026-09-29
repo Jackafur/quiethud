@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.3.2
+
+Works with ClassicUI Forever's classic bar. Your settings carry over.
+
+### Changed
+
+- **The bags bar and the menu bar fade by default**, like the rest of the HUD. They sit on screen all the time and burn in fastest, and new users did not realize those two rows were off. They come back with Awake and Mouse over, the same as the action bars. If you had never changed those two rows, they start fading after this update; to keep one solid, untick Fade on its row on the Elements page.
+
+### Fixed
+
+- **Action buttons that another addon moves out of their bar** (ClassicUI Forever puts every button into a holder of its own) fade with the bars now, and pointing at them brings the bars up. Before, the buttons stayed solid while the HUD faded, or came up faded after a target change while everything else woke, because that addon copies the bar's opacity into its holder only when it lays the bar out again. While QuietHUD fades their bar, those buttons ignore the holder's copy; they follow their parent again when they are back in their bar or when the bar is not faded.
+- **ClassicUI Forever's gryphon bar** (the stone band and gryphons, with the micro menu and bags it draws on them) fades with Action Bar 1, like the old MainMenuBar did, and counts for mouse over. Its micro menu and bags follow the Action bars row, not the Bags bar and Menu bar rows, because that addon draws both on the band.
+- **Chat scroll arrows restyled by another addon** (ClassicUI Forever's) stayed solid while the chat faded, because their pictures ignore the chat window's opacity. Pictures that do are faded on their own now.
+- **The pixel shift no longer fights an addon that puts a frame straight back** (ClassicUI Forever lays its bar out again whenever the game's bar frames move, so the bags jumped once a second). After three such moves the frame is left alone until the option is turned on again, and `/qhud shift` says so.
+
 ## 1.3.1
 
 Mostly for shamans. Your settings carry over.

@@ -42,8 +42,8 @@ local FIELDS = {
 	{ key = "navShown", code = "ns", kind = "num", def = 0.6 },
 	{ key = "navIdle", code = "ni", kind = "num", def = 0 },
 	{ key = "questSeconds", code = "q", kind = "num", def = 10 },
-	{ key = "fadeBags", code = "fg", kind = "bool", def = false },
-	{ key = "fadeMicro", code = "fo", kind = "bool", def = false },
+	{ key = "fadeBags", code = "fg", kind = "bool", def = true },
+	{ key = "fadeMicro", code = "fo", kind = "bool", def = true },
 	{ key = "trigBagsBar", code = "tg", kind = "num", def = 9 },
 	{ key = "trigMicro", code = "to", kind = "num", def = 9 },
 	{ key = "barFade", code = "af", kind = "num", def = 255 },
@@ -132,9 +132,11 @@ local DEFAULT_LISTS = {
 }
 local ALL_LISTS = { "bars", "player", "hud", "quest", "map", "micro", "bags", "reporter", "hidden", "chat", "nav", "rxp", "shift" }
 for _, s in ipairs(SPLIT) do DEFAULT_LISTS[s.g] = s.frames; ALL_LISTS[#ALL_LISTS + 1] = s.g end
--- Action Bars 1 to 8: the frame(s) of each bar and the prefix of its button names.
+-- Action Bars 1 to 8: the frame(s) of each bar and the prefix of its button names. ForeverClassicUIBar is ClassicUI Forever's
+-- gryphon band (the stone band and gryphons, with the micro menu and bags that addon draws on it), which goes with Action
+-- Bar 1 like the old MainMenuBar did.
 local BAR_DEFS = {
-	{ frames = { "MainActionBar", "MainMenuBar" }, buttons = "ActionButton" },
+	{ frames = { "MainActionBar", "MainMenuBar", "ForeverClassicUIBar" }, buttons = "ActionButton" },
 	{ frames = { "MultiBarBottomLeft" }, buttons = "MultiBarBottomLeftButton" },
 	{ frames = { "MultiBarBottomRight" }, buttons = "MultiBarBottomRightButton" },
 	{ frames = { "MultiBarRight" }, buttons = "MultiBarRightButton" },
@@ -143,6 +145,10 @@ local BAR_DEFS = {
 	{ frames = { "MultiBar6" }, buttons = "MultiBar6Button" },
 	{ frames = { "MultiBar7" }, buttons = "MultiBar7Button" },
 }
+-- Buttons outside the eight action bars, with their count and their bar (a frame of the bars list): the pet bar, the stance
+-- bar, the possess bar and the shaman totem bar. They show a hotkey too.
+local EXTRA_BUTTONS = { { "PetActionButton", 10, { "PetActionBar" } }, { "StanceButton", 10, { "StanceBar" } },
+	{ "PossessButton", 2, { "PossessActionBar" } }, { "MultiCastActionButton", 12, { "MultiCastActionBarFrame" } } }
 local KNOWN_BAR_FRAMES = {}
 for i, def in ipairs(BAR_DEFS) do
 	DEFAULT_LISTS["bar" .. i] = def.frames
@@ -155,9 +161,9 @@ for _, s in ipairs(SPLIT) do FADE_ORDER[#FADE_ORDER + 1] = s.g end
 local HIDE_TOGGLES = { { "reporter", "hideReporter" } }
 -- The frames that count for "mouse over" on the Action bars row. The flyouts (the totem bar's column of totems and the arrow
 -- that opens it, and Blizzard's spell flyout) open outside their bar, so they count too while they are shown, or the bars
--- would fade the moment the mouse moves up into them.
+-- would fade the moment the mouse moves up into them. Buttons another addon moved out of their bar are added in rebuildLists.
 local ACTION_BARS = {
-	"MainActionBar", "MainMenuBar", "MultiBarBottomLeft", "MultiBarBottomRight", "MultiBarRight",
+	"MainActionBar", "MainMenuBar", "ForeverClassicUIBar", "MultiBarBottomLeft", "MultiBarBottomRight", "MultiBarRight",
 	"MultiBarLeft", "MultiBar5", "MultiBar6", "MultiBar7", "MultiBar8", "StanceBar", "PetActionBar", "MultiCastActionBarFrame",
 	"MultiCastFlyoutFrame", "MultiCastFlyoutFrameOpenButton", "SpellFlyout",
 }
@@ -208,8 +214,11 @@ local cur = { bars = 0, player = 0, hud = 0, quest = 0, map = 0, chat = 0, nav =
 for _, s in ipairs(SPLIT) do cur[s.g] = 0 end
 local fading, hiddenOn, barExcluded, textHidden = {}, {}, {}, {}
 local minimapShown = true
-local chatList = {}
+local chatList, chatButtons = {}, {}
 local barHover, discovered = {}, {}
+-- Buttons that another addon has moved out of their bar (bars[i] for Action Bar i, extra[k] for the sets in EXTRA_BUTTONS):
+-- faded on their own and counted for mouse over. ignoring: the buttons told to ignore their parent's opacity (checkElsewhere).
+local elsewhere = { bars = {}, extra = {}, ignoring = {} }
 local debugOn = false
 local lastActive = false
 
@@ -309,6 +318,17 @@ local function rebuildLists()
 				seen[n] = true
 				barHover[#barHover + 1] = n
 			end
+		end
+	end
+	-- Buttons moved out of their bar by another addon count for mouse over themselves (see checkElsewhere).
+	for i, def in ipairs(BAR_DEFS) do
+		if elsewhere.bars[i] then
+			for j = 1, 12 do barHover[#barHover + 1] = def.buttons .. j end
+		end
+	end
+	for k, set in ipairs(EXTRA_BUTTONS) do
+		if elsewhere.extra[k] then
+			for j = 1, set[2] do barHover[#barHover + 1] = set[1] .. j end
 		end
 	end
 end
@@ -562,10 +582,21 @@ local function applyList(name, a)
 end
 
 -- Also fades the frames you added to the chat group (/qhud add chat <frame name>), for example the window or
--- background of a chat replacement addon.
+-- background of a chat replacement addon. The pictures of the buttons around a chat window (the scroll arrows, the menu
+-- and channel buttons) can be set by another addon to ignore the window's opacity (ClassicUI Forever restyles the arrows
+-- that way, so they stayed solid while the chat faded): the pictures that do are faded on their own.
+local STATE_TEXTURES = { "GetNormalTexture", "GetPushedTexture", "GetHighlightTexture", "GetDisabledTexture" }
 local function applyChat(a)
 	for i = 1, #chatList do chatList[i]:SetAlpha(a) end
 	setAlpha(LISTS.chat, a)
+	for i = 1, #chatButtons do
+		local b = chatButtons[i]
+		for k = 1, #STATE_TEXTURES do
+			local get = b[STATE_TEXTURES[k]]
+			local tex = get and get(b)
+			if type(tex) == "table" and tex.IsIgnoringParentAlpha and tex:IsIgnoringParentAlpha() then tex:SetAlpha(a) end
+		end
+	end
 end
 
 -- Per-bar options are stored as a bitmask: bit i is Action Bar i.
@@ -573,17 +604,79 @@ local function barBit(mask, i)
 	return (math.floor((mask or 0) / 2 ^ (i - 1)) % 2) == 1
 end
 
+-- The buttons of one bar, by their name prefix and count.
+local function applyButtons(prefix, count, a)
+	for j = 1, count do
+		local b = _G[prefix .. j]
+		if b and b.SetAlpha then b:SetAlpha(a) end
+	end
+end
+
+-- A bar's opacity reaches its buttons through the frame tree, unless another addon has moved them out of the bar (see
+-- checkElsewhere): those are faded by name, along with the bar.
 local function applyBars(a, respectMask)
 	applyList("bars", a)
+	for k, set in ipairs(EXTRA_BUTTONS) do
+		if elsewhere.extra[k] then applyButtons(set[1], set[2], a) end
+	end
 	for i = 1, #BAR_DEFS do
 		if (not respectMask) or barBit(DB.barFade, i) then
 			applyList("bar" .. i, a)
+			if elsewhere.bars[i] then applyButtons(BAR_DEFS[i].buttons, 12, a) end
 			barExcluded[i] = false
 		elseif not barExcluded[i] then
 			applyList("bar" .. i, 1)
+			if elsewhere.bars[i] then applyButtons(BAR_DEFS[i].buttons, 12, 1) end
 			barExcluded[i] = true
 		end
 	end
+end
+
+-- Whether a button's bar is no longer above it in the frame tree: another addon has put the button into a frame of its own.
+-- ClassicUI Forever hangs every action button under a holder of its own on UIParent, and copies the bar's opacity into the
+-- holder only when it lays the bar out again, so the buttons stayed solid while the bar faded, and after a target change
+-- they came up faded while everything else woke.
+local function outsideBar(button, frames)
+	local f = button
+	for _ = 1, 16 do
+		local p = f:GetParent()
+		if not p or p == f or p == UIParent then return true end
+		for _, name in ipairs(frames) do
+			if _G[name] == p then return false end
+		end
+		f = p
+	end
+	return false
+end
+
+-- Twice a second: which bars have their buttons elsewhere. Those buttons are faded by name (applyBars) and count for mouse
+-- over (rebuildLists), and while QuietHUD fades their bar they ignore their parent's opacity, so the holder's copy of the
+-- bar's opacity neither fades them a second time nor holds them faded. They follow their parent again once they are back
+-- in their bar, or when their bar is not faded. Out of combat only, in case the buttons are protected then.
+local function checkElsewhere()
+	if InCombatLockdown() then return end
+	local changed = false
+	local fadeOn = DB.enabled and DB.fadeBars
+	local function look(kind, key, prefix, count, frames, ticked)
+		local first = _G[prefix .. "1"]
+		local away = (first and first.GetParent and outsideBar(first, frames)) and true or false
+		if (kind[key] or false) ~= away then
+			kind[key] = away
+			changed = true
+		end
+		local ignore = (away and fadeOn and ticked) and true or false
+		for j = 1, count do
+			local b = _G[prefix .. j]
+			if b and b.SetIgnoreParentAlpha and (elsewhere.ignoring[b] or false) ~= ignore then
+				elsewhere.ignoring[b] = ignore or nil
+				b:SetIgnoreParentAlpha(ignore)
+				if not ignore then b:SetAlpha(1) end
+			end
+		end
+	end
+	for i, def in ipairs(BAR_DEFS) do look(elsewhere.bars, i, def.buttons, 12, def.frames, barBit(DB.barFade, i)) end
+	for k, set in ipairs(EXTRA_BUTTONS) do look(elsewhere.extra, k, set[1], set[2], set[3], true) end
+	if changed then rebuildLists() end
 end
 
 -- Fading in and out both take FADE, unless a group is given its own fade-out time (the chat has one).
@@ -673,7 +766,10 @@ local function bumpChat()
 end
 
 local function buildChat()
-	chatList = {}
+	chatList, chatButtons = {}, {}
+	local function button(b)
+		if type(b) == "table" and b.GetNormalTexture then chatButtons[#chatButtons + 1] = b end
+	end
 	for i = 1, NUM_CHAT_WINDOWS or 10 do
 		local name = "ChatFrame" .. i
 		local main = _G[name]
@@ -682,10 +778,20 @@ local function buildChat()
 			local f = _G[name .. suffix]
 			if f then chatList[#chatList + 1] = f end
 		end
+		-- The window's scroll arrows and its "to the bottom" button, for applyChat.
+		local bar = main and main.ScrollBar
+		if type(bar) == "table" then
+			button(bar.Back)
+			button(bar.Forward)
+		end
+		if main then button(main.ScrollToBottomButton) end
 	end
 	for i = 1, #CHAT_EXTRAS do
 		local f = _G[CHAT_EXTRAS[i]]
-		if f then chatList[#chatList + 1] = f end
+		if f then
+			chatList[#chatList + 1] = f
+			button(f)
+		end
 	end
 end
 
@@ -1131,9 +1237,6 @@ local function shortHotkey(text)
 end
 local shortened = {}
 
--- Buttons outside the eight action bars that show a hotkey too: the pet bar, the stance bar, the possess bar and the shaman totem bar.
-local EXTRA_BUTTONS = { { "PetActionButton", 10 }, { "StanceButton", 10 }, { "PossessButton", 2 }, { "MultiCastActionButton", 12 } }
-
 -- WORKAROUND for a Blizzard bug (added 2026-09-26; remove it once Blizzard fixes MultiCastActionBarFrame.lua). The totem
 -- bar's summon and recall buttons (Call of the Elements, Totemic Recall, trained at level 20) are only hidden while the bar
 -- is already shown, so when the bar comes up another way (turned on in Edit Mode on a new shaman, for example) they stay
@@ -1220,6 +1323,7 @@ do
 	local SHIFT_STEPS = { { 0, 0 }, { 1, 0 }, { 1, 1 }, { 0, 1 }, { -1, 1 }, { -1, 0 }, { -1, -1 }, { 0, -1 }, { 1, -1 } }
 	local shiftIndex, shiftNextAt, shiftWantX, shiftWantY, shiftClock, lastEdit = 1, 0, 0, 0, 0, false
 	local shiftState, shiftLastError = {}, nil
+	local contested = {}   -- frames another addon keeps putting back, left alone (see syncFrame)
 
 	local function anchorList(f)
 		local t = {}
@@ -1254,14 +1358,29 @@ do
 	end
 
 	local function syncFrame(f, listed)
+		local c = contested[f]
+		if c and c.off then return end
 		local now = anchorList(f)
 		if #now == 0 then return end
 		local sig = anchorSig(now)
 		local st = shiftState[f]
 		if st and st.sig ~= sig then
-			-- Something else moved it since: that position is the new normal, and ours is forgotten.
+			-- Something else moved it since: that position is the new normal, and ours is forgotten. An addon that puts the
+			-- frame back every time (ClassicUI Forever lays its bar out again whenever the game's bar frames move, so the
+			-- bags jumped once a second) would be fought for ever, so after three such moves within ten seconds the frame is
+			-- left alone until the option is turned on again.
 			st = nil
 			shiftState[f] = nil
+			local t = GetTime()
+			if not c or t - c.since > 10 then
+				c = { since = t, n = 0 }
+				contested[f] = c
+			end
+			c.n = c.n + 1
+			if c.n >= 3 then
+				c.off = true
+				return
+			end
 		end
 		-- A frame anchored to another frame of the group moves along with it, so it is not shifted a second time.
 		if anchoredToListed(now, listed, f) then
@@ -1316,6 +1435,7 @@ do
 	end
 
 	local function stepShift(now, edit)
+		if not DB.pixelShift and next(contested) ~= nil then contested = {} end
 		if not DB.pixelShift and next(shiftState) == nil then return end
 		if DB.pixelShift and not edit then
 			if now >= shiftNextAt then
@@ -1356,7 +1476,9 @@ do
 		for _, name in ipairs(LISTS.shift) do
 			local f = _G[name]
 			local st = f and shiftState[f]
-			print("  " .. name .. ": " .. (not f and "no frame with that name" or (st and ("shifted by " .. (st.wx or 0) .. "," .. (st.wy or 0)) or "at its normal position")))
+			local c = f and contested[f]
+			print("  " .. name .. ": " .. (not f and "no frame with that name" or (c and c.off and "left alone, another addon keeps moving it back")
+				or (st and ("shifted by " .. (st.wx or 0) .. "," .. (st.wy or 0)) or "at its normal position")))
 		end
 		if shiftLastError then print("  last problem: " .. shiftLastError) end
 	end
@@ -1607,6 +1729,7 @@ local function update(dt)
 	hotkeyClock = hotkeyClock + dt
 	if hotkeyClock > 0.5 then
 		hotkeyClock = 0
+		pcall(checkElsewhere)
 		if MinimapCluster and MinimapCluster:GetScale() > 0.5 then pcall(rememberMapRect) end
 		if MinimapCluster and mapSavedScale and MinimapCluster:GetScale() > 0.01 then MinimapCluster:SetScale(0.001) end
 		local wantShort = enabled and DB.shortHotkeys
