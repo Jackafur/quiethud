@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.3.4
+
+Your settings carry over.
+
+### Added
+
+- **Questie's quest tracker fades with the Objective tracker row.** Questie hides the game's tracker and shows its own, which QuietHUD did not know about, so it stayed solid. It now fades and comes back the same way the game's tracker does, and Fade unticked on that row keeps it solid.
+
+### Fixed
+
+- **A Questie icon could show faded on the world map.** Questie reuses the same icons on the minimap and the world map, so an icon QuietHUD had faded on the minimap could keep that opacity after Questie moved it to the world map. QuietHUD now lets go of an icon the moment it leaves the minimap, and gives it back its own opacity.
+
 ## 1.3.3
 
 Your settings carry over.

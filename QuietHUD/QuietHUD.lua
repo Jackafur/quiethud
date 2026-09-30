@@ -119,7 +119,7 @@ local DEFAULT_LISTS = {
 	bars = { "StatusTrackingBarManager", "StanceBar", "PetActionBar", "PossessActionBar", "MultiCastActionBarFrame" },
 	player = { "PlayerFrame" },
 	hud = {}, -- frames you add with /qhud add hud (the old big list is split into the rows below)
-	quest = { "ObjectiveTrackerFrame" },
+	quest = { "ObjectiveTrackerFrame", "Questie_BaseFrame" }, -- Questie hides the game's tracker and shows its own
 	map = { "MinimapCluster" },
 	micro = { "MicroMenuContainer" },
 	bags = { "BagsBar" },
@@ -910,8 +910,14 @@ do
 	-- once, and an outside change is adopted as the part's own opacity and multiplied at once, before the frame is drawn.
 	local mapFactor, mapBusy = nil, false
 	local mapHooked = setmetatable({}, { __mode = "k" })
+	-- A part is on the map while its parent is the minimap, the cluster or a frame between them. Questie takes its minimap
+	-- icons and its world map icons from one pool, so an icon faded here can turn up on the world map later.
+	local function onMap(part)
+		local ok, p = pcall(part.GetParent, part)
+		return ok and p ~= nil and (p == Minimap or p == MinimapCluster or (mapAncestors and mapAncestors[p])) and true or false
+	end
 	local function keepMapPart(part, a)
-		if mapBusy or not mapFactor or not mapParts or type(a) ~= "number" then return end
+		if mapBusy or not mapFactor or not mapParts or type(a) ~= "number" or not onMap(part) then return end
 		if mapPartSet[part] and math.abs(a - mapPartSet[part]) < 0.01 then return end
 		mapParts[part] = a
 		local want = a * mapFactor
@@ -919,6 +925,16 @@ do
 		pcall(part.SetAlpha, part, want)
 		mapBusy = false
 		mapPartSet[part] = want
+	end
+	-- A faded part that is moved off the map gets its own opacity back (unless its owner has set one since) and is let go.
+	local function leftMapPart(part)
+		if mapBusy or not mapParts or mapParts[part] == nil or onMap(part) then return end
+		if mapPartSet[part] and math.abs(part:GetAlpha() - mapPartSet[part]) < 0.01 then
+			mapBusy = true
+			pcall(part.SetAlpha, part, mapParts[part])
+			mapBusy = false
+		end
+		mapParts[part], mapPartSet[part] = nil, nil
 	end
 
 	-- The minimap's shape. Addons that change it (Leatrix Plus's square minimap, for example) say so through GetMinimapShape,
@@ -979,6 +995,7 @@ do
 		if not mapHooked[part] and part.SetAlpha then
 			mapHooked[part] = true
 			pcall(hooksecurefunc, part, "SetAlpha", keepMapPart)
+			if part.SetParent then pcall(hooksecurefunc, part, "SetParent", leftMapPart) end
 		end
 		mapBusy = true
 		part:SetAlpha(want)
