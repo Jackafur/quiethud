@@ -584,17 +584,49 @@ end
 -- Also fades the frames you added to the chat group (/qhud add chat <frame name>), for example the window or
 -- background of a chat replacement addon. The pictures of the buttons around a chat window (the scroll arrows, the menu
 -- and channel buttons) can be set by another addon to ignore the window's opacity (ClassicUI Forever restyles the arrows
--- that way, so they stayed solid while the chat faded): the pictures that do are faded on their own.
-local STATE_TEXTURES = { "GetNormalTexture", "GetPushedTexture", "GetHighlightTexture", "GetDisabledTexture" }
-local function applyChat(a)
-	for i = 1, #chatList do chatList[i]:SetAlpha(a) end
-	setAlpha(LISTS.chat, a)
-	for i = 1, #chatButtons do
-		local b = chatButtons[i]
-		for k = 1, #STATE_TEXTURES do
-			local get = b[STATE_TEXTURES[k]]
-			local tex = get and get(b)
-			if type(tex) == "table" and tex.IsIgnoringParentAlpha and tex:IsIgnoringParentAlpha() then tex:SetAlpha(a) end
+-- that way, so they stayed solid while the chat faded): the pictures that do are faded on their own. The blink on the "to
+-- the bottom" button (it blinks while the chat is scrolled up) is drawn the same way, but the game plays its opacity with an
+-- animation, which overrides any opacity or colour set on it (fading its colour did nothing in game). So while the chat is
+-- faded the blink is made to follow its button, and with it the chat, again; once the chat is fully up it gets back the
+-- setting its addon gave it. The addon setting it again while the chat is faded is noted and put right at once (a hook),
+-- so the blink never shows for a frame.
+local applyChat
+do
+	local STATE_TEXTURES = { "GetNormalTexture", "GetPushedTexture", "GetHighlightTexture", "GetDisabledTexture" }
+	local flashOwn, flashBusy, chatA = {}, false, 1
+	local function setFlash(flash)
+		local want = flashOwn[flash]
+		if chatA < 0.999 then want = false end
+		if (flash:IsIgnoringParentAlpha() and true or false) ~= want then
+			flashBusy = true
+			pcall(flash.SetIgnoreParentAlpha, flash, want)
+			flashBusy = false
+		end
+	end
+	local function flashSet(flash, on)
+		if flashBusy then return end
+		flashOwn[flash] = on and true or false
+		if on and chatA < 0.999 then setFlash(flash) end
+	end
+	applyChat = function(a)
+		chatA = a
+		for i = 1, #chatList do chatList[i]:SetAlpha(a) end
+		setAlpha(LISTS.chat, a)
+		for i = 1, #chatButtons do
+			local b = chatButtons[i]
+			for k = 1, #STATE_TEXTURES do
+				local get = b[STATE_TEXTURES[k]]
+				local tex = get and get(b)
+				if type(tex) == "table" and tex.IsIgnoringParentAlpha and tex:IsIgnoringParentAlpha() then tex:SetAlpha(a) end
+			end
+			local flash = b.Flash
+			if type(flash) == "table" and flash.IsIgnoringParentAlpha and flash.SetIgnoreParentAlpha then
+				if flashOwn[flash] == nil then
+					flashOwn[flash] = flash:IsIgnoringParentAlpha() and true or false
+					pcall(hooksecurefunc, flash, "SetIgnoreParentAlpha", flashSet)
+				end
+				setFlash(flash)
+			end
 		end
 	end
 end
@@ -685,8 +717,11 @@ local function step(v, target, dt, outSeconds)
 	return math.max(target, v - dt / math.max(0.05, outSeconds or FADE))
 end
 
+-- Visible, not just shown: a frame whose parent is hidden is not on the screen. ClassicUI Forever puts the buttons of a bar
+-- that is turned off in the game's options into a hidden holder, and those buttons still say they are shown, so bars 6 to 8
+-- (in the middle of the screen by default) woke the action bars while switched off.
 local function hovered(f)
-	return f and f.IsMouseOver and f:IsShown() and f:IsMouseOver()
+	return f and f.IsMouseOver and f:IsVisible() and f:IsMouseOver()
 end
 
 local function anyHovered(names)
@@ -1637,6 +1672,85 @@ local function applyGroup(g, a, allBars)
 	end
 end
 
+-- 3D models (portraits drawn as a live model, for example by Animated Blizzard Portraits, which also puts them on RestedXP's
+-- target buttons) do not take the opacity of the frames they sit in, so they stayed solid while their frame faded. Their own
+-- model opacity (SetModelAlpha) does work, so each model found under the frames of these groups is given the opacity it would
+-- have if it followed its frames, times any opacity its own addon gave it. Setting a new unit or model can put the model back
+-- to full, so those calls are hooked and the opacity goes back on at once (the loop would only catch it a frame later).
+local fadeModels
+do
+	local ROOT_GROUPS = { "player", "hud", "target", "pet", "party", "rxp" }
+	local MODEL_TYPES = { Model = true, PlayerModel = true, DressUpModel = true, CinematicModel = true, TabardModel = true }
+	local DEPTH = 5
+	local models, owner, touched = {}, {}, {}
+	local busy, scanAt = false, 0
+	local function apply(m)
+		if busy then return end
+		local want = owner[m] or 1
+		if DB.enabled then
+			local eff = m:GetEffectiveAlpha()
+			-- A secret opacity (the game can set one, for example on a party member out of range) cannot be used: left alone.
+			if type(eff) ~= "number" or (issecretvalue and issecretvalue(eff)) then return end
+			want = want * eff
+		elseif not touched[m] then
+			return
+		end
+		local have = m:GetModelAlpha()
+		if type(have) == "number" and not (issecretvalue and issecretvalue(have)) and math.abs(have - want) < 0.005 then return end
+		busy = true
+		pcall(m.SetModelAlpha, m, want)
+		busy = false
+		touched[m] = want < (owner[m] or 1) - 0.005 or nil
+	end
+	-- The model's own addon set its opacity: kept, and multiplied in.
+	local function ownerSet(m, a)
+		if busy or type(a) ~= "number" or (issecretvalue and issecretvalue(a)) then return end
+		owner[m] = a
+		pcall(apply, m)
+	end
+	local function again(m) pcall(apply, m) end
+	local function adopt(m)
+		models[m] = true
+		pcall(hooksecurefunc, m, "SetModelAlpha", ownerSet)
+		for _, fn in ipairs({ "SetUnit", "SetDisplayInfo", "SetCreature", "SetModel", "ClearModel" }) do
+			if m[fn] then pcall(hooksecurefunc, m, fn, again) end
+		end
+		pcall(m.HookScript, m, "OnModelLoaded", again)
+		pcall(m.HookScript, m, "OnShow", again)
+	end
+	local function walk(depth, ...)
+		for i = 1, select("#", ...) do
+			local c = select(i, ...)
+			if type(c) == "table" and not (c.IsForbidden and c:IsForbidden()) then
+				if not models[c] and c.GetObjectType and MODEL_TYPES[c:GetObjectType()] and c.SetModelAlpha and c.GetModelAlpha then
+					adopt(c)
+				end
+				if depth > 1 and c.GetChildren then walk(depth - 1, c:GetChildren()) end
+			end
+		end
+	end
+	local function walkRoot(f) walk(DEPTH, f:GetChildren()) end
+	-- Looked for once a second, and soon after the things that put a new portrait up.
+	local soon = CreateFrame("Frame")
+	for _, e in ipairs({ "PLAYER_TARGET_CHANGED", "PLAYER_FOCUS_CHANGED", "GROUP_ROSTER_UPDATE", "UNIT_PET", "PLAYER_ENTERING_WORLD" }) do
+		pcall(soon.RegisterEvent, soon, e)
+	end
+	soon:SetScript("OnEvent", function() scanAt = math.min(scanAt, GetTime() + 0.1) end)
+	fadeModels = function(now)
+		if now >= scanAt then
+			scanAt = now + 1
+			for _, g in ipairs(ROOT_GROUPS) do
+				local list = LISTS[g]
+				for i = 1, list and #list or 0 do
+					local f = _G[list[i]]
+					if type(f) == "table" and f.GetChildren then pcall(walkRoot, f) end
+				end
+			end
+		end
+		for m in pairs(models) do pcall(apply, m) end
+	end
+end
+
 local function update(dt)
 	local now = GetTime()
 	local edit = EditModeManagerFrame and EditModeManagerFrame:IsShown() or false
@@ -1737,6 +1851,8 @@ local function update(dt)
 		end
 	end
 
+
+	pcall(fadeModels, now)
 
 	local wantMinimap = not (enabled and DB.fadeMinimap) or mapAlpha > 0.01
 	if MinimapCluster and wantMinimap ~= minimapShown then

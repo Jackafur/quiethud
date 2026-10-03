@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.3.5
+
+Your settings carry over.
+
+### Fixed
+
+- **3D portraits did not fade with their frame.** Addons such as Animated Blizzard Portraits draw a live 3D model on the player, target, party and pet frames (and on RestedXP's target buttons), and the game does not pass a frame's opacity on to a 3D model, so the faces stayed solid while the rest of the frame faded. QuietHUD now gives each model the opacity of the frame it sits in, and puts it back at once when a new target or party member resets the model.
+- **ClassicUI Forever: the blinking "to the bottom" arrow on the chat stayed on while the chat was faded.** The arrow blinks while the chat is scrolled up, and ClassicUI Forever draws the blink so it ignores the chat's opacity. It now fades with the chat.
+- **ClassicUI Forever: action bars 6 to 8 woke the bars while turned off.** Those bars sit in the middle of the screen by default, and with ClassicUI Forever their hidden buttons still counted for mouse over, so moving the mouse across the middle of the screen brought the action bars up. Only buttons that are actually on the screen count now.
+
 ## 1.3.4
 
 Your settings carry over.
