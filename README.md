@@ -222,6 +222,8 @@ QuietHUD was built with AI assistance (Claude Code) and tested in game by the au
 tested on one setup so far, so expect some rough edges. Bug reports are welcome on GitHub:
 https://github.com/Jackafur/quiethud/issues
 
+Made by Jackafur: https://jackafur.com
+
 ## License
 
 MIT, see `LICENSE`.
