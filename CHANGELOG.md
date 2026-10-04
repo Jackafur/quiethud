@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.3.6
+
+Your settings carry over.
+
+### Changed
+
+- **Buffs and debuffs have a row each.** The "Buffs and debuffs" row on the Elements page (and its slider on the Opacity page) is now two: Buffs (with weapon enchants and the totem timers) and Debuffs. So you can keep your debuffs on the screen and let your buffs fade, or the other way round. Debuffs starts with the settings Buffs had, so nothing changes until you change it.
+- The settings window grows a few pixels when a page needs the room (the Opacity page, with its new slider).
+
 ## 1.3.5
 
 Your settings carry over.

@@ -90,7 +90,10 @@ local SPLIT = {
 	{ g = "pet", label = "Pet frame", frames = { "PetFrame", "PetSpellBar" } },
 	{ g = "party", label = "Party and raid", frames = { "PartyFrame", "CompactRaidFrameContainer" } },
 	{ g = "panel", label = "Party panel", frames = { "CompactRaidFrameManager" } },
-	{ g = "auras", label = "Buffs and debuffs", frames = { "BuffFrame", "DebuffFrame", "TemporaryEnchantFrame", "TotemFrame" } },
+	-- Buffs keeps the group name "auras" from when it was one "Buffs and debuffs" row, so saved settings carry over. Debuffs
+	-- follows Buffs (follow) until it has its own value, so nothing changes until you change it.
+	{ g = "auras", label = "Buffs", frames = { "BuffFrame", "TemporaryEnchantFrame", "TotemFrame" } },
+	{ g = "debuffs", label = "Debuffs", frames = { "DebuffFrame" }, follow = "auras" },
 	{ g = "cooldowns", label = "Cooldown trackers", frames = { "EssentialCooldownViewer", "UtilityCooldownViewer", "BuffIconCooldownViewer", "BuffBarCooldownViewer" } },
 	{ g = "meter", label = "Damage meter", frames = { "DamageMeter" } },
 	{ g = "alerts", label = "Alerts", frames = { "DurabilityFrame", "LossOfControlFrame", "ExternalDefensivesFrame" } },
@@ -107,7 +110,7 @@ for _, s in ipairs(SPLIT) do
 end
 -- The rows of the Elements grid and of the Opacity page, in this order: the rows with five columns first, then the tracker, chat
 -- and minimap, which have the most. (The cast bar and the breath bar have no grid row: they only appear when they are needed.)
-SPLIT.order = { "Action bars", "Player frame", "Target and focus", "Pet frame", "Party and raid", "Party panel", "Buffs and debuffs",
+SPLIT.order = { "Action bars", "Player frame", "Target and focus", "Pet frame", "Party and raid", "Party panel", "Buffs", "Debuffs",
 	"Cooldown trackers", "Damage meter", "Alerts", "Bags bar", "Menu bar", "Added frames", "Objective tracker", "Chat", "Minimap" }
 local inheritGroups -- fills in the split groups' fade and trigger values from the old row (defined with their macro, below)
 
@@ -196,15 +199,18 @@ end
 local DB = { extra = {} }
 for k, v in pairs(DEFAULTS) do DB[k] = v end
 
--- Whether a split group fades, and what brings it up. Until a group has its own saved value it follows the old row.
+-- Whether a split group fades, and what brings it up. Until a group has its own saved value it follows the group named in its
+-- follow field, or else the old row.
 local function gFade(s)
 	local v = DB[s.fadeKey]
 	if v ~= nil then return v end
+	if s.follow then return gFade(SPLIT_BY[s.follow]) end
 	return s.own or DB.fadeUnits
 end
 local function gTrig(s)
 	local v = DB[s.trigKey]
 	if v ~= nil then return v end
+	if s.follow then return gTrig(SPLIT_BY[s.follow]) end
 	return s.trig or DB.trigUnits
 end
 local LISTS = {}
@@ -2412,11 +2418,18 @@ do
 		if not (ok and index and index > 0) then return end
 		local ok2, body = pcall(GetMacroBody, index)
 		if not ok2 or type(body) ~= "string" then return end
+		local saved = {}
 		for g, f, t, o in body:gmatch("(%a+)=(%d),(%d+),([%d%.]+)") do
 			local s = SPLIT_BY[g]
 			if s then
 				DB[s.fadeKey], DB[s.trigKey], DB[s.ovKey] = f == "1", tonumber(t) or 0, tonumber(o) or 0
+				saved[g] = true
 			end
+		end
+		-- A group that follows another and was never saved (Debuffs, from before it was split from Buffs) takes that one's
+		-- opacity too. Its Fade and triggers follow by themselves (gFade, gTrig).
+		for _, s in ipairs(SPLIT) do
+			if s.follow and not saved[s.g] and saved[s.follow] then DB[s.ovKey] = DB[SPLIT_BY[s.follow].ovKey] end
 		end
 		DB.hideMmButtons = body:find("mmbuttons=1", 1, true) ~= nil
 		DB.hidePanel = body:find("hidepanel=1", 1, true) ~= nil
@@ -2843,7 +2856,9 @@ local function buildConfig()
 	local close = CreateFrame("Button", nil, config, "UIPanelCloseButton")
 	close:SetPoint("TOPRIGHT", 2, 2)
 
-	local tabX = 12
+	-- The tallest page, so the window can grow when one does not fit in it (a page sits between the tabs, 68 from the top,
+	-- and the buttons, 44 from the bottom; the notes are only measured here, with the game's own font).
+	local tabX, tallest = 12, 0
 	for i, page in ipairs(PAGES) do
 		local frame = CreateFrame("Frame", nil, config)
 		frame:SetPoint("TOPLEFT", 0, -68)
@@ -2874,6 +2889,7 @@ local function buildConfig()
 			end
 		end
 		pages[i] = frame
+		tallest = math.max(tallest, -y)
 		local tab = CreateFrame("Button", nil, config, "UIPanelButtonTemplate")
 		local tabWidth = math.max(44, math.floor(#page.title * 6.4 + 18))
 		tab:SetSize(tabWidth, 22)
@@ -2883,6 +2899,7 @@ local function buildConfig()
 		tab:SetScript("OnClick", function() showPage(i) end)
 		tabs[i] = tab
 	end
+	if tallest > 790 - 68 - 44 then config:SetHeight(68 + tallest + 44) end
 
 	local now = CreateFrame("Button", nil, config, "UIPanelButtonTemplate")
 	now:SetSize(150, 24)
