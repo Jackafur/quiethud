@@ -108,10 +108,16 @@ for _, s in ipairs(SPLIT) do
 	DEFAULTS[s.ovKey] = 0
 	SPLIT_BY[s.g] = s
 end
--- The rows of the Elements grid and of the Opacity page, in this order: the rows with five columns first, then the tracker, chat
--- and minimap, which have the most. (The cast bar and the breath bar have no grid row: they only appear when they are needed.)
-SPLIT.order = { "Action bars", "Player frame", "Target and focus", "Pet frame", "Party and raid", "Party panel", "Buffs", "Debuffs",
-	"Cooldown trackers", "Damage meter", "Alerts", "Bags bar", "Menu bar", "Added frames", "Objective tracker", "Chat", "Minimap" }
+-- The rows of the Elements grid and the sliders of the Opacity page, in groups, in this order. Info is the rows with a New info
+-- column. (The cast bar and the breath bar have no grid row: they only appear when they are needed, so they are only on the
+-- Opacity page.)
+SPLIT.groups = {
+	{ "Bars", { "Action bars", "Bags bar", "Menu bar", "Cast bar", "Breath bar" } },
+	{ "Unit frames", { "Player frame", "Target and focus", "Pet frame", "Party and raid", "Party panel" } },
+	{ "Auras and alerts", { "Buffs", "Debuffs", "Cooldown trackers", "Alerts" } },
+	{ "Info", { "Objective tracker", "Chat", "Minimap" } },
+	{ "Other", { "Damage meter", "Added frames" } },
+}
 local inheritGroups -- fills in the split groups' fade and trigger values from the old row (defined with their macro, below)
 
 local FADE = 0.35
@@ -1932,6 +1938,49 @@ driver:SetScript("OnUpdate", function(_, dt)
 end)
 
 -- Settings menu
+
+-- The settings window's layout. width is the least it is (it grows when the tabs need more room); the grid is the trigger grid
+-- (the Fade column, the first trigger column and the distance between columns); the columns are the two columns of sliders on
+-- the Opacity page (where the right one starts, and the width of a name and of a slider).
+local WIN = { width = 660, gridFade = 156, gridFirst = 206, gridPitch = 60, col2 = 330, labelW = 128, sliderW = 108 }
+
+-- Hover help: what each trigger column means (by its bit, and the Fade column), and what each element is (by its name, the
+-- same on the Elements grid and the Opacity page).
+local HELP = {
+	cols = {
+		fade = "Ticked: it fades out when nothing brings it up. Unticked: it never fades and stays at its opacity from the Opacity page (fully solid on Global).",
+		[1] = "Comes up while the HUD is awake: in combat, with your weapon drawn or with a target. Which of those count is set on the Show when page.",
+		[2] = "Comes up while you move, and for a moment after you stop.",
+		[3] = "Comes up for a while when there is something new: quest progress for the tracker and RestedXP, a chat message for the chat, a new zone for the minimap. How long is set on the Extras page (the Chat page for the chat).",
+		[4] = "Comes up while your mouse is over it. For mouse over only, leave just this box ticked.",
+		[5] = "Hidden while you are in combat, whatever else is ticked.",
+		[6] = "Comes up while you are inside a dungeon or a raid.",
+	},
+	rows = {
+		["Action bars"] = "Action Bars 1 to 8, plus the stance, pet, totem and XP bars. Which of the eight fade is picked on the Bars page.",
+		["Bags bar"] = "The row of bag buttons.",
+		["Menu bar"] = "The row of small menu buttons (character, spellbook, talents and so on).",
+		["Cast bar"] = "Your cast bar. It comes up by itself while you cast, so it only has an opacity.",
+		["Breath bar"] = "The breath, fatigue and feign death timer. It comes up by itself while it runs, so it only has an opacity.",
+		["Player frame"] = "Your own frame: portrait, health and power.",
+		["Target and focus"] = "The target frame and the focus frame.",
+		["Pet frame"] = "Your pet's frame, and its cast bar if BetterBlizzFrames adds one.",
+		["Party and raid"] = "The party frames and the raid frames.",
+		["Party panel"] = "The side panel that pops out of the arrow tab on the left of the screen (Party 1/1, markers, Leave Party). The Extras page can hide it completely.",
+		["Buffs"] = "Your buffs, weapon enchants and totem timers.",
+		["Debuffs"] = "Your debuffs. To keep them on the screen while your buffs fade, untick Fade for Debuffs on the Elements page.",
+		["Cooldown trackers"] = "The game's cooldown manager: the essential and utility cooldowns, and the tracked buff icons and bars.",
+		["Alerts"] = "The durability icon, the loss of control alert and external defensives.",
+		["Objective tracker"] = "The quest and objective tracker (Questie's tracker too).",
+		["Chat"] = "The chat windows. Which messages bring the chat up is set on the Chat page. Typing always brings it up.",
+		["Minimap"] = "The minimap and the buttons around it.",
+		["Damage meter"] = "The game's own damage meter.",
+		["Added frames"] = "Frames you added yourself with /qhud add hud. Empty unless you did that.",
+		["Guide, targets, items"] = "The RestedXP guide window and its targets and items windows.",
+		["Arrow"] = "The RestedXP waypoint arrow.",
+	},
+}
+
 local PAGES = {
 	{ title = "Show when", items = {
 		{ "check", "enabled", "Enable QuietHUD" },
@@ -1948,30 +1997,21 @@ local PAGES = {
 	} },
 	{ title = "Elements", items = {
 		{ "grid", "elements" },
-		{ "note", "Awake: combat, a drawn weapon or a target. Dungeon or raid: while you are inside one. New info: chat messages, quest progress, a zone change (minimap). Hide in combat beats the rest. For mouse over only, leave just that box ticked. Fade unticked: never faded, it stays at its opacity from the Opacity page (fully solid on Global)." },
-		{ "note", "Party panel: the side panel that pops out of the arrow tab on the left (Party 1/1, markers, Leave Party). Alerts: the durability icon, the loss of control alert and external defensives. Added frames: frames you put in the old HUD group with /qhud add hud. The cast bar and the breath bar appear by themselves when needed, so they only have an opacity, on the Opacity page." },
-		{ "check", "mapDarken", "Minimap: darken instead of see-through" },
-		{ "note", "Below full opacity the minimap is see-through, but the game's own icons on it (the player arrow, quest, tracking and party icons) stay solid: the game does not let addons change their opacity. They only go away when the minimap fades out completely. Darkened dims them with the map, but the map is not see-through. Use whichever you prefer." },
+		{ "note", "Hover a column heading or a name to see what it means. The cast bar and the breath bar come up by themselves when they are needed, so they are only on the Opacity page." },
 	} },
 	{ title = "Opacity", items = {
 		{ "heading", "All elements" },
-		{ "slider", "base", "Active (combat, target)", 0.1, 1, 0.05, "%.2f", nil, true },
-		{ "slider", "idle", "Idle (0 = hidden)", 0, 1, 0.05, "%.2f", nil, true },
+		{ "slider", "base", "Active (combat, target)", 0.1, 1, 0.05, "%.2f", nil, true, "How solid the HUD is when it is up. Every element set to Global uses this." },
+		{ "slider", "idle", "Idle (0 = hidden)", 0, 1, 0.05, "%.2f", nil, true, "How solid an element is while it is faded. 0 hides it completely." },
 		{ "heading", "Each element (Global = the active value)" },
-		{ "slider", "ovBars", "Action bars", 0, 1, 0.05, "%.2f", "Global", true },
-		{ "slider", "ovPlayer", "Player frame", 0, 1, 0.05, "%.2f", "Global", true },
-		{ "slider", "ovCast", "Cast bar and breath bar", 0, 1, 0.05, "%.2f", "Global", true },
-		{ "slider", "ovHud", "Enemy, party, buffs", 0, 1, 0.05, "%.2f", "Global", true },
-		{ "slider", "ovQuest", "Objective tracker", 0, 1, 0.05, "%.2f", "Global", true },
-		{ "slider", "chatOwn", "Chat (solid unless you change it)", 0, 1, 0.05, "%.2f", "Global", true },
-		{ "slider", "mapOwn", "Minimap (solid unless you change it)", 0, 1, 0.05, "%.2f", "Global", true },
-		{ "slider", "ovBagsBar", "Bags bar", 0, 1, 0.05, "%.2f", "Global", true },
-		{ "slider", "ovMicro", "Menu bar", 0, 1, 0.05, "%.2f", "Global", true },
+		-- (a slider for every element goes here, in two columns: see below)
 		{ "heading", "Windows and the minimap" },
-		{ "slider", "bagAlpha", "Open bag windows", 0, 1, 0.05, "%.2f", "Global", true },
-		{ "slider", "tooltipAlpha", "Tooltips", 0, 1, 0.05, "%.2f", "Global", true },
-		{ "slider", "mapIdle", "Minimap idle (0 = hidden)", 0, 1, 0.05, "%.2f", nil, true },
-		{ "note", "Global follows the active value at the top. Chat, the minimap, open bags and tooltips are solid until you change them. An element with Fade unticked on the Elements page stays at its own opacity here, without fading. Drag an open bag by its title bar to move the bags (/qhud bags reset undoes it). RestedXP has its own opacity on its page." },
+		{ "slider", "bagAlpha", "Open bag windows", 0, 1, 0.05, "%.2f", "Global", true, "Your open bags. Drag one by its title bar to move them all; /qhud bags reset puts them back." },
+		{ "slider", "tooltipAlpha", "Tooltips", 0, 1, 0.05, "%.2f", "Global", true, "The game's tooltips, like this one." },
+		{ "slider", "mapIdle", "Minimap idle (0 = hidden)", 0, 1, 0.05, "%.2f", nil, true, "How solid the minimap is while it is faded. 0 hides it completely." },
+		{ "check", "mapDarken", "Darken the minimap instead of making it see-through" },
+		{ "note", "Unticked (default): as the minimap fades it turns see-through. The little icons on it (your arrow, quest and party icons) stay bright, because the game does not let addons fade them.\nTicked: as the minimap fades it turns darker instead, and the icons darken with it." },
+		{ "note", "Chat, the minimap, open bags and tooltips stay solid until you change them. An element with Fade unticked on the Elements page stays at its value here and never fades. RestedXP has its own sliders on its page. Hover a name for more." },
 	} },
 	{ title = "Bars", items = {
 		{ "note", "Fade picks which action bars fade. It only counts while Fade is ticked for Action bars on the Elements page, which is the master switch (the stance, pet, totem and XP bars follow that switch)." },
@@ -2011,33 +2051,33 @@ local PAGES = {
 		{ "check", "questTarget", "Enable quest-mob targeting key (experimental)" },
 		{ "note", "Works like Tab, but only through the mobs your highlighted quest needs: each press goes to the next one. Needs enemy nameplates on (a kill objective can still be reached by name without). After ticking this, bind the key: Esc, Options, Keybindings, AddOns, QuietHUD, \"Target highlighted quest mob\"." },
 	} },
+	{ title = "About", items = {
+		{ "about" },
+	} },
 }
 
--- The Opacity page lists every element that can have its own opacity, in the order of the Elements grid.
+-- The Opacity page has a slider for every element that can have its own opacity, in the groups of the Elements grid, in two
+-- columns: the groups fill the left column until it holds about half of the sliders.
 do
 	local keyOf = { ["Objective tracker"] = "ovQuest", ["Chat"] = "chatOwn", ["Minimap"] = "mapOwn", ["Action bars"] = "ovBars",
 		["Player frame"] = "ovPlayer", ["Bags bar"] = "ovBagsBar", ["Menu bar"] = "ovMicro", ["Added frames"] = "ovHud" }
 	for _, s in ipairs(SPLIT) do keyOf[s.label] = s.ovKey end
-	local drop = { ovCast = true }
-	for _, k in pairs(keyOf) do drop[k] = true end
+	local total, count, left, right = 0, 0, {}, {}
+	for _, group in ipairs(SPLIT.groups) do total = total + #group[2] end
+	for _, group in ipairs(SPLIT.groups) do
+		local column = count < total / 2 and left or right
+		column[#column + 1] = { "group", group[1] }
+		for _, label in ipairs(group[2]) do
+			column[#column + 1] = { "slider", keyOf[label], label, 0, 1, 0.05, "%.2f", "Global", "column", HELP.rows[label] }
+			count = count + 1
+		end
+	end
 	for _, page in ipairs(PAGES) do
-		if page.title == "Opacity" then
-			local out = {}
-			for _, item in ipairs(page.items) do
-				if not (item[1] == "slider" and drop[item[2]]) then
-					out[#out + 1] = item
-					if item[1] == "heading" and item[2]:find("^Each element") then
-						for _, label in ipairs(SPLIT.order) do
-							out[#out + 1] = { "slider", keyOf[label], label, 0, 1, 0.05, "%.2f", "Global", true }
-						end
-						-- the cast bar and the breath bar: no grid row, but their own opacity
-						for _, label in ipairs({ "Cast bar", "Breath bar" }) do
-							out[#out + 1] = { "slider", keyOf[label], label, 0, 1, 0.05, "%.2f", "Global", true }
-						end
-					end
-				end
+		for i, item in ipairs(page.items) do
+			if item[1] == "heading" and item[2]:find("^Each element") then
+				table.insert(page.items, i + 1, { "columns", left = left, right = right })
+				break
 			end
-			page.items = out
 		end
 	end
 end
@@ -2557,375 +2597,587 @@ do
 	end)
 end
 
-local function makeCheck(parent, y, label, key)
-	local check = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
-	check:SetPoint("TOPLEFT", 12, y)
-	check:SetScript("OnClick", function(self)
-		DB[key] = not DB[key]
-		self:SetChecked(DB[key] and true or false)
-		persistSoon()
-		rebuildLists()
-		if armEntry then armEntry() end
-	end)
-	local text = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-	text:SetPoint("LEFT", check, "RIGHT", 4, 0)
-	text:SetText(label)
-	controls[#controls + 1] = function() check:SetChecked(DB[key] and true or false) end
-	controls[#controls]()
-end
-
--- A slider that stands for more than one stored setting. The chat opacity is "Global" (the old "Chat uses the HUD opacity"
--- checkbox) or a number (the old "Chat opacity when active" slider), so the two settings share one control.
-local VIRTUAL = {
-	chatOwn = {
-		get = function() return DB.chatDim and 0 or (DB.chatOpacity or 1) end,
-		set = function(v)
-			if v <= 0 then
-				DB.chatDim = true
+-- The settings window. Its helpers live in this block, so they do not count against the 200 local variables a file can have
+-- at its top level (QuietHUD had reached that limit). The two the rest of the file uses are declared here and set inside.
+local resetDefaults, toggleConfig
+do
+	-- Hover help: a tooltip for a label, a heading or a control. Over text, a frame of its own catches the mouse; it only takes the
+	-- mouse movement (as the game's cooldown viewer does), so a click or a drag there still reaches the window under it.
+	local function addHelp(parent, region, title, text)
+		if not text then return end
+		local target = region
+		if region.IsObjectType and region:IsObjectType("FontString") then
+			target = CreateFrame("Frame", nil, parent)
+			target:SetAllPoints(region)
+			if target.SetMouseMotionEnabled and target.SetMouseClickEnabled then
+				target:SetMouseClickEnabled(false)
+				target:SetMouseMotionEnabled(true)
 			else
-				DB.chatDim, DB.chatOpacity = false, math.max(v, 0.1)
+				target:EnableMouse(true)
 			end
-		end,
-	},
-	-- The minimap is solid when shown unless you change it: Global (the old "use the HUD opacity" checkbox) or a number.
-	mapOwn = {
-		get = function() return DB.mapFollowsHud and 0 or ((DB.ovMap or 0) > 0 and DB.ovMap or 1) end,
-		set = function(v)
-			if v <= 0 then
-				DB.mapFollowsHud, DB.ovMap = true, 0
-			else
-				DB.mapFollowsHud, DB.ovMap = false, math.max(v, 0.1)
-			end
-		end,
-	},
-}
-
--- compact puts the label to the left of the slider on one short row (the Opacity page), instead of above it.
-local function makeSlider(parent, y, label, key, minV, maxV, stepV, fmt, zeroText, compact)
-	local title = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-	title:SetPoint("TOPLEFT", 16, compact and (y - 1) or y)
-	if compact then
-		title:SetWidth(200)
-		title:SetJustifyH("LEFT")
-		title:SetWordWrap(false)
-	end
-	title:SetText(label)
-	local s = CreateFrame("Slider", nil, parent)
-	if compact then
-		s:SetPoint("TOPLEFT", 232, y - 1)
-		s:SetSize(200, 16)
-	else
-		s:SetPoint("TOPLEFT", 16, y - 22)
-		s:SetSize(220, 16)
-	end
-	s:SetOrientation("HORIZONTAL")
-	s:SetMinMaxValues(minV, maxV)
-	local bar = s:CreateTexture(nil, "BACKGROUND")
-	bar:SetColorTexture(1, 1, 1, 0.25)
-	bar:SetPoint("LEFT", s, "LEFT", 0, 0)
-	bar:SetPoint("RIGHT", s, "RIGHT", 0, 0)
-	bar:SetHeight(4)
-	s:SetThumbTexture("Interface\\Buttons\\UI-SliderBar-Button-Horizontal")
-	local thumb = s:GetThumbTexture()
-	if thumb then thumb:SetSize(16, 24) end
-	local readout = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-	readout:SetPoint("LEFT", s, "RIGHT", 12, 0)
-	s:SetScript("OnValueChanged", function(self, val)
-		-- The mouse can drift off the thin bar while you drag, so the check is generous: 80 units above, below and to the sides.
-		local okOver, over = pcall(self.IsMouseOver, self, 80, -80, -80, 80)
-		local dragging = IsMouseButtonDown and IsMouseButtonDown("LeftButton") and (over or (not okOver and self:IsMouseOver()))
-		if not dragging then return end
-		val = math.floor(val / stepV + 0.5) * stepV
-		if VIRTUAL[key] then VIRTUAL[key].set(val) else DB[key] = val end
-		readout:SetText((zeroText and val == 0) and zeroText or string.format(fmt, val))
-		-- Idle can never be brighter than shown: dragging one past the other carries the other with it.
-		local carried = false
-		if key == "idle" and val > (DB.base or 0) + 0.001 then
-			DB.base, carried = val, true
-		elseif key == "base" and val < (DB.idle or 0) - 0.001 then
-			DB.idle, carried = val, true
 		end
-		persistSoon()
-		if carried then syncControls() end
-	end)
-	controls[#controls + 1] = function()
-		local v = VIRTUAL[key] and VIRTUAL[key].get() or DB[key]
-		if v == nil then v = minV end
-		s:SetValue(v)
-		readout:SetText((zeroText and v == 0) and zeroText or string.format(fmt, v))
+		target:HookScript("OnEnter", function(self)
+			GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+			GameTooltip:SetText(title, 1, 1, 1)
+			GameTooltip:AddLine(text, 1, 0.82, 0, true)
+			GameTooltip:Show()
+		end)
+		target:HookScript("OnLeave", function() GameTooltip:Hide() end)
 	end
-	controls[#controls]()
-end
 
-local CELL = 24 -- the size of a tick box in the grids (the Bars page and the Elements page look the same)
-
-local function makeMaskCheck(parent, x, y, key, index)
-	local check = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
-	check:SetSize(CELL, CELL)
-	check:SetPoint("TOPLEFT", x, y)
-	check:SetScript("OnClick", function(self)
-		local mask = DB[key] or 0
-		local weight = 2 ^ (index - 1)
-		if barBit(mask, index) then mask = mask - weight else mask = mask + weight end
-		DB[key] = mask
-		self:SetChecked(barBit(mask, index))
-		persistSoon()
-	end)
-	controls[#controls + 1] = function() check:SetChecked(barBit(DB[key], index)) end
-	controls[#controls]()
-	return check
-end
-
--- The list of what brings the chat up, one checkbox per category in CHAT_KINDS.
-local function makeChatKinds(parent, y)
-	local heading = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-	heading:SetPoint("TOPLEFT", 16, y)
-	heading:SetText("What brings the chat up")
-	for i, kind in ipairs(CHAT_KINDS) do
-		local check = makeMaskCheck(parent, 12, y - 14 - (i - 1) * 22, "chatKinds", i)
+	local function makeCheck(parent, y, label, key, help)
+		local check = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
+		check:SetPoint("TOPLEFT", 12, y)
+		check:SetScript("OnClick", function(self)
+			DB[key] = not DB[key]
+			self:SetChecked(DB[key] and true or false)
+			persistSoon()
+			rebuildLists()
+			if armEntry then armEntry() end
+		end)
 		local text = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 		text:SetPoint("LEFT", check, "RIGHT", 4, 0)
-		text:SetText(kind[1])
+		text:SetText(label)
+		addHelp(parent, check, label, help)
+		addHelp(parent, text, label, help)
+		controls[#controls + 1] = function() check:SetChecked(DB[key] and true or false) end
+		controls[#controls]()
 	end
-end
 
-local function makeBarGrid(parent, y)
-	local cols = {
-		{ "Fade", "barFade", 120 },
-		{ "Hide hotkeys", "barHotkeys", 190 },
-		{ "Hide names", "barNames", 290 },
+	-- A slider that stands for more than one stored setting. The chat opacity is "Global" (the old "Chat uses the HUD opacity"
+	-- checkbox) or a number (the old "Chat opacity when active" slider), so the two settings share one control.
+	local VIRTUAL = {
+		chatOwn = {
+			get = function() return DB.chatDim and 0 or (DB.chatOpacity or 1) end,
+			set = function(v)
+				if v <= 0 then
+					DB.chatDim = true
+				else
+					DB.chatDim, DB.chatOpacity = false, math.max(v, 0.1)
+				end
+			end,
+		},
+		-- The minimap is solid when shown unless you change it: Global (the old "use the HUD opacity" checkbox) or a number.
+		mapOwn = {
+			get = function() return DB.mapFollowsHud and 0 or ((DB.ovMap or 0) > 0 and DB.ovMap or 1) end,
+			set = function(v)
+				if v <= 0 then
+					DB.mapFollowsHud, DB.ovMap = true, 0
+				else
+					DB.mapFollowsHud, DB.ovMap = false, math.max(v, 0.1)
+				end
+			end,
+		},
 	}
-	for _, c in ipairs(cols) do
-		local header = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-		header:SetPoint("TOPLEFT", c[3], y)
-		header:SetText(c[1])
-	end
-	local rowY = y - 22
-	for i = 1, #BAR_DEFS do
-		local label = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-		label:SetPoint("TOPLEFT", 16, rowY - 5)
-		label:SetText("Action Bar " .. i)
-		for _, c in ipairs(cols) do makeMaskCheck(parent, c[3], rowY, c[2], i) end
-		rowY = rowY - 24
-	end
-end
 
--- The trigger grid: a row per element, a column per thing that can bring it up. Each cell is one bit of the row's
--- number, like the bar grid, and only the cells that mean something for that element are drawn. The columns are
--- ordered so that no row has a gap: the ones every element has come first, then hide in combat, then new info.
-local TRIGGER_COLS = {
-	{ "Awake", 1 }, { "While\nmoving", 2 }, { "Mouse\nover", 4 }, { "Dungeon\nor raid", 6 },
-	{ "Hide in\ncombat", 5 }, { "New\ninfo", 3 },
-}
-local COL_AT = {}
-for position, col in ipairs(TRIGGER_COLS) do COL_AT[col[2]] = position end
-local GRIDS = {
-	elements = {
-		fade = true,
-		rows = {
-			{ "Action bars", "fadeBars", "trigBars", { 1, 2, 4, 6, 5 } },
-			{ "Player frame", "fadePlayer", "trigPlayer", { 1, 2, 4, 6, 5 } },
-			{ "Enemy, party, buffs", "fadeUnits", "trigUnits", { 1, 2, 4, 6, 5 } },
-			{ "Objective tracker", "fadeTracker", "trigTracker", { 1, 2, 3, 4, 5, 6 } },
-			{ "Chat", "fadeChat", "trigChat", { 1, 2, 3, 4, 5, 6 } },
-			{ "Minimap", "fadeMinimap", "trigMap", { 1, 2, 3, 4, 5, 6 } },
-			{ "Bags bar", "fadeBags", "trigBagsBar", { 1, 2, 4, 6, 5 } },
-			{ "Menu bar", "fadeMicro", "trigMicro", { 1, 2, 4, 6, 5 } },
-		},
-	},
-	rxp = {
-		rows = {
-			{ "Guide, targets, items", false, "trigRxp", { 1, 2, 3, 4, 5, 6 } },
-			{ "Arrow", false, "trigNav", { 1, 2, 4, 5, 6 } },
-		},
-	},
-}
+	-- compact puts the label to the left of the slider on one short row (the Opacity page), instead of above it. compact "column" is
+	-- a narrower row in one of the two columns of the Opacity page (x is where the column starts): the name is white and indented
+	-- under its group heading, like the rows of the Elements grid. help is the tooltip of the name.
+	local function makeSlider(parent, y, label, key, minV, maxV, stepV, fmt, zeroText, compact, x, help)
+		x = x or 0
+		local column = compact == "column"
+		local title = parent:CreateFontString(nil, "OVERLAY", column and "GameFontHighlight" or "GameFontNormal")
+		title:SetPoint("TOPLEFT", (column and 24 or 16) + x, compact and (y - 1) or y)
+		if compact then
+			title:SetWidth(column and WIN.labelW or 200)
+			title:SetJustifyH("LEFT")
+			title:SetWordWrap(false)
+		end
+		title:SetText(label)
+		addHelp(parent, title, label, help)
+		local s = CreateFrame("Slider", nil, parent)
+		if column then
+			s:SetPoint("TOPLEFT", 24 + x + WIN.labelW + 6, y - 1)
+			s:SetSize(WIN.sliderW, 16)
+		elseif compact then
+			s:SetPoint("TOPLEFT", 232, y - 1)
+			s:SetSize(200, 16)
+		else
+			s:SetPoint("TOPLEFT", 16, y - 22)
+			s:SetSize(220, 16)
+		end
+		s:SetOrientation("HORIZONTAL")
+		s:SetMinMaxValues(minV, maxV)
+		local bar = s:CreateTexture(nil, "BACKGROUND")
+		bar:SetColorTexture(1, 1, 1, 0.25)
+		bar:SetPoint("LEFT", s, "LEFT", 0, 0)
+		bar:SetPoint("RIGHT", s, "RIGHT", 0, 0)
+		bar:SetHeight(4)
+		s:SetThumbTexture("Interface\\Buttons\\UI-SliderBar-Button-Horizontal")
+		local thumb = s:GetThumbTexture()
+		if thumb then thumb:SetSize(16, 24) end
+		local readout = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+		readout:SetPoint("LEFT", s, "RIGHT", 12, 0)
+		s:SetScript("OnValueChanged", function(self, val)
+			-- The mouse can drift off the thin bar while you drag, so the check is generous: 80 units above, below and to the sides.
+			local okOver, over = pcall(self.IsMouseOver, self, 80, -80, -80, 80)
+			local dragging = IsMouseButtonDown and IsMouseButtonDown("LeftButton") and (over or (not okOver and self:IsMouseOver()))
+			if not dragging then return end
+			val = math.floor(val / stepV + 0.5) * stepV
+			if VIRTUAL[key] then VIRTUAL[key].set(val) else DB[key] = val end
+			readout:SetText((zeroText and val == 0) and zeroText or string.format(fmt, val))
+			-- Idle can never be brighter than shown: dragging one past the other carries the other with it.
+			local carried = false
+			if key == "idle" and val > (DB.base or 0) + 0.001 then
+				DB.base, carried = val, true
+			elseif key == "base" and val < (DB.idle or 0) - 0.001 then
+				DB.idle, carried = val, true
+			end
+			persistSoon()
+			if carried then syncControls() end
+		end)
+		controls[#controls + 1] = function()
+			local v = VIRTUAL[key] and VIRTUAL[key].get() or DB[key]
+			if v == nil then v = minV end
+			s:SetValue(v)
+			readout:SetText((zeroText and v == 0) and zeroText or string.format(fmt, v))
+		end
+		controls[#controls]()
+	end
 
--- The rows of the Elements grid: the rows with five columns first, then the tracker, chat and minimap, which have the most. The
--- cast bar and the breath bar have no row: they only appear when they are needed (see the main loop), so Fade and the triggers
--- mean nothing for them. They keep their opacity setting on the Opacity page.
-do
-	local rows = GRIDS.elements.rows
-	for i, r in ipairs(rows) do
-		if r[1] == "Enemy, party, buffs" then
-			rows[i] = { "Added frames", "fadeUnits", "trigUnits", { 1, 2, 4, 6, 5 } }
-			break
+	local CELL = 24 -- the size of a tick box in the grids (the Bars page and the Elements page look the same)
+
+	local function makeMaskCheck(parent, x, y, key, index)
+		local check = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
+		check:SetSize(CELL, CELL)
+		check:SetPoint("TOPLEFT", x, y)
+		check:SetScript("OnClick", function(self)
+			local mask = DB[key] or 0
+			local weight = 2 ^ (index - 1)
+			if barBit(mask, index) then mask = mask - weight else mask = mask + weight end
+			DB[key] = mask
+			self:SetChecked(barBit(mask, index))
+			persistSoon()
+		end)
+		controls[#controls + 1] = function() check:SetChecked(barBit(DB[key], index)) end
+		controls[#controls]()
+		return check
+	end
+
+	-- The list of what brings the chat up, one checkbox per category in CHAT_KINDS.
+	local function makeChatKinds(parent, y)
+		local heading = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+		heading:SetPoint("TOPLEFT", 16, y)
+		heading:SetText("What brings the chat up")
+		for i, kind in ipairs(CHAT_KINDS) do
+			local check = makeMaskCheck(parent, 12, y - 14 - (i - 1) * 22, "chatKinds", i)
+			local text = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+			text:SetPoint("LEFT", check, "RIGHT", 4, 0)
+			text:SetText(kind[1])
 		end
 	end
-	for _, s in ipairs(SPLIT) do
-		if not s.noGrid then rows[#rows + 1] = { s.label, s.fadeKey, s.trigKey, s.cols } end
-	end
-	local rank = {}
-	for i, label in ipairs(SPLIT.order) do rank[label] = i end
-	table.sort(rows, function(a, b) return (rank[a[1]] or 99) < (rank[b[1]] or 99) end)
-end
-local function makeFadeCell(parent, x, y, key)
-	local check = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
-	check:SetSize(CELL, CELL)
-	check:SetPoint("TOPLEFT", x, y)
-	check:SetScript("OnClick", function(self)
-		DB[key] = not DB[key]
-		self:SetChecked(DB[key] and true or false)
-		persistSoon()
-	end)
-	controls[#controls + 1] = function() check:SetChecked(DB[key] and true or false) end
-	controls[#controls]()
-end
 
--- Returns the height it took.
-local function makeTriggerGrid(parent, y, grid)
-	local fadeX, firstX, pitch = 144, 190, 46
-	local function header(x, text)
-		local h = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-		h:SetPoint("TOP", parent, "TOPLEFT", x + 16, y)
-		h:SetWidth(64)
-		h:SetJustifyH("CENTER")
-		h:SetText(text)
-	end
-	if grid.fade then header(fadeX, "Fade") end
-	for position, col in ipairs(TRIGGER_COLS) do header(firstX + (position - 1) * pitch, col[1]) end
-	local rowY = y - 30
-	for _, row in ipairs(grid.rows) do
-		local label = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-		label:SetPoint("TOPLEFT", 16, rowY - 6)
-		label:SetText(row[1])
-		if row[2] then makeFadeCell(parent, fadeX, rowY, row[2]) end
-		for _, i in ipairs(row[4]) do
-			makeMaskCheck(parent, firstX + (COL_AT[i] - 1) * pitch, rowY, row[3], i)
+	local function makeBarGrid(parent, y)
+		local cols = {
+			{ "Fade", "barFade", 120 },
+			{ "Hide hotkeys", "barHotkeys", 190 },
+			{ "Hide names", "barNames", 290 },
+		}
+		for _, c in ipairs(cols) do
+			local header = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+			header:SetPoint("TOPLEFT", c[3], y)
+			header:SetText(c[1])
 		end
-		rowY = rowY - 24
+		local rowY = y - 22
+		for i = 1, #BAR_DEFS do
+			local label = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+			label:SetPoint("TOPLEFT", 16, rowY - 5)
+			label:SetText("Action Bar " .. i)
+			for _, c in ipairs(cols) do makeMaskCheck(parent, c[3], rowY, c[2], i) end
+			rowY = rowY - 24
+		end
 	end
-	return 30 + #grid.rows * 24 + 6
-end
 
--- A section heading. Returns the height it took.
-local function makeHeading(parent, y, text)
-	local heading = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
-	heading:SetPoint("TOPLEFT", 16, y - 2)
-	heading:SetText(text)
-	return 22
-end
+	-- The trigger grid: a row per element, a column per thing that can bring it up. Each cell is one bit of the row's
+	-- number, like the bar grid, and only the cells that mean something for that element are drawn. The columns are
+	-- ordered so that no row has a gap: the ones every element has come first, then hide in combat, then new info.
+	local TRIGGER_COLS = {
+		{ "Awake", 1 }, { "While\nmoving", 2 }, { "Mouse\nover", 4 }, { "Dungeon\nor raid", 6 },
+		{ "Hide in\ncombat", 5 }, { "New\ninfo", 3 },
+	}
+	local COL_AT = {}
+	for position, col in ipairs(TRIGGER_COLS) do COL_AT[col[2]] = position end
+	local GRIDS = {
+		elements = {
+			fade = true,
+			rows = {
+				{ "Action bars", "fadeBars", "trigBars", { 1, 2, 4, 6, 5 } },
+				{ "Player frame", "fadePlayer", "trigPlayer", { 1, 2, 4, 6, 5 } },
+				-- the old "Enemy, party, buffs" row: its frames have rows of their own now (SPLIT), what is left is /qhud add hud
+				{ "Added frames", "fadeUnits", "trigUnits", { 1, 2, 4, 6, 5 } },
+				{ "Objective tracker", "fadeTracker", "trigTracker", { 1, 2, 3, 4, 5, 6 } },
+				{ "Chat", "fadeChat", "trigChat", { 1, 2, 3, 4, 5, 6 } },
+				{ "Minimap", "fadeMinimap", "trigMap", { 1, 2, 3, 4, 5, 6 } },
+				{ "Bags bar", "fadeBags", "trigBagsBar", { 1, 2, 4, 6, 5 } },
+				{ "Menu bar", "fadeMicro", "trigMicro", { 1, 2, 4, 6, 5 } },
+			},
+		},
+		rxp = {
+			rows = {
+				{ "Guide, targets, items", false, "trigRxp", { 1, 2, 3, 4, 5, 6 } },
+				{ "Arrow", false, "trigNav", { 1, 2, 4, 5, 6 } },
+			},
+		},
+	}
 
--- A paragraph of small grey text. Returns the height it took.
-local function makeNote(parent, y, text)
-	local note = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	note:SetPoint("TOPLEFT", 16, y)
-	note:SetWidth(424)
-	note:SetJustifyH("LEFT")
-	note:SetTextColor(0.75, 0.75, 0.75)
-	note:SetText(text)
-	return math.max(16, math.ceil(note:GetStringHeight())) + 8
-end
-
-local function showPage(index)
-	for i, frame in ipairs(pages) do
-		frame:SetShown(i == index)
-		if tabs[i].SetEnabled then tabs[i]:SetEnabled(i ~= index) end
-	end
-	-- The global opacity slider is on two pages, so what a page shows is refreshed when you switch to it.
-	syncControls()
-end
-
-local function resetDefaults()
-	for _, f in ipairs(FIELDS) do DB[f.key] = f.def end
-	for _, k in ipairs({ "ovBars", "ovPlayer", "ovHud", "ovQuest", "ovMap", "ovBagsBar", "ovMicro" }) do DB[k] = 0 end
-	for _, s in ipairs(SPLIT) do DB[s.fadeKey], DB[s.trigKey], DB[s.ovKey] = nil, nil, 0 end
-	persistSoon()
-	rebuildLists()
-	syncControls()
-	if armEntry then armEntry() end
-end
-
-local function buildConfig()
-	if inheritGroups then inheritGroups() end
-	config = CreateFrame("Frame", "QuietHUDConfig", UIParent)
-	config:SetSize(520, 790)
-	config:SetPoint("CENTER")
-	config:SetFrameStrata("DIALOG")
-	config:SetMovable(true)
-	config:EnableMouse(true)
-	config:RegisterForDrag("LeftButton")
-	config:SetScript("OnDragStart", config.StartMoving)
-	config:SetScript("OnDragStop", config.StopMovingOrSizing)
-	local bg = config:CreateTexture(nil, "BACKGROUND")
-	bg:SetAllPoints()
-	bg:SetColorTexture(0.05, 0.05, 0.05, 0.92)
-	local title = config:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-	title:SetPoint("TOP", 0, -10)
-	title:SetText("QuietHUD")
-	local close = CreateFrame("Button", nil, config, "UIPanelCloseButton")
-	close:SetPoint("TOPRIGHT", 2, 2)
-
-	-- The tallest page, so the window can grow when one does not fit in it (a page sits between the tabs, 68 from the top,
-	-- and the buttons, 44 from the bottom; the notes are only measured here, with the game's own font).
-	local tabX, tallest = 12, 0
-	for i, page in ipairs(PAGES) do
-		local frame = CreateFrame("Frame", nil, config)
-		frame:SetPoint("TOPLEFT", 0, -68)
-		frame:SetPoint("BOTTOMRIGHT", 0, 44)
-		local y = -4
-		for idx, item in ipairs(page.items) do
-			if item[1] == "check" then
-				makeCheck(frame, y, item[3], item[2])
-				y = y - 26
-			elseif item[1] == "kinds" then
-				makeChatKinds(frame, y)
-				y = y - (18 + #CHAT_KINDS * 22)
-			elseif item[1] == "bargrid" then
-				makeBarGrid(frame, y)
-				y = y - 220
-			elseif item[1] == "grid" then
-				y = y - makeTriggerGrid(frame, y, GRIDS[item[2]])
-			elseif item[1] == "note" then
-				if page.items[idx - 1] and page.items[idx - 1][1] == "check" then y = y - 4 end
-				y = y - makeNote(frame, y, item[2])
-			elseif item[1] == "heading" then
-				if idx > 1 then y = y - 10 end
-				y = y - makeHeading(frame, y, item[2])
-			else
-				if page.items[idx - 1] and page.items[idx - 1][1] == "check" then y = y - 6 end
-				makeSlider(frame, y, item[3], item[2], item[4], item[5], item[6], item[7], item[8], item[9])
-				y = y - (item[9] and 22 or 46)
+	-- The rows of the Elements grid, in the groups of SPLIT.groups, each group under its heading ({ heading = name }). The cast bar
+	-- and the breath bar have no row: they only appear when they are needed (see the main loop), so Fade and the triggers mean
+	-- nothing for them. They keep their opacity setting on the Opacity page.
+	do
+		local byLabel, used, rows = {}, {}, {}
+		for _, r in ipairs(GRIDS.elements.rows) do byLabel[r[1]] = r end
+		for _, s in ipairs(SPLIT) do
+			if not s.noGrid then byLabel[s.label] = { s.label, s.fadeKey, s.trigKey, s.cols } end
+		end
+		for _, group in ipairs(SPLIT.groups) do
+			local first = true
+			for _, label in ipairs(group[2]) do
+				if byLabel[label] then
+					if first then rows[#rows + 1], first = { heading = group[1] }, false end
+					rows[#rows + 1], used[label] = byLabel[label], true
+				end
 			end
 		end
-		pages[i] = frame
-		tallest = math.max(tallest, -y)
-		local tab = CreateFrame("Button", nil, config, "UIPanelButtonTemplate")
-		local tabWidth = math.max(44, math.floor(#page.title * 6.4 + 18))
-		tab:SetSize(tabWidth, 22)
-		tab:SetPoint("TOPLEFT", tabX, -36)
-		tabX = tabX + tabWidth + 4
-		tab:SetText(page.title)
-		tab:SetScript("OnClick", function() showPage(i) end)
-		tabs[i] = tab
+		-- (a row that is in no group still gets a place, at the end)
+		for label, row in pairs(byLabel) do
+			if not used[label] then rows[#rows + 1] = row end
+		end
+		GRIDS.elements.rows = rows
 	end
-	if tallest > 790 - 68 - 44 then config:SetHeight(68 + tallest + 44) end
 
-	local now = CreateFrame("Button", nil, config, "UIPanelButtonTemplate")
-	now:SetSize(150, 24)
-	now:SetPoint("BOTTOMLEFT", 16, 14)
-	now:SetText("Show/hide HUD now")
-	-- Shows the whole HUD (the same as /qhud peek); pressing it again puts things back to normal. (It used to flip the "weapon
-	-- drawn" state, which does nothing unless "Show while my weapon is drawn" is ticked.) It also ends by itself after two minutes.
-	now:SetScript("OnClick", function()
-		local t = GetTime()
-		peekUntil = t < peekUntil and 0 or t + 120
-		print("QuietHUD: " .. (peekUntil > 0 and "the whole HUD is shown (press again to go back to normal)" or "back to normal"))
-	end)
-	local reset = CreateFrame("Button", nil, config, "UIPanelButtonTemplate")
-	reset:SetSize(140, 24)
-	reset:SetPoint("BOTTOMRIGHT", -16, 14)
-	reset:SetText("Reset to defaults")
-	reset:SetScript("OnClick", resetDefaults)
+	-- The heading of a group of rows (the Elements grid) or of sliders (the Opacity page): gold, with the names under it in white.
+	local function makeGroupHeading(parent, x, y, text)
+		local h = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+		h:SetPoint("TOPLEFT", x, y - 2)
+		h:SetText(text)
+	end
+	local function makeFadeCell(parent, x, y, key)
+		local check = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
+		check:SetSize(CELL, CELL)
+		check:SetPoint("TOPLEFT", x, y)
+		check:SetScript("OnClick", function(self)
+			DB[key] = not DB[key]
+			self:SetChecked(DB[key] and true or false)
+			persistSoon()
+		end)
+		controls[#controls + 1] = function() check:SetChecked(DB[key] and true or false) end
+		controls[#controls]()
+	end
 
-	config:SetScript("OnShow", syncControls)
-	showPage(1)
-	config:Hide()
-end
+	-- Returns the height it took. Rows under a group heading are indented, and every second row of a group has a faint band behind
+	-- it, so a row is easy to follow across the columns. Hovering a column heading or a name shows what it means.
+	local function makeTriggerGrid(parent, y, grid)
+		local fadeX, firstX, pitch = WIN.gridFade, WIN.gridFirst, WIN.gridPitch
+		local bandRight = firstX + (#TRIGGER_COLS - 1) * pitch + CELL + 10
+		local function header(x, text, help)
+			local h = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+			h:SetPoint("TOP", parent, "TOPLEFT", x + 16, y)
+			h:SetWidth(64)
+			h:SetJustifyH("CENTER")
+			h:SetText(text)
+			addHelp(parent, h, (text:gsub("\n", " ")), help)
+		end
+		if grid.fade then header(fadeX, "Fade", HELP.cols.fade) end
+		for position, col in ipairs(TRIGGER_COLS) do header(firstX + (position - 1) * pitch, col[1], HELP.cols[col[2]]) end
+		local labelX = (grid.rows[1] and grid.rows[1].heading) and 24 or 16
+		local rowY, band = y - 30, 0
+		for n, row in ipairs(grid.rows) do
+			if row.heading then
+				if n > 1 then rowY = rowY - 4 end
+				makeGroupHeading(parent, 16, rowY, row.heading)
+				rowY, band = rowY - 18, 0
+			else
+				band = band + 1
+				if band % 2 == 0 then
+					local stripe = parent:CreateTexture(nil, "BACKGROUND")
+					stripe:SetColorTexture(1, 1, 1, 0.05)
+					stripe:SetPoint("TOPLEFT", 10, rowY)
+					stripe:SetSize(bandRight - 10, CELL)
+				end
+				local label = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+				label:SetPoint("TOPLEFT", labelX, rowY - 6)
+				label:SetText(row[1])
+				addHelp(parent, label, row[1], HELP.rows[row[1]])
+				if row[2] then makeFadeCell(parent, fadeX, rowY, row[2]) end
+				for _, i in ipairs(row[4]) do
+					makeMaskCheck(parent, firstX + (COL_AT[i] - 1) * pitch, rowY, row[3], i)
+				end
+				rowY = rowY - 24
+			end
+		end
+		return y - rowY + 6
+	end
 
-local function toggleConfig()
-	if not config then buildConfig() end
-	config:SetShown(not config:IsShown())
+	-- The About page: who made it (with the cat), and the links. The game cannot open a web page, so each link is a box to click
+	-- and copy from with Ctrl+C; typing in it changes nothing. Returns the height it took. No donation link: Blizzard's add-on
+	-- policy (rule 5) keeps requests for donations to the website and the download page, out of the game.
+	local ABOUT_LINKS = {
+		{ "Website", "https://jackafur.com" },
+		{ "CurseForge", "https://www.curseforge.com/wow/addons/quiethud" },
+		{ "GitHub", "https://github.com/Jackafur/quiethud" },
+	}
+	local function makeAbout(parent, y, titleText)
+		local cat = parent:CreateTexture(nil, "ARTWORK")
+		cat:SetSize(64, 64)
+		cat:SetPoint("TOPLEFT", 24, y - 2)
+		cat:SetTexture("Interface\\AddOns\\QuietHUD\\cat")
+		local name = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+		name:SetPoint("TOPLEFT", 100, y - 10)
+		name:SetText(titleText)
+		local what = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+		what:SetPoint("TOPLEFT", 100, y - 32)
+		what:SetText("Fades the HUD out when you are idle, to protect OLED screens.")
+		local by = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+		by:SetPoint("TOPLEFT", 100, y - 50)
+		by:SetText("Made by Jackafur. Tested by Vada.")
+		local rowY = y - 84
+		makeGroupHeading(parent, 16, rowY, "Links")
+		local hint = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		hint:SetPoint("TOPLEFT", 16, rowY - 22)
+		hint:SetTextColor(0.75, 0.75, 0.75)
+		hint:SetText("Click a link, then press Ctrl+C to copy it. Found a bug? Tell me on CurseForge or GitHub.")
+		rowY = rowY - 42
+		for _, link in ipairs(ABOUT_LINKS) do
+			local label = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+			label:SetPoint("TOPLEFT", 24, rowY - 4)
+			label:SetText(link[1])
+			local box = CreateFrame("EditBox", nil, parent, "InputBoxTemplate")
+			box:SetSize(360, 20)
+			box:SetPoint("TOPLEFT", 120, rowY)
+			box:SetAutoFocus(false)
+			local url = link[2]
+			box:SetText(url)
+			box:SetCursorPosition(0)
+			box:SetScript("OnEditFocusGained", function(self) self:HighlightText() end)
+			box:SetScript("OnEditFocusLost", function(self) self:HighlightText(0, 0) end)
+			box:SetScript("OnTextChanged", function(self, userInput)
+				if userInput then
+					self:SetText(url)
+					self:HighlightText()
+				end
+			end)
+			box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+			box:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
+			rowY = rowY - 26
+		end
+		return y - rowY + 6
+	end
+
+	-- A section heading. Returns the height it took.
+	local function makeHeading(parent, y, text)
+		local heading = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
+		heading:SetPoint("TOPLEFT", 16, y - 2)
+		heading:SetText(text)
+		return 22
+	end
+
+	-- A paragraph of small grey text. Returns the height it took.
+	local function makeNote(parent, y, text)
+		local note = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		note:SetPoint("TOPLEFT", 16, y)
+		note:SetWidth(424)
+		note:SetJustifyH("LEFT")
+		note:SetTextColor(0.75, 0.75, 0.75)
+		note:SetText(text)
+		return math.max(16, math.ceil(note:GetStringHeight())) + 8
+	end
+
+	local function showPage(index)
+		for i, frame in ipairs(pages) do
+			frame:SetShown(i == index)
+			if not config.numTabs and tabs[i].SetEnabled then tabs[i]:SetEnabled(i ~= index) end
+		end
+		-- The game's own tabs draw the page you are on as the open tab (the plain buttons used to grey it out instead).
+		if config.numTabs then PanelTemplates_SetTab(config, index) end
+		-- The global opacity slider is on two pages, so what a page shows is refreshed when you switch to it.
+		syncControls()
+	end
+
+	resetDefaults = function()
+		for _, f in ipairs(FIELDS) do DB[f.key] = f.def end
+		for _, k in ipairs({ "ovBars", "ovPlayer", "ovHud", "ovQuest", "ovMap", "ovBagsBar", "ovMicro" }) do DB[k] = 0 end
+		for _, s in ipairs(SPLIT) do DB[s.fadeKey], DB[s.trigKey], DB[s.ovKey] = nil, nil, 0 end
+		persistSoon()
+		rebuildLists()
+		syncControls()
+		if armEntry then armEntry() end
+	end
+
+	-- Taller than the screen (at UI scale 1.0 the screen is 768 tall), the window is scaled down to fit, so the buttons at the
+	-- bottom can always be reached.
+	local function fitConfig()
+		local screen, h = UIParent:GetHeight(), config:GetHeight()
+		local scale = 1
+		if screen and screen > 0 and h > screen - 16 then scale = (screen - 16) / h end
+		config:SetScale(scale)
+	end
+
+	local function buildConfig()
+		if inheritGroups then inheritGroups() end
+		-- The game's own window (the one the macro window uses): title bar, close button, our icon in the portrait, an inset for
+		-- the pages and a bar for the buttons. If it is ever missing, the plain dark window from before is used.
+		local okFramed, framedWindow = pcall(CreateFrame, "Frame", "QuietHUDConfig", UIParent, "ButtonFrameTemplate")
+		local framed = okFramed and framedWindow and framedWindow.SetTitle and type(framedWindow.Inset) == "table"
+		if okFramed and framedWindow and not framed then framedWindow:Hide() end
+		config = framed and framedWindow or CreateFrame("Frame", "QuietHUDConfig", UIParent)
+		config:SetSize(520, 790)
+		config:SetPoint("CENTER")
+		config:SetFrameStrata("DIALOG")
+		config:SetClampedToScreen(true)
+		config:SetMovable(true)
+		config:EnableMouse(true)
+		config:RegisterForDrag("LeftButton")
+		config:SetScript("OnDragStart", config.StartMoving)
+		config:SetScript("OnDragStop", config.StopMovingOrSizing)
+		-- Esc closes it, like the game's own windows.
+		if UISpecialFrames then table.insert(UISpecialFrames, "QuietHUDConfig") end
+		local getMeta = (C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMetadata
+		local okV, version = pcall(getMeta, ADDON, "Version")
+		local titleText = "QuietHUD" .. ((okV and type(version) == "string" and version ~= "") and (" " .. version) or "")
+		if framed then
+			config:SetTitle(titleText)
+			if config.SetPortraitToAsset then config:SetPortraitToAsset("Interface\\AddOns\\QuietHUD\\icon") end
+		else
+			local bg = config:CreateTexture(nil, "BACKGROUND")
+			bg:SetAllPoints()
+			bg:SetColorTexture(0.05, 0.05, 0.05, 0.92)
+			local title = config:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+			title:SetPoint("TOP", 0, -10)
+			title:SetText(titleText)
+			local close = CreateFrame("Button", nil, config, "UIPanelCloseButton")
+			close:SetPoint("TOPRIGHT", 2, 2)
+		end
+
+		-- The tallest page sets the window's height. A page sits between the tabs (pageTop from the top) and the buttons
+		-- (pageBottom from the bottom); the notes are only measured here, with the game's own font.
+		local pageTop, pageBottom = framed and 62 or 68, framed and 30 or 44
+		local tabX, tallest = 12, 0
+		for i, page in ipairs(PAGES) do
+			local frame = CreateFrame("Frame", nil, config)
+			frame:SetPoint("TOPLEFT", 0, -pageTop)
+			frame:SetPoint("BOTTOMRIGHT", 0, pageBottom)
+			local y = -4
+			for idx, item in ipairs(page.items) do
+				if item[1] == "check" then
+					makeCheck(frame, y, item[3], item[2], item[4])
+					y = y - 26
+				elseif item[1] == "kinds" then
+					makeChatKinds(frame, y)
+					y = y - (18 + #CHAT_KINDS * 22)
+				elseif item[1] == "bargrid" then
+					makeBarGrid(frame, y)
+					y = y - 220
+				elseif item[1] == "grid" then
+					y = y - makeTriggerGrid(frame, y, GRIDS[item[2]])
+				elseif item[1] == "note" then
+					if page.items[idx - 1] and page.items[idx - 1][1] == "check" then y = y - 4 end
+					y = y - makeNote(frame, y, item[2])
+				elseif item[1] == "heading" then
+					if idx > 1 then y = y - 10 end
+					y = y - makeHeading(frame, y, item[2])
+				elseif item[1] == "columns" then
+					-- Two columns of sliders under group headings (the Opacity page); the page goes on under the longer one.
+					local lowest = y
+					for c, list in ipairs({ item.left, item.right }) do
+						local x, cy = c == 1 and 0 or WIN.col2 - 16, y
+						for n, entry in ipairs(list) do
+							if entry[1] == "group" then
+								if n > 1 then cy = cy - 6 end
+								makeGroupHeading(frame, 16 + x, cy, entry[2])
+								cy = cy - 18
+							else
+								makeSlider(frame, cy, entry[3], entry[2], entry[4], entry[5], entry[6], entry[7], entry[8], entry[9], x, entry[10])
+								cy = cy - 22
+							end
+						end
+						lowest = math.min(lowest, cy)
+					end
+					y = lowest
+				elseif item[1] == "about" then
+					y = y - makeAbout(frame, y, titleText)
+				else
+					if page.items[idx - 1] and page.items[idx - 1][1] == "check" then y = y - 6 end
+					makeSlider(frame, y, item[3], item[2], item[4], item[5], item[6], item[7], item[8], item[9], nil, item[10])
+					y = y - (item[9] and 22 or 46)
+				end
+			end
+			pages[i] = frame
+			tallest = math.max(tallest, -y)
+			local tab
+			if framed then
+				-- The game's top tabs size themselves to their text and sit on the inset, after the portrait (as in the macro window).
+				tab = CreateFrame("Button", nil, config, "PanelTopTabButtonTemplate")
+				if i == 1 then tab:SetPoint("TOPLEFT", 51, -28) end
+			else
+				tab = CreateFrame("Button", nil, config, "UIPanelButtonTemplate")
+				local tabWidth = math.max(44, math.floor(#page.title * 6.4 + 18))
+				tab:SetSize(tabWidth, 22)
+				tab:SetPoint("TOPLEFT", tabX, -36)
+				tabX = tabX + tabWidth + 4
+			end
+			tab:SetText(page.title)
+			if framed and PanelTemplates_TabResize then PanelTemplates_TabResize(tab, 0) end
+			tab:SetScript("OnClick", function() showPage(i) end)
+			tabs[i] = tab
+		end
+		-- The window is as wide as the tabs need (each tab is at least as wide as its art, so they can need more than WIN.width),
+		-- and as tall as the tallest page.
+		local tabsRight = tabX
+		if framed and PanelTemplates_SetNumTabs then
+			config.Tabs = tabs
+			PanelTemplates_SetNumTabs(config, #tabs) -- anchors each tab to the one before it, 3 apart
+			tabsRight = 51 + 3 * (#tabs - 1) + 7 -- the first tab's place, the gaps, and the last tab's art past its edge
+			for _, tab in ipairs(tabs) do tabsRight = tabsRight + tab:GetWidth() end
+		end
+		config:SetSize(math.max(WIN.width, math.ceil(tabsRight + 10)), pageTop + tallest + pageBottom + 6)
+
+		-- The buttons sit in the window's button bar (framed) or above the bottom edge (plain).
+		local buttonH, buttonY, buttonX = framed and 22 or 24, framed and 4 or 14, framed and 4 or 16
+		local now = CreateFrame("Button", nil, config, "UIPanelButtonTemplate")
+		now:SetSize(150, buttonH)
+		now:SetPoint("BOTTOMLEFT", buttonX, buttonY)
+		now:SetText("Show/hide HUD now")
+		-- Shows the whole HUD (the same as /qhud peek); pressing it again puts things back to normal. (It used to flip the "weapon
+		-- drawn" state, which does nothing unless "Show while my weapon is drawn" is ticked.) It also ends by itself after two minutes.
+		now:SetScript("OnClick", function()
+			local t = GetTime()
+			peekUntil = t < peekUntil and 0 or t + 120
+			print("QuietHUD: " .. (peekUntil > 0 and "the whole HUD is shown (press again to go back to normal)" or "back to normal"))
+		end)
+		local reset = CreateFrame("Button", nil, config, "UIPanelButtonTemplate")
+		reset:SetSize(150, buttonH)
+		reset:SetPoint("BOTTOMRIGHT", framed and -6 or -16, buttonY)
+		reset:SetText("Reset to defaults")
+		-- It asks first: the first click only arms it, and a second click within five seconds resets everything.
+		local armedUntil = 0
+		reset:SetScript("OnClick", function(self)
+			local t = GetTime()
+			if t < armedUntil then
+				armedUntil = 0
+				self:SetText("Reset to defaults")
+				resetDefaults()
+				return
+			end
+			armedUntil = t + 5
+			self:SetText("Click again to reset")
+			C_Timer.After(5, function()
+				if GetTime() >= armedUntil then self:SetText("Reset to defaults") end
+			end)
+		end)
+
+		config:SetScript("OnShow", function()
+			fitConfig()
+			syncControls()
+		end)
+		fitConfig()
+		showPage(1)
+		config:Hide()
+	end
+
+	toggleConfig = function()
+		if not config then buildConfig() end
+		config:SetShown(not config:IsShown())
+	end
 end
 
 -- Quest-mob targeting (experimental)

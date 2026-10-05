@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.3.7
+
+Your settings carry over. No setting was added or taken away: this release is about the settings window.
+
+### Changed
+
+- **The settings window looks like the game's own windows.** It uses the game's window frame and tabs (like the macro window), shows the version in its title, and Esc closes it.
+- **It fits on the screen.** The window is only as tall as its tallest page, so it fits at UI scale 1.0, and on a screen shorter than that it shrinks to fit. It is as wide as its tabs need, so they all fit.
+- **The Elements page is in groups:** Bars, Unit frames, Auras and alerts, Info and Other, with a faint band behind every second row so a row is easy to follow across the columns.
+- **Hover help.** Hover a column heading (Awake, New info and so on) or an element's name to see what it means. This replaces the long notes under the grid.
+- **The Opacity page has two columns,** in the same groups as the Elements page.
+- **The minimap's darken option moved and is clearer.** It is now on the Opacity page next to "Minimap idle", called "Darken the minimap instead of making it see-through", with a short note on what each choice looks like.
+- **Reset to defaults asks first.** The first click arms it, and a second click within five seconds resets everything.
+
+### Added
+
+- **An About tab:** who made QuietHUD and who tested it, and links to the website, the CurseForge page and GitHub, ready to copy.
+
 ## 1.3.6
 
 Your settings carry over.

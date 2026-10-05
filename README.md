@@ -8,7 +8,7 @@ optional, and nothing is hidden unless you turn it on.
 
 ## What it does
 
-Open the settings with `/qhud`. There are seven pages.
+Open the settings with `/qhud`. There are eight pages. Hover a column heading or an element's name to see what it means.
 
 **Show when** (what brings the HUD back)
 - Master on/off switch.
@@ -16,15 +16,15 @@ Open the settings with `/qhud`. There are seven pages.
 - Show the whole HUD on demand: while you hold Alt, Ctrl or Shift, or with a key you bind (Esc, Options, Keybindings, AddOns, QuietHUD).
 
 **Elements** (what fades, and what brings each one back)
-- A grid with a row for the action bars (with the stance, pet and shaman totem bars), player frame, target and focus, pet frame, party and raid, the party panel (the side panel that pops out of the arrow tab, with the party markers and Leave Party), buffs, debuffs, cooldown trackers, damage meter, alerts (the durability icon, the loss of control alert and external defensives), bags bar, menu bar, frames you added, objective tracker, chat and minimap. Each row has a Fade box, then one box per thing that can bring that element up: Awake (combat, a drawn weapon or a target, from the Show when page), While moving, Mouse over and Dungeon or raid (while you are inside one), and Hide in combat, which beats the rest. The tracker, chat and minimap also have New info (quest progress for the tracker, new messages for chat, a zone change for the minimap).
+- A grid with a row for each element, in groups. Bars: the action bars (with the stance, pet and shaman totem bars), bags bar and menu bar. Unit frames: player frame, target and focus, pet frame, party and raid, and the party panel (the side panel that pops out of the arrow tab, with the party markers and Leave Party). Auras and alerts: buffs, debuffs, cooldown trackers and alerts (the durability icon, the loss of control alert and external defensives). Info: objective tracker, chat and minimap. Other: damage meter and frames you added. Each row has a Fade box, then one box per thing that can bring that element up: Awake (combat, a drawn weapon or a target, from the Show when page), While moving, Mouse over and Dungeon or raid (while you are inside one), and Hide in combat, which beats the rest. The tracker, chat and minimap also have New info (quest progress for the tracker, new messages for chat, a zone change for the minimap).
 - Mouse over is optional for every element. For "only on mouse over", leave just that one box ticked in the row. An element with only Fade ticked sits at the idle opacity all the time, so with idle at 0 it stays hidden, which is a way to keep the bags bar or the menu bar off.
 - The cast bar and the breath bar (the underwater timer, which also shows fatigue and feign death) are not in the grid. They appear by themselves when needed: casting shows the cast bar and a running timer shows the breath bar, even when the HUD is idle, so they only have an opacity.
 - The minimap has no mode button. Awake makes it follow the HUD, While moving shows it only while you move, an unticked Fade never fades it, and its idle opacity above 0 keeps it faintly visible.
 - An element with Fade unticked is never faded. It stays at its own opacity from the Opacity page, or fully solid when that is Global. So to keep something at 0.5 all the time, untick its Fade and set its own opacity to 0.5.
 
 **Opacity** (how solid each thing is)
-- One global value for when the HUD is active and one for when it is idle (0 hides it completely). Every element follows the global active value unless it has its own: there is a row for each element, where Global (the far left of the slider) follows the global value and any number uses that instead.
-- Chat, the minimap, the open bag windows and tooltips are solid until you change them. The minimap also has its own idle value.
+- One global value for when the HUD is active and one for when it is idle (0 hides it completely). Every element follows the global active value unless it has its own: there is a slider for each element, in two columns and the same groups as the Elements page, where Global (the far left of the slider) follows the global value and any number uses that instead.
+- Chat, the minimap, the open bag windows and tooltips are solid until you change them. The minimap also has its own idle value, and a box to darken it instead of making it see-through (see Minimap below).
 - Open bags: you can drag an open bag by its title bar or an empty part of it to move all the open bags together, and where you put them is remembered. The default UI does not let you move them. `/qhud bags reset` puts them back.
 
 **Bars** (per action bar, Action Bars 1 to 8)
@@ -44,7 +44,11 @@ Open the settings with `/qhud`. There are seven pages.
 - A checkbox to hide the party panel completely (it is only made invisible, its arrow tab still works). Its row of the Elements grid is for fading it instead.
 - An experimental pixel shift (below).
 - The quest-mob targeting key (experimental), off by default.
-- Reset to defaults.
+
+**About**
+- Who made QuietHUD (and who tested it), and links to the website, the CurseForge page and GitHub, ready to copy.
+
+At the bottom of every page: Show/hide HUD now, and Reset to defaults, which asks first (click it again within five seconds).
 
 Chat comes back on a new message, when you press Enter, or when the mouse is over it. The objective tracker comes back briefly after quest progress. The minimap comes back for a few seconds after a zone change.
 ## Why you might want each option
@@ -83,7 +87,7 @@ frame is partly transparent, and when it is hidden and shown again, so QuietHUD 
 map see-through with its round mask instead (the ring, buttons and map pins follow it), and a faded-out minimap is
 shrunk to almost nothing rather than hidden. The game's own icons on the map (the player arrow, quest, tracking and
 party icons) stay solid, because the game does not let addons change their opacity; they only go away when the
-minimap fades out completely. "Minimap: darken instead of see-through" dims the map with a dark layer instead, which
+minimap fades out completely. "Darken the minimap instead of making it see-through" (on the Opacity page) dims the map with a dark layer instead, which
 dims those icons too, but the map is not see-through. Use whichever you prefer. A square minimap (Leatrix Plus has
 that option) works the same way with square masks, and gets a square dark layer. A minimap of another shape keeps its
 own mask: it uses real transparency outdoors and the dark layer in buildings and cities.
