@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.3.8
+
+Your settings carry over.
+
+### Fixed
+
+- **Open bags can no longer be dragged off the screen.** Before, a drag could take them past the edge with no way to grab them again, and the spot was remembered, so they stayed out of reach after a reload. Now they stop at the edge, and bags that were already off the screen come back onto it.
+
+### Added
+
+- **A Reset position button** for the open bags, on the Opacity page next to "Open bag windows". It puts them back where the game places them. (`/qhud bags reset` still works too, and also sets their opacity back to full.)
+
 ## 1.3.7
 
 Your settings carry over. No setting was added or taken away: this release is about the settings window.

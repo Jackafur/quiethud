@@ -432,6 +432,7 @@ local function persist()
 end
 
 local persistBags -- applies the open bag opacity (defined in the bags block)
+local resetBagPosition -- puts the open bags back where the game places them (defined in the bags block)
 local writeFrames -- saves the frames added with /qhud add (defined in the frames block, also called at logout)
 local hiddenMmButtons -- names of the minimap buttons of other addons that are hidden now (defined in the minimap buttons block)
 
@@ -2006,7 +2007,8 @@ local PAGES = {
 		{ "heading", "Each element (Global = the active value)" },
 		-- (a slider for every element goes here, in two columns: see below)
 		{ "heading", "Windows and the minimap" },
-		{ "slider", "bagAlpha", "Open bag windows", 0, 1, 0.05, "%.2f", "Global", true, "Your open bags. Drag one by its title bar to move them all; /qhud bags reset puts them back." },
+		{ "slider", "bagAlpha", "Open bag windows", 0, 1, 0.05, "%.2f", "Global", true, "Your open bags. Drag one by its title bar to move them all; Reset position puts them back." },
+		{ "button", "Reset position", "bagPosition", "Puts your open bags back where the game places them. Dragged bags always stay on the screen." },
 		{ "slider", "tooltipAlpha", "Tooltips", 0, 1, 0.05, "%.2f", "Global", true, "The game's tooltips, like this one." },
 		{ "slider", "mapIdle", "Minimap idle (0 = hidden)", 0, 1, 0.05, "%.2f", nil, true, "How solid the minimap is while it is faded. 0 hides it completely." },
 		{ "check", "mapDarken", "Darken the minimap instead of making it see-through" },
@@ -2094,11 +2096,13 @@ onRestored = syncControls
 -- the whole stack. Dragging any open bag (by its title bar or an empty part of it) moves them all together, and where you put
 -- them is remembered, in a small macro of its own because the main settings macro is almost full. The offset is added after
 -- the game has placed the windows, and never twice. Nothing is moved during combat; it is applied afterwards. The opacity of
--- the open bags is the Extras slider (bagAlpha).
+-- the open bags is the Extras slider (bagAlpha). The bags never go past the edge of the screen (they could before 1.3.8, and a
+-- saved spot off the screen left them out of reach): see keepOnScreen.
 do
 	local BAG_MACRO = "QuietHUD bags"
 	local BAG_PREFIX = "#QuietHUD bag position, do not delete\n"
 	local dragging, writePending, restoredBags = nil, false, false
+	local shownX, shownY -- the offset the bags are at now, after keepOnScreen (nil when no bag window was moved)
 	local driver = CreateFrame("Frame")
 
 	local function bagFrames()
@@ -2117,33 +2121,83 @@ do
 		return math.max(a, 0.1)
 	end
 
-	local function applyBags()
-		local alpha = bagOpacity()
-		local dx, dy = DB.bagX or 0, DB.bagY or 0
-		local canMove = not InCombatLockdown()
+	-- Moves the bag windows by (dx, dy) from where the game put them. Returns how big one unit of that offset is on the screen (in
+	-- UIParent units), or nil when no open window was moved.
+	local function placeBags(dx, dy)
+		local unit
 		for _, f in ipairs(bagFrames()) do
-			if canMove then
-				local ok, point, rel, relPoint, x, y = pcall(f.GetPoint, f, 1)
-				if ok and point and type(x) == "number" then
-					rel = rel or f:GetParent()
-					-- Only a window anchored to the screen side (the first of a column) is moved; the others follow it.
-					if rel == f:GetParent() or rel == UIParent then
-						local applied = f.qhApplied
-						if not (applied and applied.rel == rel and math.abs(x - applied.x) < 0.01 and math.abs(y - applied.y) < 0.01) then
-							f.qhBase = { point = point, rel = rel, relPoint = relPoint, x = x, y = y } -- the game placed it: its normal spot
-						end
-						local base = f.qhBase
-						local nx, ny = base.x + dx, base.y + dy
-						if math.abs(x - nx) > 0.01 or math.abs(y - ny) > 0.01 then
-							f:ClearAllPoints()
-							f:SetPoint(base.point, base.rel, base.relPoint, nx, ny)
-						end
-						f.qhApplied = { rel = rel, x = nx, y = ny }
-					else
-						f.qhBase, f.qhApplied = nil, nil
+			local ok, point, rel, relPoint, x, y = pcall(f.GetPoint, f, 1)
+			if ok and point and type(x) == "number" then
+				rel = rel or f:GetParent()
+				-- Only a window anchored to the screen side (the first open bag) is moved; the game hangs all the others from it.
+				if rel == f:GetParent() or rel == UIParent then
+					local applied = f.qhApplied
+					if not (applied and applied.rel == rel and math.abs(x - applied.x) < 0.01 and math.abs(y - applied.y) < 0.01) then
+						f.qhBase = { point = point, rel = rel, relPoint = relPoint, x = x, y = y } -- the game placed it: its normal spot
 					end
+					local base = f.qhBase
+					local nx, ny = base.x + dx, base.y + dy
+					if math.abs(x - nx) > 0.01 or math.abs(y - ny) > 0.01 then
+						f:ClearAllPoints()
+						f:SetPoint(base.point, base.rel, base.relPoint, nx, ny)
+					end
+					f.qhApplied = { rel = rel, x = nx, y = ny }
+					local ui = UIParent:GetEffectiveScale()
+					if ui and ui > 0 and f:IsShown() then unit = f:GetEffectiveScale() / ui end
+				else
+					f.qhBase, f.qhApplied = nil, nil
 				end
 			end
+		end
+		return unit
+	end
+
+	-- How far the open bags stick out past the edges of the screen, as the move (in UIParent units) that brings them back in. A
+	-- stack wider or taller than the screen keeps its left and top edges on the screen, where the title bars are.
+	local function overflow()
+		local ui, w, h = UIParent:GetEffectiveScale(), UIParent:GetWidth(), UIParent:GetHeight()
+		if not (ui and ui > 0 and w and w > 0 and h and h > 0) then return 0, 0 end
+		local l, r, b, t
+		for _, f in ipairs(bagFrames()) do
+			if f:IsShown() then
+				local fl, fr, fb, ft = f:GetLeft(), f:GetRight(), f:GetBottom(), f:GetTop()
+				if fl and fr and fb and ft then
+					local k = f:GetEffectiveScale() / ui
+					l, r = math.min(l or fl * k, fl * k), math.max(r or fr * k, fr * k)
+					b, t = math.min(b or fb * k, fb * k), math.max(t or ft * k, ft * k)
+				end
+			end
+		end
+		if not l then return 0, 0 end
+		local cx, cy = 0, 0
+		if r - l > w or l < 0 then cx = -l elseif r > w then cx = w - r end
+		if t - b > h or t > h then cy = h - t elseif b < 0 then cy = -b end
+		return cx, cy
+	end
+
+	-- The offset after moving it by c to stay on the screen. Only an offset you made is changed, and never past 0: where the game
+	-- itself puts the bags is left alone.
+	local function keepOnScreen(offset, c)
+		if offset == 0 or c == 0 then return offset end
+		local n = offset + c
+		if (offset > 0 and n < 0) or (offset < 0 and n > 0) then return 0 end
+		return n
+	end
+
+	local function applyBags()
+		local alpha = bagOpacity()
+		if not InCombatLockdown() then
+			local dx, dy = DB.bagX or 0, DB.bagY or 0
+			local unit = placeBags(dx, dy)
+			shownX, shownY = nil, nil
+			if unit and unit > 0 then
+				local cx, cy = overflow()
+				local nx, ny = keepOnScreen(dx, cx / unit), keepOnScreen(dy, cy / unit)
+				if nx ~= dx or ny ~= dy then placeBags(nx, ny) end
+				shownX, shownY = nx, ny
+			end
+		end
+		for _, f in ipairs(bagFrames()) do
 			if alpha ~= 1 or f.qhAlpha then
 				f:SetAlpha(alpha)
 				f.qhAlpha = alpha ~= 1
@@ -2170,6 +2224,13 @@ do
 			DB.bagX = dragging.x0 + (cx - dragging.cx) / scale
 			DB.bagY = dragging.y0 + (cy - dragging.cy) / scale
 			applyBags()
+			-- Held at the edge of the screen: the drag goes on from where they stopped, so moving back moves them straight away,
+			-- and the spot that is saved is on the screen.
+			if shownX and (shownX ~= DB.bagX or shownY ~= DB.bagY) then
+				dragging.x0 = dragging.x0 + shownX - DB.bagX
+				dragging.y0 = dragging.y0 + shownY - DB.bagY
+				DB.bagX, DB.bagY = shownX, shownY
+			end
 		end
 	end
 
@@ -2218,6 +2279,12 @@ do
 			writePending = true
 			C_Timer.After(1.5, writeBagMacro)
 		end
+	end
+
+	-- The Reset position button (the opacity is left as it is; /qhud bags reset puts both back).
+	resetBagPosition = function()
+		DB.bagX, DB.bagY = 0, 0
+		persistBags()
 	end
 
 	local function restoreBags()
@@ -2971,6 +3038,24 @@ do
 		return 22
 	end
 
+	-- A button at the right end of the row above it: the Opacity page's Reset position, after the open bags slider. (The slider
+	-- ends with its readout at about 485.)
+	local BUTTONS = {
+		bagPosition = function()
+			if not resetBagPosition then return end
+			resetBagPosition()
+			print("QuietHUD: the open bags are back where the game places them")
+		end,
+	}
+	local function makeButton(parent, y, text, action, help)
+		local button = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+		button:SetSize(110, 22)
+		button:SetPoint("TOPLEFT", 506, y + 22 + 2)
+		button:SetText(text)
+		button:SetScript("OnClick", BUTTONS[action])
+		addHelp(parent, button, text, help)
+	end
+
 	-- A paragraph of small grey text. Returns the height it took.
 	local function makeNote(parent, y, text)
 		local note = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -3095,6 +3180,8 @@ do
 					y = lowest
 				elseif item[1] == "about" then
 					y = y - makeAbout(frame, y, titleText)
+				elseif item[1] == "button" then
+					makeButton(frame, y, item[2], item[3], item[4])
 				else
 					if page.items[idx - 1] and page.items[idx - 1][1] == "check" then y = y - 6 end
 					makeSlider(frame, y, item[3], item[2], item[4], item[5], item[6], item[7], item[8], item[9], nil, item[10])
