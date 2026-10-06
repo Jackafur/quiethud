@@ -545,7 +545,7 @@ end
 -- get its opacity while a timer is running, and a running timer shows the row (see the main loop).
 local SELF_FADING = { PlayerCastingBarFrame = "cast", CastingBarFrame = "cast", MirrorTimerContainer = "mirror",
 	MirrorTimer1 = "mirror", MirrorTimer2 = "mirror", MirrorTimer3 = "mirror" }
-	
+
 	-- The setting that gives a group its own opacity, in place of "Opacity when active".
 	local OVERRIDE_KEYS = { bars = "ovBars", player = "ovPlayer", hud = "ovHud", quest = "ovQuest", map = "ovMap", bags = "ovBagsBar", micro = "ovMicro" }
 	for _, s in ipairs(SPLIT) do OVERRIDE_KEYS[s.g] = s.ovKey end
@@ -844,19 +844,57 @@ local function buildChat()
 	end
 end
 
-local function toggleDrawn()
-	drawn = not drawn
-	print("QuietHUD: HUD " .. (drawn and "shown" or "hidden"))
+-- Whether the weapon is drawn. The game says so: GetSheathState is 1 sheathed, 2 melee weapon, 3 ranged weapon or wand.
+-- QuietHUD used to guess it by flipping on every press of the Toggle Sheath key, which went wrong with a wand (three
+-- states, not two) and after a fight (the weapon counted as drawn from the start of combat until the key was pressed). That
+-- guess (drawn) is only the fallback now, for a client without GetSheathState. With flip, /qhud toggle turns what counts
+-- the other way until the weapon state next changes. Returns the drawn state and the game's number (nil if unknown).
+local weaponDrawn
+do
+	local seen, byHand
+	weaponDrawn = function(flip)
+		local ok, state = false, nil
+		if GetSheathState then ok, state = pcall(GetSheathState) end
+		-- (a value the game hides from addons is checked for first: comparing one is an error)
+		local known = ok and not (issecretvalue and issecretvalue(state)) and type(state) == "number"
+		if known and state ~= seen then seen, byHand = state, nil end
+		local current
+		if not known then
+			current = drawn
+		elseif byHand ~= nil then
+			current = byHand
+		else
+			current = state ~= 1
+		end
+		if flip then
+			current = not current
+			if known then byHand = current end
+		end
+		-- The guess starts from the truth whenever the game answers, so it is right if the game stops answering.
+		if known or flip then drawn = current end
+		return current, known and state or nil
+	end
 end
 
--- WoW does not expose whether the weapon is sheathed, so follow the Toggle Sheath key.
+local function toggleDrawn()
+	print("QuietHUD: HUD " .. (weaponDrawn(true) and "shown" or "hidden"))
+end
+
+-- The fallback guess follows the Toggle Sheath key (see weaponDrawn).
 local lastSheath, hooked = 0, false
 local function sheathToggled(source)
 	local now = GetTime()
 	if now - lastSheath < 0.25 then return end
 	lastSheath = now
 	drawn = not drawn
-	if debugOn then print("QuietHUD: sheath toggle via " .. source .. ", HUD " .. (drawn and "shown" or "hidden")) end
+	-- (the game changes its sheath state a moment after the key, so the line waits for it)
+	if debugOn and C_Timer and C_Timer.After then
+		C_Timer.After(0.5, function()
+			local isDrawn, state = weaponDrawn()
+			print("QuietHUD: sheath key via " .. source .. ", now the game says " .. tostring(state)
+				.. " (1 sheathed, 2 melee, 3 ranged), HUD " .. (isDrawn and "shown" or "hidden"))
+		end)
+	end
 end
 
 local function bindingPressed(binding, key)
@@ -1772,7 +1810,7 @@ local function update(dt)
 	local enabled = DB.enabled
 
 	local inside = inDungeonOrRaid()
-	local active = edit or (DB.inCombat and (combat or now < combatEnd)) or (DB.sheathShows and drawn)
+	local active = edit or (DB.inCombat and (combat or now < combatEnd)) or (DB.sheathShows and weaponDrawn())
 		or (DB.showOnTarget and UnitExists("target"))
 	lastActive = active and true or false
 	local okMove, moving = pcall(isMoving)
@@ -2110,7 +2148,7 @@ do
 	local BAG_PREFIX = "#QuietHUD bag position, do not delete\n"
 	local dragging, writePending, restoredBags = nil, false, false
 	local shownX, shownY -- the offset the bags are at now, after keepOnScreen (nil when no bag window was moved)
-	local driver = CreateFrame("Frame")
+	local dragDriver = CreateFrame("Frame")
 
 	local function bagFrames()
 		local list = {}
@@ -2256,7 +2294,7 @@ do
 	local function endDrag()
 		if not dragging then return end
 		dragging = nil
-		driver:SetScript("OnUpdate", nil)
+		dragDriver:SetScript("OnUpdate", nil)
 		persistSoon()
 	end
 
@@ -2286,7 +2324,7 @@ do
 		if button ~= "LeftButton" or InCombatLockdown() or not canMoveBags() then return end
 		local cx, cy = GetCursorPosition()
 		dragging = { frame = frame, cx = cx, cy = cy, x0 = DB.bagX or 0, y0 = DB.bagY or 0 }
-		driver:SetScript("OnUpdate", dragStep)
+		dragDriver:SetScript("OnUpdate", dragStep)
 	end
 
 	-- The hooks stay for the whole session (a hook cannot be taken off); with moving off they only keep the opacity.
@@ -2371,7 +2409,7 @@ end
 -- which catches the addons that make their own. The game's own minimap controls (inside the minimap cluster) and the map pins
 -- (RestedXP's waypoints, for example) are not touched, and neither are buttons that were already hidden by their own addon.
 do
-	local hiddenByUs, hooked = {}, {}
+	local hiddenByUs, hookedButtons = {}, {}
 	local found, checked = setmetatable({}, { __mode = "k" }), setmetatable({}, { __mode = "k" })
 	local BORDER_ID, BORDER_NAME = 136430, "minimap%-trackingborder"
 	local BLIZZARD = {
@@ -2429,9 +2467,9 @@ do
 	local function apply()
 		if DB.enabled and DB.hideMmButtons then
 			for button in pairs(buttons()) do
-				if not hooked[button] then
+				if not hookedButtons[button] then
 					-- An addon can show its button again at any time; this hides it as it appears.
-					hooked[button] = true
+					hookedButtons[button] = true
 					pcall(button.HookScript, button, "OnShow", function(self)
 						if DB.enabled and DB.hideMmButtons then
 							hiddenByUs[self] = true
@@ -3493,8 +3531,8 @@ local function chooseNextMob(list)
 	for i, mob in ipairs(list) do
 		local okSame, same = pcall(UnitIsUnit, "target", mob.unit)
 		if okSame and same then
-			for step = 1, #list - 1 do
-				local candidate = list[(i - 1 + step) % #list + 1]
+			for offset = 1, #list - 1 do
+				local candidate = list[(i - 1 + offset) % #list + 1]
 				if candidate.name ~= mob.name then return candidate, "the next kind of quest mob" end
 			end
 			return list[1], "the nearest quest mob"
@@ -3694,7 +3732,7 @@ targetButton:SetScript("PreClick", function(self, _, down)
 	end
 end)
 
-targetButton:SetScript("PostClick", function(self, _, down)
+targetButton:SetScript("PostClick", function(_, _, down)
 	if not InCombatLockdown() then armEntry() end
 	if not isActionClick(down) then return end
 	if run.plan then
@@ -3940,7 +3978,7 @@ ev:SetScript("OnEvent", function(_, event, arg1, _, _, arg4)
 	elseif event == "GLOBAL_MOUSE_DOWN" then
 		if DB.watchMouse and arg1 == "RightButton" then reportRightClick() end
 	elseif event == "PLAYER_REGEN_DISABLED" then
-		if DB.inCombat then drawn = true end
+		if DB.inCombat then drawn = true end -- (only the fallback guess; see weaponDrawn)
 	elseif event == "PLAYER_REGEN_ENABLED" then
 		combatEnd = GetTime() + (DB.linger or 4)
 		run.combatWarned = false
@@ -3999,16 +4037,18 @@ SlashCmdList["QUIETHUD"] = function(msg)
 	elseif cmd == "debug" then
 		debugOn = not debugOn
 		if debugOn then DB.trace = {} end
-		print("QuietHUD debug " .. (debugOn and "on" or "off") .. ", ToggleSheath hooked: " .. tostring(hooked)
-			.. ", sheath key: " .. tostring((GetBindingKey("TOGGLESHEATH"))) .. ", HUD drawn state: " .. tostring(drawn))
+		local isDrawn, state = weaponDrawn()
+		print("QuietHUD debug " .. (debugOn and "on" or "off") .. ", weapon drawn: " .. tostring(isDrawn) .. " (the game says "
+			.. (state and tostring(state) or "nothing, so QuietHUD guesses from the sheath key") .. "; 1 sheathed, 2 melee, 3 ranged)"
+			.. ", sheath key: " .. tostring((GetBindingKey("TOGGLESHEATH"))) .. ", ToggleSheath hooked: " .. tostring(hooked))
 	elseif cmd == "state" then
 		local ok, err = pcall(function()
 			-- Everything this command prints is also kept in the trace, so it can be read from the saved-variables
 			-- file after a /reload.
-			local function print(msg)
-				_G.print(msg)
+			local function print(text)
+				_G.print(text)
 				DB.trace = DB.trace or {}
-				DB.trace[#DB.trace + 1] = string.format("%.1f state: %s", GetTime(), tostring(msg))
+				DB.trace[#DB.trace + 1] = string.format("%.1f state: %s", GetTime(), tostring(text))
 			end
 			local function alpha(name)
 				local f = _G[name]
@@ -4018,7 +4058,7 @@ SlashCmdList["QUIETHUD"] = function(msg)
 				tostring(DB.enabled and true or false), DB.base or 0, DB.idle or 0, tostring(lastActive)))
 			print(string.format("QuietHUD triggers: in combat=%s, after-combat linger=%s, weapon drawn=%s, has target=%s",
 				tostring(UnitAffectingCombat("player") and true or false), tostring(GetTime() < combatEnd),
-				tostring(drawn), tostring(UnitExists("target") and true or false)))
+				tostring((weaponDrawn())), tostring(UnitExists("target") and true or false)))
 			print("QuietHUD alpha now: PlayerFrame=" .. alpha("PlayerFrame") .. ", MainActionBar=" .. alpha("MainActionBar")
 				.. ", TargetFrame=" .. alpha("TargetFrame") .. ", MinimapCluster=" .. alpha("MinimapCluster"))
 			local okSpeed, speed = pcall(GetUnitSpeed, "player")
@@ -4166,10 +4206,10 @@ SlashCmdList["QUIETHUD"] = function(msg)
 		print("QuietHUD: " .. (frame and frameChain(frame) or "usage /qhud chain <frame name>, for example /qhud chain Minimap"))
 	elseif cmd == "hotkeys" then
 		-- Lists hotkey text with a modifier first (those are the long ones), and keeps the lines in the trace too.
-		local function say(msg)
-			print(msg)
+		local function say(text)
+			print(text)
 			DB.trace = DB.trace or {}
-			DB.trace[#DB.trace + 1] = string.format("%.1f hotkeys: %s", GetTime(), msg)
+			DB.trace[#DB.trace + 1] = string.format("%.1f hotkeys: %s", GetTime(), text)
 		end
 		local found = {}
 		for i = 1, #BAR_DEFS do
@@ -4233,10 +4273,10 @@ SlashCmdList["QUIETHUD"] = function(msg)
 	elseif cmd == "around" then
 		-- Lists the frames and background images that sit over the same area as a frame, to find things like the
 		-- background box of a chat window. Everything printed is also kept in the trace (read after a /reload).
-		local function say(msg)
-			print(msg)
+		local function say(text)
+			print(text)
 			DB.trace = DB.trace or {}
-			DB.trace[#DB.trace + 1] = string.format("%.1f around: %s", GetTime(), tostring(msg))
+			DB.trace[#DB.trace + 1] = string.format("%.1f around: %s", GetTime(), tostring(text))
 		end
 		local target = rest ~= "" and _G[rest] or nil
 		if not (target and target.GetRect) then

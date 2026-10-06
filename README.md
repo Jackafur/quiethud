@@ -67,8 +67,8 @@ have "Fade" unticked on the Bars page while the rest still fade.
 it, which is handy if you sometimes need to find a button without waking the whole HUD. Idle can never be
 brighter than the "active" opacity, so if you drag one slider past the other, the other one moves with it.
 
-**Show while my weapon is drawn.** WoW cannot tell an addon whether your weapon is out, so this follows
-your Toggle Sheath key. Draw your weapon to bring the HUD up, sheathe it to send it away.
+**Show while my weapon is drawn.** Draw your weapon (or your wand) to bring the HUD up, sheathe it to send it
+away. QuietHUD asks the game whether a weapon is out, so it stays right through fights and the wand.
 
 **Show while I have a target.** For people who want the HUD whenever they are interacting with something,
 whether or not it is a fight.
@@ -147,7 +147,7 @@ the nameplates to show. The message "quest targeting is off" means the Extras ch
 | Command | What it does |
 | --- | --- |
 | `/qhud` | Open the settings menu |
-| `/qhud toggle` | Flip the "weapon drawn" state by hand |
+| `/qhud toggle` | Flip the "weapon drawn" state by hand, until you next draw or sheathe |
 | `/qhud peek` | Show the whole HUD for two minutes, or until you use it again. The "Hold to show the whole HUD" key uses `peek down` and `peek up` |
 | `/qhud shift [on\|off\|now]` | Pixel shift (experimental): show what it is doing, turn it on or off, or move to its next position now. Off puts every frame back where it was |
 | `/qhud reset` | Reset all settings to defaults |
@@ -197,8 +197,6 @@ QuietHUD only changes opacity, and hides what you ask it to hide, so it sits nex
 
 ## Notes and limits
 
-- WoW does not expose whether your weapon is sheathed, so the addon follows the Toggle Sheath key and
-  assumes the weapon is drawn when combat starts. If it drifts, use `/qhud toggle`.
 - Hidden frames still work with their keybinds.
 - Quest-mob targeting is experimental. When other enemies are mixed in with the quest mobs it steps between kinds of quest mob but not between identical ones, and in combat it can only use what it prepared before the fight.
 

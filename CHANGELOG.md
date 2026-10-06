@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.3.10
+
+### Fixed
+
+- **"Show while my weapon is drawn" no longer gets out of step.** QuietHUD used to guess whether your weapon was out by counting presses of the sheath key. That went wrong with a wand (the key cycles through weapon, wand and sheathed), and after a fight the HUD could stay up with your weapon put away. It now asks the game, so it is right every time. `/qhud toggle` still flips it by hand until you next draw or sheathe.
+
+### Other
+
+- Tidier code behind the scenes (no change in game).
+
 ## 1.3.9
 
 ### Changed
