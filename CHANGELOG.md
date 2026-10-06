@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.3.9
+
+### Changed
+
+- **Moving the open bags is now an option, off by default.** Tick "Let me drag my open bags around" under Open bags on the Extras page to drag them by their title bar again. If you had moved your bags with QuietHUD, they are back where the game places them after this update; tick the box and they go back to the spot you had picked. The Reset position button moved there too.
+
+### Fixed
+
+- **QuietHUD no longer fights BlizzMove over your bags.** With both addons, the bags could get stuck, jump around the screen or go past its edges. When BlizzMove is installed, QuietHUD leaves the bag windows to it (ticked or not) and only sets their opacity.
+
 ## 1.3.8
 
 Your settings carry over.

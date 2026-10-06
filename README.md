@@ -25,7 +25,7 @@ Open the settings with `/qhud`. There are eight pages. Hover a column heading or
 **Opacity** (how solid each thing is)
 - One global value for when the HUD is active and one for when it is idle (0 hides it completely). Every element follows the global active value unless it has its own: there is a slider for each element, in two columns and the same groups as the Elements page, where Global (the far left of the slider) follows the global value and any number uses that instead.
 - Chat, the minimap, the open bag windows and tooltips are solid until you change them. The minimap also has its own idle value, and a box to darken it instead of making it see-through (see Minimap below).
-- Open bags: you can drag an open bag by its title bar or an empty part of it to move all the open bags together, and where you put them is remembered. The default UI does not let you move them. They always stay on the screen. The Reset position button on the Opacity page (or `/qhud bags reset`) puts them back.
+- Open bags (an option on the Extras page, off by default): drag an open bag by its title bar or an empty part of it to move all the open bags together, and where you put them is remembered. The default UI does not let you move them. They always stay on the screen. The Reset position button next to the option (or `/qhud bags reset`) puts them back. If BlizzMove is installed, QuietHUD leaves the bags to it.
 
 **Bars** (per action bar, Action Bars 1 to 8)
 - Whether each bar fades (while Fade is ticked for Action bars on the Elements page, the master switch), and whether to hide its hotkey text or its macro names.

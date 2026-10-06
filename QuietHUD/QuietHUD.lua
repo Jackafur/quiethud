@@ -71,6 +71,7 @@ for _, f in ipairs(FIELDS) do
 end
 -- Where the open bag windows were dragged to (see the bags block). Not in FIELDS: the position has a small macro of its own.
 DEFAULTS.bagX, DEFAULTS.bagY = 0, 0
+DEFAULTS.moveBags = false -- let QuietHUD move the open bags (Extras page; kept in the bags macro too)
 DEFAULTS.hideMmButtons = false -- hide the minimap buttons of other addons (kept in the groups macro, see below)
 DEFAULTS.hidePanel = false -- hide the party panel completely (also kept in the groups macro)
 -- Own opacity for an element (0 = follow "Opacity when active"). Not in FIELDS: they have a small macro of their own (see the
@@ -2007,8 +2008,7 @@ local PAGES = {
 		{ "heading", "Each element (Global = the active value)" },
 		-- (a slider for every element goes here, in two columns: see below)
 		{ "heading", "Windows and the minimap" },
-		{ "slider", "bagAlpha", "Open bag windows", 0, 1, 0.05, "%.2f", "Global", true, "Your open bags. Drag one by its title bar to move them all; Reset position puts them back." },
-		{ "button", "Reset position", "bagPosition", "Puts your open bags back where the game places them. Dragged bags always stay on the screen." },
+		{ "slider", "bagAlpha", "Open bag windows", 0, 1, 0.05, "%.2f", "Global", true, "Your open bags. To move them around, see Open bags on the Extras page." },
 		{ "slider", "tooltipAlpha", "Tooltips", 0, 1, 0.05, "%.2f", "Global", true, "The game's tooltips, like this one." },
 		{ "slider", "mapIdle", "Minimap idle (0 = hidden)", 0, 1, 0.05, "%.2f", nil, true, "How solid the minimap is while it is faded. 0 hides it completely." },
 		{ "check", "mapDarken", "Darken the minimap instead of making it see-through" },
@@ -2046,6 +2046,10 @@ local PAGES = {
 		{ "check", "shiftUnits", "Also the player, target and party frames" },
 		{ "slider", "shiftPixels", "Distance (pixels)", 1, 4, 1, "%.0f" },
 		{ "slider", "shiftMinutes", "Minutes between moves", 1, 10, 1, "%.0f" },
+		{ "heading", "Open bags" },
+		{ "check", "moveBags", "Let me drag my open bags around" },
+		{ "button", "Reset position", "bagPosition", "Puts your open bags back where the game places them." },
+		{ "note", "Drag any open bag by its title bar and they all move together. They always stay on the screen. If you use BlizzMove, QuietHUD leaves your bags to it, ticked or not." },
 		{ "heading", "Other" },
 		{ "check", "hideReporter", "Hide the beta Issue Reporter button" },
 		{ "check", "hideMmButtons", "Hide other addons' minimap buttons" },
@@ -2096,8 +2100,11 @@ onRestored = syncControls
 -- the whole stack. Dragging any open bag (by its title bar or an empty part of it) moves them all together, and where you put
 -- them is remembered, in a small macro of its own because the main settings macro is almost full. The offset is added after
 -- the game has placed the windows, and never twice. Nothing is moved during combat; it is applied afterwards. The opacity of
--- the open bags is the Extras slider (bagAlpha). The bags never go past the edge of the screen (they could before 1.3.8, and a
--- saved spot off the screen left them out of reach): see keepOnScreen.
+-- the open bags is the Opacity page slider (bagAlpha). The bags never go past the edge of the screen (they could before 1.3.8,
+-- and a saved spot off the screen left them out of reach): see keepOnScreen.
+-- Since 1.3.9 moving them is an Extras option, off by default (moveBags), and QuietHUD never moves them while BlizzMove is
+-- loaded: BlizzMove puts the first bag back at its own spot whenever anything else moves it, so the two fought over it (bags
+-- stuck, jumping around or going off the screen). With moving off, only the opacity is applied.
 do
 	local BAG_MACRO = "QuietHUD bags"
 	local BAG_PREFIX = "#QuietHUD bag position, do not delete\n"
@@ -2113,6 +2120,17 @@ do
 		end
 		if ContainerFrameCombinedBags then list[#list + 1] = ContainerFrameCombinedBags end
 		return list
+	end
+
+	local function blizzMoveLoaded()
+		local isLoaded = (C_AddOns and C_AddOns.IsAddOnLoaded) or IsAddOnLoaded
+		if not isLoaded then return false end
+		local ok, loaded = pcall(isLoaded, "BlizzMove")
+		return ok and loaded and true or false
+	end
+
+	local function canMoveBags()
+		return DB.moveBags and not blizzMoveLoaded()
 	end
 
 	local function bagOpacity()
@@ -2184,17 +2202,47 @@ do
 		return n
 	end
 
+	-- Moving switched off (or BlizzMove loaded): a window QuietHUD moved and nothing has moved since goes back to the game's spot,
+	-- and QuietHUD forgets it. One that something else has moved since is left where it is.
+	local function releaseBags()
+		for _, f in ipairs(bagFrames()) do
+			local base, applied = f.qhBase, f.qhApplied
+			if base and applied then
+				local ok, _, rel, _, x, y = pcall(f.GetPoint, f, 1)
+				if ok and rel == applied.rel and type(x) == "number" and math.abs(x - applied.x) < 0.01 and math.abs(y - applied.y) < 0.01 then
+					f:ClearAllPoints()
+					f:SetPoint(base.point, base.rel, base.relPoint, base.x, base.y)
+				end
+			end
+			f.qhBase, f.qhApplied = nil, nil
+		end
+		shownX, shownY = nil, nil
+	end
+
 	local function applyBags()
 		local alpha = bagOpacity()
+		-- (nothing is moved during combat; this runs again when it ends)
 		if not InCombatLockdown() then
-			local dx, dy = DB.bagX or 0, DB.bagY or 0
-			local unit = placeBags(dx, dy)
-			shownX, shownY = nil, nil
-			if unit and unit > 0 then
-				local cx, cy = overflow()
-				local nx, ny = keepOnScreen(dx, cx / unit), keepOnScreen(dy, cy / unit)
-				if nx ~= dx or ny ~= dy then placeBags(nx, ny) end
-				shownX, shownY = nx, ny
+			if not canMoveBags() then
+				releaseBags()
+			else
+				local dx, dy = DB.bagX or 0, DB.bagY or 0
+				local unit = placeBags(dx, dy)
+				shownX, shownY = nil, nil
+				if unit and unit > 0 then
+					local cx, cy = overflow()
+					local nx, ny = keepOnScreen(dx, cx / unit), keepOnScreen(dy, cy / unit)
+					if nx ~= dx or ny ~= dy then placeBags(nx, ny) end
+					shownX, shownY = nx, ny
+				end
+				-- The title bar takes the mouse only while QuietHUD moves the bags (the windows themselves always do).
+				for _, f in ipairs(bagFrames()) do
+					local title = f.TitleContainer
+					if not f.qhTitleMouse and title and title.EnableMouse then
+						title:EnableMouse(true)
+						f.qhTitleMouse = true
+					end
+				end
 			end
 		end
 		for _, f in ipairs(bagFrames()) do
@@ -2235,16 +2283,16 @@ do
 	end
 
 	local function startDrag(frame, button)
-		if button ~= "LeftButton" or InCombatLockdown() then return end
+		if button ~= "LeftButton" or InCombatLockdown() or not canMoveBags() then return end
 		local cx, cy = GetCursorPosition()
 		dragging = { frame = frame, cx = cx, cy = cy, x0 = DB.bagX or 0, y0 = DB.bagY or 0 }
 		driver:SetScript("OnUpdate", dragStep)
 	end
 
+	-- The hooks stay for the whole session (a hook cannot be taken off); with moving off they only keep the opacity.
 	local function hookFrame(f)
 		if f.qhHooked then return end
 		f.qhHooked = true
-		f:EnableMouse(true)
 		f:HookScript("OnMouseDown", function(self, button) startDrag(self, button) end)
 		f:HookScript("OnMouseUp", endDrag)
 		f:HookScript("OnShow", function(self)
@@ -2254,20 +2302,20 @@ do
 		end)
 		local title = f.TitleContainer
 		if title and title.HookScript then
-			title:EnableMouse(true)
 			title:HookScript("OnMouseDown", function(_, button) startDrag(f, button) end)
 			title:HookScript("OnMouseUp", endDrag)
 		end
 	end
 
+	-- m=1: moving is on (1.3.9). A macro from before has no m, so moving starts off; the spot stays saved for when it is ticked.
 	local function writeBagMacro()
 		writePending = false
 		if InCombatLockdown() or not (CreateMacro and EditMacro and GetMacroIndexByName) then return end
-		local body = BAG_PREFIX .. string.format("x=%.1f;y=%.1f", DB.bagX or 0, DB.bagY or 0)
+		local body = BAG_PREFIX .. string.format("x=%.1f;y=%.1f;m=%d", DB.bagX or 0, DB.bagY or 0, DB.moveBags and 1 or 0)
 		local ok, index = pcall(GetMacroIndexByName, BAG_MACRO)
 		if ok and index and index > 0 then
 			pcall(EditMacro, index, nil, nil, body)
-		elseif (DB.bagX or 0) ~= 0 or (DB.bagY or 0) ~= 0 then
+		elseif (DB.bagX or 0) ~= 0 or (DB.bagY or 0) ~= 0 or DB.moveBags then
 			pcall(CreateMacro, BAG_MACRO, "INV_Misc_Bag_08", body, false)
 		end
 	end
@@ -2296,7 +2344,9 @@ do
 		restoredBags = true
 		local x, y = body:match("x=(%-?[%d%.]+);y=(%-?[%d%.]+)")
 		if x then DB.bagX, DB.bagY = tonumber(x) or 0, tonumber(y) or 0 end
+		DB.moveBags = body:match(";m=1") ~= nil
 		applyBags()
+		if onRestored then onRestored() end -- (the Extras box shows the restored value)
 	end
 
 	local bagEvents = CreateFrame("Frame")
@@ -3038,8 +3088,8 @@ do
 		return 22
 	end
 
-	-- A button at the right end of the row above it: the Opacity page's Reset position, after the open bags slider. (The slider
-	-- ends with its readout at about 485.)
+	-- A button at the right end of the row above it (top is where its top edge goes): the Extras page's Reset position, after the
+	-- open bags box. (A short slider row ends with its readout at about 485, so a button fits after one too.)
 	local BUTTONS = {
 		bagPosition = function()
 			if not resetBagPosition then return end
@@ -3047,10 +3097,10 @@ do
 			print("QuietHUD: the open bags are back where the game places them")
 		end,
 	}
-	local function makeButton(parent, y, text, action, help)
+	local function makeButton(parent, top, text, action, help)
 		local button = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
 		button:SetSize(110, 22)
-		button:SetPoint("TOPLEFT", 506, y + 22 + 2)
+		button:SetPoint("TOPLEFT", 506, top)
 		button:SetText(text)
 		button:SetScript("OnClick", BUTTONS[action])
 		addHelp(parent, button, text, help)
@@ -3082,6 +3132,7 @@ do
 		for _, f in ipairs(FIELDS) do DB[f.key] = f.def end
 		for _, k in ipairs({ "ovBars", "ovPlayer", "ovHud", "ovQuest", "ovMap", "ovBagsBar", "ovMicro" }) do DB[k] = 0 end
 		for _, s in ipairs(SPLIT) do DB[s.fadeKey], DB[s.trigKey], DB[s.ovKey] = nil, nil, 0 end
+		DB.moveBags = false -- (the spot they were moved to stays saved, as before)
 		persistSoon()
 		rebuildLists()
 		syncControls()
@@ -3143,6 +3194,10 @@ do
 			frame:SetPoint("BOTTOMRIGHT", 0, pageBottom)
 			local y = -4
 			for idx, item in ipairs(page.items) do
+				-- The item before this one; a button sits on the row before it, so for spacing the item before the button counts.
+				local before = page.items[idx - 1]
+				if before and before[1] == "button" then before = page.items[idx - 2] end
+				local prevKind = before and before[1]
 				if item[1] == "check" then
 					makeCheck(frame, y, item[3], item[2], item[4])
 					y = y - 26
@@ -3155,7 +3210,7 @@ do
 				elseif item[1] == "grid" then
 					y = y - makeTriggerGrid(frame, y, GRIDS[item[2]])
 				elseif item[1] == "note" then
-					if page.items[idx - 1] and page.items[idx - 1][1] == "check" then y = y - 4 end
+					if prevKind == "check" then y = y - 4 end
 					y = y - makeNote(frame, y, item[2])
 				elseif item[1] == "heading" then
 					if idx > 1 then y = y - 10 end
@@ -3181,9 +3236,10 @@ do
 				elseif item[1] == "about" then
 					y = y - makeAbout(frame, y, titleText)
 				elseif item[1] == "button" then
-					makeButton(frame, y, item[2], item[3], item[4])
+					-- On the row above: a check row is 26 tall with a 32 tall box, a short slider row 22 with a 16 tall bar.
+					makeButton(frame, prevKind == "check" and (y + 21) or (y + 24), item[2], item[3], item[4])
 				else
-					if page.items[idx - 1] and page.items[idx - 1][1] == "check" then y = y - 6 end
+					if prevKind == "check" then y = y - 6 end
 					makeSlider(frame, y, item[3], item[2], item[4], item[5], item[6], item[7], item[8], item[9], nil, item[10])
 					y = y - (item[9] and 22 or 46)
 				end
@@ -4037,8 +4093,13 @@ SlashCmdList["QUIETHUD"] = function(msg)
 			persistBags()
 			print("QuietHUD: the open bags are back where the game puts them, at full opacity")
 		else
-			print(string.format("QuietHUD: open bags are moved %.0f, %.0f from their normal place, opacity %.2f. Drag one to move them all, /qhud bags reset puts them back",
-				DB.bagX or 0, DB.bagY or 0, DB.bagAlpha or 1))
+			local loaded = C_AddOns and C_AddOns.IsAddOnLoaded
+			local ok, blizzMove = false, false
+			if loaded then ok, blizzMove = pcall(loaded, "BlizzMove") end
+			local moving = (ok and blizzMove) and "BlizzMove is loaded, so QuietHUD leaves them to it"
+				or (DB.moveBags and "drag one to move them all" or "moving them is off (Extras page)")
+			print(string.format("QuietHUD: open bags are moved %.0f, %.0f from their normal place, opacity %.2f; %s. /qhud bags reset puts them back",
+				DB.bagX or 0, DB.bagY or 0, DB.bagAlpha or 1, moving))
 		end
 	elseif cmd == "mouse" then
 		DB.watchMouse = not DB.watchMouse
