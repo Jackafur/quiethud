@@ -13,6 +13,7 @@ Open the settings with `/qhud`, or from the game's options: Esc, Options, AddOns
 **Show when** (what brings the HUD back)
 - Master on/off switch.
 - Show in combat, while your weapon is drawn, while you have a target, or while you move the mouse (off by default, with its own slider for how many seconds the HUD stays after the mouse stops), and how long the HUD stays after combat (up to 3 minutes). These decide when the HUD is "awake", one of the things that can bring each element up (see Elements).
+- Show the player frame while health or power is changing (off by default). Only the player frame comes up, and it fades a few seconds after the last change (3, or 8 for mana), so once you are topped off.
 - How long elements take to fade out (the chat has its own time on the Chat page).
 - Show the whole HUD on demand: while you hold Alt, Ctrl or Shift, or with a key you bind (Esc, Options, Keybindings, AddOns, QuietHUD).
 
@@ -73,6 +74,10 @@ away. QuietHUD asks the game whether a weapon is out, so it stays right through 
 
 **Show while I have a target.** For people who want the HUD whenever they are interacting with something,
 whether or not it is a fight.
+
+**Show the player frame while health or power is changing.** For seeing how far along you are while you eat,
+drink or wait on energy between fights, without waking the rest of the HUD. The game does not let addons read
+your health or power, so QuietHUD goes by them changing: the frame stays while they move and for a few seconds after (3, or 8 for mana, which waits a moment after a cast before it comes back).
 
 **Dungeons and raids.** Every row of the Elements grid has a Dungeon or raid box. Tick one and that element stays shown while you are inside a dungeon or raid
 instance (any instance except battlegrounds and arenas), and fades again when you leave. If it does not seem to

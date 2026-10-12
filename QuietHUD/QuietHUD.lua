@@ -66,6 +66,7 @@ local FIELDS = {
 	{ key = "fadeOutSeconds", code = "fs", kind = "num", def = 0.35 },
 	{ key = "mouseShows", code = "ms", kind = "bool", def = false },
 	{ key = "mouseSeconds", code = "mt", kind = "num", def = 3 },
+	{ key = "notFullShows", code = "nf", kind = "bool", def = false },
 }
 local DEFAULTS, BY_CODE = {}, {}
 for _, f in ipairs(FIELDS) do
@@ -2053,6 +2054,67 @@ do
 	end
 end
 
+-- "Show the player frame while health or power is changing" (off by default): the player frame alone comes up while health or
+-- the power bar on show goes up or down, and for a few seconds after the last change (HOLD). In practice: until you are topped
+-- off, since regeneration stops there. It goes by the game's "health changed" and "power changed" messages and never by the
+-- numbers: on client 70338 your own health and power are kept from addons (secret values) even outside a fight, and two secrets
+-- cannot be combined, so "not full" cannot be read. Nothing runs on a timer, and with the box unticked nothing is listened to at
+-- all. Not while dead or a ghost. Called from the main loop: on is whether the box counts now, now is GetTime().
+local playerChanging
+do
+	-- How long after a change the frame stays: long enough that the next regeneration tick would have come. Health, energy and
+	-- rage tick about every 2 seconds. Mana waits about 5 seconds after a cast first, so it needs longer, and so does a power
+	-- change whose kind cannot be told at all (neither the message nor the bar on show says it).
+	local HOLD = { short = 3, mana = 8 }
+	local watcher, watching, changedAt, showUntil = CreateFrame("Frame"), false, 0, 0
+	local function plain(v) return type(v) == "string" and not (issecretvalue and issecretvalue(v)) end
+	watcher:SetScript("OnEvent", function(_, event, unit, token)
+		-- Dying ends a wait that started while alive; the frame fades as usual.
+		if event == "PLAYER_DEAD" then showUntil = 0 return end
+		-- (only when the player-only listening was refused and every unit's changes arrive)
+		if plain(unit) and unit ~= "player" then return end
+		local hold = HOLD.short
+		if event == "UNIT_POWER_UPDATE" then
+			local ok, _, onShow = pcall(UnitPowerType, "player")
+			onShow = ok and plain(onShow) and onShow or nil
+			local kind = plain(token) and token or nil
+			-- A power that is not the bar on show (combo points, a druid's mana in cat form) does not count.
+			if kind and onShow and kind ~= onShow then return end
+			kind = kind or onShow
+			if not kind or kind == "MANA" then hold = HOLD.mana end
+		end
+		-- Only a plain "not dead" goes on: dead, a failed call and an answer the game keeps back all mean no say. A plain "dead"
+		-- also ends a running wait, in case the "you died" message above never came.
+		local okDead, dead = pcall(UnitIsDeadOrGhost, "player")
+		if not okDead or (issecretvalue and issecretvalue(dead)) then return end
+		if dead then showUntil = 0 return end
+		changedAt = GetTime()
+		-- (never cut short: a health tick does not end the longer wait a mana change started)
+		showUntil = math.max(showUntil, changedAt + hold)
+	end)
+	-- peek (for /qhud state): seconds since the last change that counted and seconds the frame still stays for it (nil: no
+	-- change yet, or not listening).
+	playerChanging = function(on, now, peek)
+		if peek then
+			if not watching or changedAt == 0 then return nil end
+			return now - changedAt, math.max(0, showUntil - now)
+		end
+		if on ~= watching then
+			watching, changedAt, showUntil = on, 0, 0
+			if on then
+				for _, e in ipairs({ "UNIT_HEALTH", "UNIT_POWER_UPDATE" }) do
+					-- (for the player only; if the game refuses that, for every unit, sorted out when the message comes)
+					if not pcall(watcher.RegisterUnitEvent, watcher, e, "player") then pcall(watcher.RegisterEvent, watcher, e) end
+				end
+				pcall(watcher.RegisterEvent, watcher, "PLAYER_DEAD")
+			else
+				pcall(watcher.UnregisterAllEvents, watcher)
+			end
+		end
+		return on and now < showUntil
+	end
+end
+
 local function update(dt)
 	local now = GetTime()
 	local edit = EditModeManagerFrame and EditModeManagerFrame:IsShown() or false
@@ -2075,6 +2137,10 @@ local function update(dt)
 	local moved = now < moveUntil
 	vis.bars = triggered(DB.trigBars, active, moved, false, combat, inside, barHover)
 	vis.player = triggered(DB.trigPlayer, active, moved, false, combat, inside, LISTS.player)
+	-- Health or power changing brings the player frame up too (its own box on the Show when page); Hide in combat still wins.
+	if playerChanging((enabled and DB.notFullShows) and true or false, now) and not (combat and barBit(DB.trigPlayer, T.COMBAT)) then
+		vis.player = true
+	end
 	vis.hud = triggered(DB.trigUnits, active, moved, false, combat, inside, LISTS.hud)
 	for _, s in ipairs(SPLIT) do
 		vis[s.g] = triggered(gTrig(s), active, moved, false, combat, inside, LISTS[s.g])
@@ -2282,6 +2348,8 @@ local PAGES = {
 		{ "slider", "linger", "Stay visible after combat (seconds)", 0, 180, 1, "%.0f", nil, nil, "Only for Show in combat: how long the HUD stays up after a fight ends.", 420 },
 		{ "check", "mouseShows", "Show while I move the mouse" },
 		{ "slider", "mouseSeconds", "Stay visible after the mouse stops (seconds)", 1, 60, 1, "%.0f", nil, nil, "Only for Show while I move the mouse: how long the HUD stays up after you stop moving the cursor or turning the camera." },
+		{ "heading", "Player frame" },
+		{ "check", "notFullShows", "Show the player frame while health or power is changing", "Brings up the player frame only, while your health or your power bar goes up or down and for a few seconds after (3, or 8 for mana, which waits a moment before it comes back). In practice: until you are topped off. The game does not let addons read your health or power, so QuietHUD goes by them changing. Hide in combat on the Player frame row still wins." },
 		{ "heading", "Fading out" },
 		{ "slider", "fadeOutSeconds", "Fade out animation (seconds)", 0.1, 5, 0.05, "%.2f", nil, nil, "How long an element takes to fade out, whatever brought it up. The chat has its own on the Chat page." },
 		{ "heading", "Show the whole HUD on demand" },
@@ -4417,6 +4485,21 @@ SlashCmdList["QUIETHUD"] = function(msg)
 				tostring(UnitAffectingCombat("player") and true or false), tostring(GetTime() < combatEnd),
 				tostring((weaponDrawn())), tostring(UnitExists("target") and true or false),
 DB.mouseShows and tostring(mouseActive(GetTime())) or "option off"))
+			do
+				local function shown(fn, ...)
+					local ok, v = pcall(fn, ...)
+					if not ok then return "unreadable" end
+					return (issecretvalue and issecretvalue(v)) and "hidden by the game" or tostring(v)
+				end
+				local kind = shown(UnitPowerType, "player")
+				-- (a look only: it does not start or stop the listening)
+				local ago, left = playerChanging(false, GetTime(), true)
+				local last = not DB.notFullShows and "option off" or (not ago and "nothing yet")
+					or string.format("%.1f seconds ago (the frame stays %.1f more)", ago, left)
+				print(string.format("QuietHUD player frame: last health or power change=%s (health %s of %s, power type %s: %s of %s)",
+					last, shown(UnitHealth, "player"), shown(UnitHealthMax, "player"),
+					kind, shown(UnitPower, "player", tonumber(kind)), shown(UnitPowerMax, "player", tonumber(kind))))
+			end
 			print("QuietHUD alpha now: PlayerFrame=" .. alpha("PlayerFrame") .. ", MainActionBar=" .. alpha("MainActionBar")
 				.. ", TargetFrame=" .. alpha("TargetFrame") .. ", MinimapCluster=" .. alpha("MinimapCluster"))
 			local okSpeed, speed = pcall(GetUnitSpeed, "player")

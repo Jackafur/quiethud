@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.0
+
+Your settings carry over.
+
+### Added
+
+- **"Show the player frame while health or power is changing" on the Show when page** (off by default). Your player frame comes up while your health or your power bar goes up or down, and stays for a few seconds after the last change (3 seconds, or 8 for mana, which waits a moment after a cast before it comes back). In practice it stays until you are topped off, then fades like before. Only the player frame comes up, nothing else, and Hide in combat on the Player frame row still wins. The game does not let addons read your health or power, so QuietHUD cannot check for "not full": it goes by the bars changing. With the box unticked, QuietHUD does not listen for any of it. Not while you are dead.
+
 ## 1.3.11
 
 Your settings carry over.
