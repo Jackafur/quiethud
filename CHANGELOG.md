@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.3.11
+
+Your settings carry over.
+
+### Added
+
+- **"Show while I move the mouse" on the Show when page** (off by default). The HUD counts as awake while you move the cursor or turn the camera with a mouse button, and stays for the seconds you pick on the slider under it (3 to start with). Take your hand off the mouse, on auto-run for example, and the HUD fades.
+- **QuietHUD is in the game's options.** Esc, Options, AddOns, QuietHUD has a button that opens the settings window. `/qhud` still works.
+- **"Fade out animation (seconds)" on the Show when page.** How long an element takes to fade out, from 0.1 to 5 seconds. It is 0.35 seconds until you change it, as before. The chat keeps its own fade out time on the Chat page. The minimap fades in small steps, so a slow fade shows them a little.
+
+### Changed
+
+- **"Stay visible after combat" goes up to 180 seconds** (it stopped at 15). "New info stays, for quests and zone changes" on the Extras page goes up to 180 seconds too (it stopped at 30).
+
+### Fixed
+
+- **A setting changed right before a `/reload` is no longer undone.** The game saves addon settings again (client build 1.60.1.70338), and QuietHUD now goes by that saved file. Before, the bag, opacity and per-element settings were read from their macros, which are written a moment after a change, so a quick reload could bring the old values back. The macros are still written as a backup, also at logout.
+- **Switching QuietHUD off now switches all of it off.** Tooltip opacity, pixel shift and the open bag opacity and position used to keep working with "Enable QuietHUD" unticked. They now go back to normal until you tick it again.
+- **Settings are no longer lost when you change a lot of them.** QuietHUD keeps your settings in a macro, and a macro holds only 255 characters. With enough settings changed, new changes silently stopped being saved and were gone after a reload. The rest now goes into a second macro ("QuietHUD data 2"), and if the game ever refuses to save them (a full macro list, for example), QuietHUD tells you in chat.
+- **Reset to defaults now also unticks "Hide other addons' minimap buttons" and "Hide the party panel".**
+- **3D portraits no longer flash solid.** With Animated Blizzard Portraits, a face (on RestedXP's Active Targets, for example) showed at full opacity for a moment when it first appeared, and kept blinking while the mouse moved over mobs. It now fades with its frame at once.
+- **A frame taken out of the nav group during combat now goes back where it was after the fight,** also when QuietHUD was switched off before the fight ended. Before, the game blocked the move in combat and the frame stayed with QuietHUD until a reload.
+
+### Other
+
+- QuietHUD does less work in the background. It no longer searches for 3D portraits once a second (it looks when a new one can appear), it no longer checks the breath timer ten times a second (the game says when one starts and stops), and "Hide other addons' minimap buttons" no longer looks for new buttons every 2 seconds (it looks when an addon loads or makes a button, and once more about 5 seconds later, for an addon that finishes its button late).
+- The totem bar workaround from 1.3.1 is gone. The game fixed the error itself (pointing at the summon or recall button before level 20), so QuietHUD no longer checks those buttons once a second.
+
 ## 1.3.10
 
 ### Fixed

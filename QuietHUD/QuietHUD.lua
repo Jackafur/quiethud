@@ -63,6 +63,9 @@ local FIELDS = {
 	{ key = "peekCtrl", code = "pc", kind = "bool", def = false },
 	{ key = "peekShift", code = "pf", kind = "bool", def = false },
 	{ key = "bagAlpha", code = "bo", kind = "num", def = 1 },
+	{ key = "fadeOutSeconds", code = "fs", kind = "num", def = 0.35 },
+	{ key = "mouseShows", code = "ms", kind = "bool", def = false },
+	{ key = "mouseSeconds", code = "mt", kind = "num", def = 3 },
 }
 local DEFAULTS, BY_CODE = {}, {}
 for _, f in ipairs(FIELDS) do
@@ -363,6 +366,10 @@ local MACRO_NAME = "QuietHUD data"
 local MACRO_PREFIX = "#QuietHUD settings, do not delete\n"
 local CVAR = "QuietHUDcfg"
 local cvarRegistered, restored, userChanged, macroPending = false, false, false, false
+-- The game read QuietHUD's saved settings file back (it does since client build 1.60.1.70338; before, never). Then the file is
+-- what counts for every setting, and the macros are only the copy to fall back on: a macro can be behind the file (it is
+-- written 1.5 seconds after a change and not in combat), so reading it over the file would undo the last changes.
+local fromSavedFile = false
 local onRestored
 
 local function registerCVar()
@@ -379,8 +386,8 @@ local function getCVarString()
 	return ok and value or nil
 end
 
--- Only the settings that differ from their default are stored, because the macro that holds them is limited to 255
--- characters. The frames you added (/qhud add) are not in it: they have a macro of their own (see the frames block).
+-- Only the settings that differ from their default are stored, because a macro is limited to 255 characters (see
+-- writeMacro). The frames you added (/qhud add) are not in it: they have a macro of their own (see the frames block).
 local function encodeSettings()
 	local parts = {}
 	for _, f in ipairs(FIELDS) do
@@ -396,25 +403,74 @@ local function encodeSettings()
 	return table.concat(parts, ";")
 end
 
+-- When the settings do not all fit in the one macro, the rest go on in "QuietHUD data 2" (then 3 and so on), cut between two
+-- settings, and are read back in that order. Up to 1.3.10 there was only the one macro, and a body that was too long for it was
+-- not saved at all (the settings from before stayed, and came back at the next reload).
 local function readMacroString()
 	if not (GetMacroIndexByName and GetMacroBody) then return nil end
-	local ok, index = pcall(GetMacroIndexByName, MACRO_NAME)
-	if not ok or not index or index == 0 then return nil end
-	local ok2, body = pcall(GetMacroBody, index)
-	if not ok2 or type(body) ~= "string" then return nil end
-	local rest = body:gsub("^#[^\n]*\n", "")
-	return (rest:match("^%s*(.-)%s*$"))
+	local found
+	for n = 1, 9 do
+		local ok, index = pcall(GetMacroIndexByName, n == 1 and MACRO_NAME or (MACRO_NAME .. " " .. n))
+		if not ok or not index or index == 0 then break end
+		local ok2, body = pcall(GetMacroBody, index)
+		if not ok2 or type(body) ~= "string" then break end
+		local rest = body:gsub("^#[^\n]*\n", ""):match("^%s*(.-)%s*$")
+		if not found then
+			found = rest
+		elseif rest ~= "" then
+			found = (found == "" and rest) or (found .. ";" .. rest)
+		end
+	end
+	return found
 end
 
-local function writeMacro()
-	macroPending = false
-	if InCombatLockdown() or not (CreateMacro and EditMacro and GetMacroIndexByName) then return end
-	local body = MACRO_PREFIX .. encodeSettings()
-	local ok, index = pcall(GetMacroIndexByName, MACRO_NAME)
-	if ok and index and index > 0 then
-		pcall(EditMacro, index, nil, nil, body)
-	else
-		pcall(CreateMacro, MACRO_NAME, "INV_Misc_Note_01", body, false)
+-- Each macro is read back after it is written: when the game did not keep one (a full macro list, for example), you are told
+-- once, because a setting saved nowhere would be gone after the next reload. An overflow macro that is not needed any more is
+-- emptied.
+local writeMacro
+do
+	local warned = false
+	writeMacro = function()
+		macroPending = false
+		if InCombatLockdown() or not (CreateMacro and EditMacro and GetMacroIndexByName) then return end
+		local function prefix(n) return n == 1 and MACRO_PREFIX or ("#QuietHUD settings " .. n .. ", do not delete\n") end
+		local bodies, body = {}, prefix(1)
+		for part in encodeSettings():gmatch("[^;]+") do
+			local sep = body:sub(-1) == "\n" and "" or ";"
+			if #body + #sep + #part > 255 then
+				bodies[#bodies + 1] = body
+				body = prefix(#bodies + 1) .. part
+			else
+				body = body .. sep .. part
+			end
+		end
+		bodies[#bodies + 1] = body
+		local failed = false
+		for n = 1, 9 do
+			local name = n == 1 and MACRO_NAME or (MACRO_NAME .. " " .. n)
+			local want = bodies[n] or prefix(n)
+			local ok, index = pcall(GetMacroIndexByName, name)
+			local exists = ok and index and index > 0
+			if not (exists or bodies[n]) then break end
+			if exists then
+				pcall(EditMacro, index, nil, nil, want)
+			else
+				pcall(CreateMacro, name, "INV_Misc_Note_01", want, false)
+			end
+			if GetMacroBody then
+				local got
+				local ok2, index2 = pcall(GetMacroIndexByName, name)
+				if ok2 and index2 and index2 > 0 then
+					local ok3, b = pcall(GetMacroBody, index2)
+					if ok3 and type(b) == "string" then got = b:match("^%s*(.-)%s*$") end
+				end
+				if got ~= want:match("^%s*(.-)%s*$") then failed = true end
+			end
+		end
+		if failed and not warned then
+			warned = true
+			print("QuietHUD: your settings could not be saved in its macros (is your account's macro list full?), so changes may be lost at the next reload.")
+		end
 	end
 end
 
@@ -526,7 +582,7 @@ end
 
 local function initDB()
 	local source = type(QuietHUDDB) == "table" and QuietHUDDB or nil
-	if source then DB = source end
+	if source then DB, fromSavedFile = source, true end
 	for k, v in pairs(DEFAULTS) do
 		if DB[k] == nil then DB[k] = v end
 	end
@@ -550,30 +606,36 @@ local SELF_FADING = { PlayerCastingBarFrame = "cast", CastingBarFrame = "cast", 
 	local OVERRIDE_KEYS = { bars = "ovBars", player = "ovPlayer", hud = "ovHud", quest = "ovQuest", map = "ovMap", bags = "ovBagsBar", micro = "ovMicro" }
 	for _, s in ipairs(SPLIT) do OVERRIDE_KEYS[s.g] = s.ovKey end
 
--- Whether a mirror timer (breath, fatigue, feign death) is running. Looked at about ten times a second.
-local mirror = { at = 0, active = false }
+-- Whether a mirror timer (breath, fatigue, feign death) is running. Kept from the game's MIRROR_TIMER_START and _STOP events
+-- (the game's own breath bar works from them on Forever too), and asked from the game when you enter the world, in case one was
+-- already running. Up to 1.3.10 the game was asked ten times a second. With /qhud debug on, each start and stop is printed.
+local mirror = { running = {} }
 local function mirrorTimerActive()
-	local now = GetTime()
-	if now - mirror.at < 0.1 then return mirror.active end
-	mirror.at, mirror.active = now, false
-	if GetMirrorTimerInfo then
-		for i = 1, 3 do
-			local ok, name = pcall(GetMirrorTimerInfo, i)
-			if ok and type(name) == "string" and name ~= "" and name ~= "UNKNOWN" and not (issecretvalue and issecretvalue(name)) then
-				mirror.active = true
-				break
-			end
-		end
-	else
-		for i = 1, 3 do
-			local f = _G["MirrorTimer" .. i]
-			if f and f.IsShown and f:IsShown() then
-				mirror.active = true
-				break
-			end
-		end
+	return next(mirror.running) ~= nil
+end
+do
+	local function usable(name)
+		return type(name) == "string" and not (issecretvalue and issecretvalue(name)) and name ~= "" and name ~= "UNKNOWN"
 	end
-	return mirror.active
+	local events = CreateFrame("Frame")
+	for _, e in ipairs({ "MIRROR_TIMER_START", "MIRROR_TIMER_STOP", "PLAYER_ENTERING_WORLD" }) do
+		pcall(events.RegisterEvent, events, e)
+	end
+	events:SetScript("OnEvent", function(_, event, timer)
+		if event == "PLAYER_ENTERING_WORLD" then
+			mirror.running = {}
+			for i = 1, 3 do
+				local ok, name = pcall(GetMirrorTimerInfo or error, i)
+				if ok and usable(name) then mirror.running[name] = true end
+			end
+		else
+			-- (a name the game hides is kept as "?", so its stop still matches its start)
+			local name = usable(timer) and timer or "?"
+			mirror.running[name] = event == "MIRROR_TIMER_START" or nil
+			trace("QuietHUD: " .. (event == "MIRROR_TIMER_START" and "started" or "stopped") .. " timer " .. name
+				.. ", breath bar shown by QuietHUD: " .. tostring(mirrorTimerActive()))
+		end
+	end)
 end
 
 local function setAlpha(names, a, onlySelfFading)
@@ -725,7 +787,8 @@ local function checkElsewhere()
 	if changed then rebuildLists() end
 end
 
--- Fading in and out both take FADE, unless a group is given its own fade-out time (the chat has one).
+-- Fading in takes FADE. Fading out takes the "Fade out animation" time of the Show when page (FADE unless it was changed), and
+-- the chat has a fade-out time of its own.
 local function step(v, target, dt, outSeconds)
 	if v < target then return math.min(target, v + dt / FADE) end
 	return math.max(target, v - dt / math.max(0.05, outSeconds or FADE))
@@ -943,6 +1006,7 @@ end
 -- applied to it directly; under a host the two opacities multiply instead, so it can still show and hide itself.
 local navHosts, navLastError = {}, nil
 local navForce = false   -- /qhud arrow: keeps the nav group visible whatever else is going on
+local releaseNav
 local function applyNav(a)
 	local wanted = {}
 	for _, name in ipairs(LISTS.nav) do
@@ -968,12 +1032,33 @@ local function applyNav(a)
 			if rec then rec.host:SetAlpha(a) end
 		end
 	end
-	-- frames taken out of the group go back where they were
+	releaseNav(wanted)
+end
+-- Frames taken out of the group go back where they were. The game blocks that for a protected frame during combat (without
+-- an error), so such a frame keeps its record and goes back after the fight (PLAYER_REGEN_ENABLED calls this too, so it also
+-- happens when QuietHUD was switched off before the fight ended); until then its host is at full opacity.
+releaseNav = function(wanted)
+	if not wanted then
+		wanted = {}
+		for _, name in ipairs(LISTS.nav) do
+			if _G[name] then wanted[_G[name]] = true end
+		end
+	end
 	for f, rec in pairs(navHosts) do
 		if not wanted[f] then
-			pcall(function() f:SetParent(rec.parent or UIParent) end)
 			rec.host:SetAlpha(1)
-			navHosts[f] = nil
+			local back = rec.parent or UIParent
+			if not (InCombatLockdown() and f.IsProtected and f:IsProtected()) then
+				local ok, err = pcall(f.SetParent, f, back)
+				rec.tries = (rec.tries or 0) + 1
+				if f:GetParent() == back then
+					navHosts[f] = nil
+				elseif rec.tries >= 3 then
+					-- (outside combat it should never fail; given up rather than tried on every update)
+					navLastError = "could not give a frame back its parent: " .. tostring(ok and "it did not take" or err)
+					navHosts[f] = nil
+				end
+			end
 		end
 	end
 end
@@ -1364,36 +1449,6 @@ local function shortHotkey(text)
 end
 local shortened = {}
 
--- WORKAROUND for a Blizzard bug (added 2026-09-26; remove it once Blizzard fixes MultiCastActionBarFrame.lua). The totem
--- bar's summon and recall buttons (Call of the Elements, Totemic Recall, trained at level 20) are only hidden while the bar
--- is already shown, so when the bar comes up another way (turned on in Edit Mode on a new shaman, for example) they stay
--- visible without a spell, and pointing at one throws a Lua error in Blizzard's tooltip code (SetSpellByID with no spell).
--- A faded bar makes that easy to hit without seeing it. So while such a button has no spell it ignores the mouse, and it
--- gets the mouse back as soon as it has one. Only out of combat, because the buttons are protected.
-do
-	local muted = {}
-	local function checkTotemButtons()
-		if InCombatLockdown() then return end
-		for _, name in ipairs({ "MultiCastSummonSpellButton", "MultiCastRecallSpellButton" }) do
-			local b = _G[name]
-			if b and b.EnableMouse and b.IsMouseEnabled then
-				if not b.spellId then
-					if not muted[b] and b:IsMouseEnabled() then
-						b:EnableMouse(false)
-						muted[b] = true
-					end
-				elseif muted[b] then
-					b:EnableMouse(true)
-					muted[b] = nil
-				end
-			end
-		end
-	end
-	if C_Timer and C_Timer.NewTicker then C_Timer.NewTicker(1, function() pcall(checkTotemButtons) end) end
-	local bar = _G.MultiCastActionBarFrame
-	if bar and bar.HookScript then pcall(bar.HookScript, bar, "OnShow", function() pcall(checkTotemButtons) end) end
-end
-
 -- Shortens (or, with wantShort false, restores) the hotkey text of one button.
 local function shortenOne(fs, wantShort)
 	local okText, text = pcall(fs.GetText, fs)
@@ -1562,9 +1617,10 @@ do
 	end
 
 	local function stepShift(now, edit)
-		if not DB.pixelShift and next(contested) ~= nil then contested = {} end
-		if not DB.pixelShift and next(shiftState) == nil then return end
-		if DB.pixelShift and not edit then
+		local on = DB.enabled and DB.pixelShift -- (switching QuietHUD off puts the frames back too)
+		if not on and next(contested) ~= nil then contested = {} end
+		if not on and next(shiftState) == nil then return end
+		if on and not edit then
 			if now >= shiftNextAt then
 				shiftIndex = shiftIndex % #SHIFT_STEPS + 1
 				shiftNextAt = now + (DB.shiftMinutes or 3) * 60
@@ -1599,7 +1655,7 @@ do
 	end
 
 	shiftReport = function()
-		print("QuietHUD pixel shift (experimental): " .. (DB.pixelShift and "on" or "off") .. ", offset now " .. shiftWantX .. "," .. shiftWantY .. " pixels, a move every " .. (DB.shiftMinutes or 3) .. " minutes, /qhud shift on, off or now")
+		print("QuietHUD pixel shift (experimental): " .. (DB.pixelShift and (DB.enabled and "on" or "on, but QuietHUD is switched off") or "off") .. ", offset now " .. shiftWantX .. "," .. shiftWantY .. " pixels, a move every " .. (DB.shiftMinutes or 3) .. " minutes, /qhud shift on, off or now")
 		for _, name in ipairs(LISTS.shift) do
 			local f = _G[name]
 			local st = f and shiftState[f]
@@ -1618,7 +1674,7 @@ do
 	local TOOLTIPS = { "GameTooltip", "ItemRefTooltip", "ShoppingTooltip1", "ShoppingTooltip2", "EmbeddedItemTooltip" }
 	local tooltipTouched = false
 	applyTooltips = function()
-		local a = DB.tooltipAlpha or 1
+		local a = DB.enabled and DB.tooltipAlpha or 1 -- (with QuietHUD switched off they go back to full)
 		if a <= 0 then a = DB.base or 0.6 elseif a < 0.1 then a = 0.1 end -- 0 is Global: the "When active" opacity
 		local restoring = false
 		if a >= 0.999 then
@@ -1734,9 +1790,61 @@ do
 	local ROOT_GROUPS = { "player", "hud", "target", "pet", "party", "rxp" }
 	local MODEL_TYPES = { Model = true, PlayerModel = true, DressUpModel = true, CinematicModel = true, TabardModel = true }
 	local DEPTH = 5
-	local models, owner, touched = {}, {}, {}
+	local models, owner, touched, lastSet = {}, {}, {}, {}
+	local said, counts = { late = {}, once = {} }, { late = {}, once = {} }
+	local calls = setmetatable({}, { __mode = "k" })
 	local busy, scanAt = false, 0
-	local function apply(m)
+	local function whereIs(m)
+		local p = m
+		for _ = 1, 8 do
+			local ok, parent = pcall(p.GetParent, p)
+			p = ok and parent or nil
+			if not p then break end
+			local okN, name = pcall(p.GetName, p)
+			if okN and type(name) == "string" then return name end
+		end
+		return "an unnamed frame"
+	end
+	-- With /qhud debug on, the last calls made on each model are kept: what was called, when (seconds), and the model's own
+	-- opacity right after it. They are printed with a blink, so the line shows what happened to the model just before.
+	local function note(m, what)
+		if not debugOn then return end
+		local list = calls[m]
+		if not list then
+			list = {}
+			calls[m] = list
+		end
+		local ok, a = pcall(m.GetModelAlpha, m)
+		local alpha = (ok and type(a) == "number" and not (issecretvalue and issecretvalue(a))) and string.format("%.2f", a) or "?"
+		list[#list + 1] = string.format("%s %.2f=%s", what, GetTime() % 1000, alpha)
+		if #list > 10 then table.remove(list, 1) end
+	end
+	local function history(m)
+		local okS, shown = pcall(m.IsVisible, m)
+		return string.format("now %.2f, on screen %s, last calls: %s", GetTime() % 1000, tostring(okS and shown and true or false),
+			calls[m] and table.concat(calls[m], ", ") or "none")
+	end
+	-- With /qhud debug on, a model whose opacity was put back by something QuietHUD does not hook is named (at most every 2
+	-- seconds each, with how many times it happened): the update caught it a frame late, which shows as a blink. One put back
+	-- by a call QuietHUD does hook is named too (after: the call), though that one is faded again before the screen is drawn.
+	local function sayBlink(m, have, want, after)
+		local kind = after and "once" or "late"
+		local now = GetTime()
+		counts[kind][m] = (counts[kind][m] or 0) + 1
+		if now - (said[kind][m] or -10) < 2 then return end
+		said[kind][m] = now
+		local count = counts[kind][m]
+		counts[kind][m] = 0
+		if after then
+			trace(string.format("QuietHUD: a 3D model under %s was set back to %.2f by %s and faded to %.2f again at once (%d since the last line; %s)",
+				whereIs(m), have, after, want, count, history(m)))
+		else
+			trace(string.format("QuietHUD: a 3D model under %s was set back to %.2f between updates (a blink, %d since the last line), faded to %.2f again (%s)",
+				whereIs(m), have, count, want, history(m)))
+		end
+	end
+	-- fromLoop: called by the update loop, not by one of the hooks below (after: the hooked call it follows).
+	local function apply(m, fromLoop, after)
 		if busy then return end
 		local want = owner[m] or 1
 		if DB.enabled then
@@ -1748,27 +1856,101 @@ do
 			return
 		end
 		local have = m:GetModelAlpha()
-		if type(have) == "number" and not (issecretvalue and issecretvalue(have)) and math.abs(have - want) < 0.005 then return end
+		local readable = type(have) == "number" and not (issecretvalue and issecretvalue(have))
+		if readable and math.abs(have - want) < 0.005 then return end
+		if debugOn and readable and lastSet[m] and math.abs(have - lastSet[m]) > 0.005 and (fromLoop or after) then
+			sayBlink(m, have, want, (not fromLoop) and after or nil)
+		end
 		busy = true
 		pcall(m.SetModelAlpha, m, want)
 		busy = false
+		lastSet[m] = want
 		touched[m] = want < (owner[m] or 1) - 0.005 or nil
 	end
 	-- The model's own addon set its opacity: kept, and multiplied in.
 	local function ownerSet(m, a)
 		if busy or type(a) ~= "number" or (issecretvalue and issecretvalue(a)) then return end
-		owner[m] = a
+		owner[m], lastSet[m] = a, a
+		note(m, "SetModelAlpha (its addon)")
 		pcall(apply, m)
 	end
-	local function again(m) pcall(apply, m) end
+	-- Besides a new unit or model, the opacity goes back on after the calls Animated Blizzard Portraits makes each time it
+	-- redraws a face (animation, zoom, showing it), in case the game puts the model back to full on any of them.
+	local AGAIN_AFTER = { "SetUnit", "SetDisplayInfo", "SetCreature", "SetModel", "ClearModel", "SetAnimation", "SetPortraitZoom",
+		"SetCamDistanceScale", "SetPosition", "RefreshUnit", "RefreshCamera", "Show" }
+	-- The faded frames a model can sit under (the frames of the groups above).
+	local function rootSet()
+		local roots = {}
+		for _, g in ipairs(ROOT_GROUPS) do
+			local list = LISTS[g]
+			for i = 1, list and #list or 0 do
+				local r = _G[list[i]]
+				if type(r) == "table" then roots[r] = true end
+			end
+		end
+		return roots
+	end
+	-- The game also puts a model back to full when the opacity of a frame above it is set (seen in game 2026-10-11 with
+	-- /qhud debug: RestedXP sets its targets window's opacity about ten times a second while the mouse moves over mobs, and
+	-- each time the faces on it were solid until the next update, a blink). So the frames between a model and its faded
+	-- frame are watched too, and the model's opacity goes back on in the same call.
+	local watched, below = setmetatable({}, { __mode = "k" }), setmetatable({}, { __mode = "k" })
+	local function watchAbove(m)
+		local roots, f = rootSet(), m
+		for _ = 1, DEPTH + 1 do
+			local ok, parent = pcall(f.GetParent, f)
+			if not (ok and type(parent) == "table") or parent == UIParent then break end
+			f = parent
+			if not below[f] then below[f] = setmetatable({}, { __mode = "k" }) end
+			below[f][m] = true
+			if not watched[f] and f.SetAlpha and not (f.IsForbidden and f:IsForbidden()) then
+				watched[f] = true
+				pcall(hooksecurefunc, f, "SetAlpha", function(self)
+					local what = "SetAlpha above"
+					if debugOn then
+						local okN, name = pcall(self.GetName, self)
+						what = "SetAlpha on " .. ((okN and type(name) == "string") and name or "a frame above")
+					end
+					for model in pairs(below[self] or {}) do
+						note(model, what)
+						pcall(apply, model, false, what)
+					end
+				end)
+			end
+			if roots[f] then break end
+		end
+	end
+	local function hookScript(m, script)
+		pcall(m.HookScript, m, script, function(self)
+			note(self, script)
+			pcall(apply, self, false, script)
+		end)
+	end
 	local function adopt(m)
 		models[m] = true
+		if debugOn then trace("QuietHUD: took on a 3D model under " .. whereIs(m)) end
 		pcall(hooksecurefunc, m, "SetModelAlpha", ownerSet)
-		for _, fn in ipairs({ "SetUnit", "SetDisplayInfo", "SetCreature", "SetModel", "ClearModel" }) do
-			if m[fn] then pcall(hooksecurefunc, m, fn, again) end
+		for _, fn in ipairs(AGAIN_AFTER) do
+			if m[fn] then
+				pcall(hooksecurefunc, m, fn, function(self)
+					note(self, fn)
+					pcall(apply, self, false, fn)
+				end)
+			end
 		end
-		pcall(m.HookScript, m, "OnModelLoaded", again)
-		pcall(m.HookScript, m, "OnShow", again)
+		pcall(hooksecurefunc, m, "Hide", function(self) note(self, "Hide") end)
+		hookScript(m, "OnModelLoaded")
+		hookScript(m, "OnShow")
+		pcall(watchAbove, m)
+		-- Its addon setting its own script replaces the hook (Animated Blizzard Portraits sets OnModelLoaded right after it makes
+		-- a face, and a model is taken on as it is made), so the hook is put back each time. Without it a face that finished
+		-- loading stayed at the full opacity the game gives it until the next update: a blink.
+		pcall(hooksecurefunc, m, "SetScript", function(self, script)
+			if script == "OnModelLoaded" or script == "OnShow" then
+				note(self, "SetScript " .. script)
+				hookScript(self, script)
+			end
+		end)
 	end
 	local function walk(depth, ...)
 		for i = 1, select("#", ...) do
@@ -1782,15 +1964,61 @@ do
 		end
 	end
 	local function walkRoot(f) walk(DEPTH, f:GetChildren()) end
-	-- Looked for once a second, and soon after the things that put a new portrait up.
+	-- Looked for soon after the things that can put a new portrait up: a new target, focus, party or pet, entering the world, an
+	-- addon loading, the frame lists changing, QuietHUD being switched on, and any 3D model being made (Animated Blizzard
+	-- Portraits makes its faces with CreateFrame). Up to 1.3.10 they were also looked for once a second. Nothing is looked for
+	-- while QuietHUD is switched off; the models it faded get their opacity back once.
+	local function soonScan() scanAt = math.min(scanAt, GetTime() + 0.1) end
 	local soon = CreateFrame("Frame")
-	for _, e in ipairs({ "PLAYER_TARGET_CHANGED", "PLAYER_FOCUS_CHANGED", "GROUP_ROSTER_UPDATE", "UNIT_PET", "PLAYER_ENTERING_WORLD" }) do
+	for _, e in ipairs({ "PLAYER_TARGET_CHANGED", "PLAYER_FOCUS_CHANGED", "GROUP_ROSTER_UPDATE", "UNIT_PET", "PLAYER_ENTERING_WORLD", "ADDON_LOADED" }) do
 		pcall(soon.RegisterEvent, soon, e)
 	end
-	soon:SetScript("OnEvent", function() scanAt = math.min(scanAt, GetTime() + 0.1) end)
+	soon:SetScript("OnEvent", soonScan)
+	local MODEL_KINDS = {}
+	for kind in pairs(MODEL_TYPES) do MODEL_KINDS[kind:lower()] = true end
+	-- Whether a frame is one of the faded frames above, or under one (within DEPTH).
+	local function underRoot(f)
+		local roots = rootSet()
+		for _ = 1, DEPTH do
+			if roots[f] then return true end
+			local ok, p = pcall(f.GetParent, f)
+			if not (ok and type(p) == "table") then return false end
+			f = p
+		end
+		return false
+	end
+	-- A model made under a faded frame is taken on at once, so its hooks are on before its addon first shows it (Animated
+	-- Blizzard Portraits shows a new face straight away: on a new RestedXP target button it was solid until the next look).
+	pcall(hooksecurefunc, "CreateFrame", function(kind, _, parent)
+		if type(kind) == "string" and MODEL_KINDS[kind:lower()] then
+			if DB.enabled and type(parent) == "table" and parent.GetChildren then
+				pcall(function() if underRoot(parent) then walk(1, parent:GetChildren()) end end)
+			end
+			soonScan()
+		end
+	end)
+	-- With /qhud debug on, a /reload (or logging out) writes every model's last calls to the trace, blink or no blink.
+	local atLogout = CreateFrame("Frame")
+	pcall(atLogout.RegisterEvent, atLogout, "PLAYER_LOGOUT")
+	atLogout:SetScript("OnEvent", function()
+		if not debugOn then return end
+		for m in pairs(models) do
+			local okA, a = pcall(m.GetModelAlpha, m)
+			pcall(trace, string.format("QuietHUD: at reload, 3D model under %s: opacity %s, last set to %s (%s)", whereIs(m),
+				(okA and type(a) == "number") and string.format("%.2f", a) or "?", lastSet[m] and string.format("%.2f", lastSet[m]) or "never", history(m)))
+		end
+	end)
+	local seenLists, wasEnabled = nil, false
 	fadeModels = function(now)
-		if now >= scanAt then
-			scanAt = now + 1
+		if not DB.enabled then
+			wasEnabled = false
+			if next(touched) == nil then return end
+		elseif not wasEnabled or seenLists ~= LISTS[ROOT_GROUPS[1]] then
+			wasEnabled, seenLists = true, LISTS[ROOT_GROUPS[1]]
+			scanAt = 0
+		end
+		if DB.enabled and now >= scanAt then
+			scanAt = math.huge
 			for _, g in ipairs(ROOT_GROUPS) do
 				local list = LISTS[g]
 				for i = 1, list and #list or 0 do
@@ -1799,7 +2027,29 @@ do
 				end
 			end
 		end
-		for m in pairs(models) do pcall(apply, m) end
+		for m in pairs(models) do pcall(apply, m, true) end
+	end
+end
+
+-- "Show while I move the mouse" (off by default): the HUD counts as awake while the cursor moves or a mouse button is held (the
+-- cursor stands still while the camera is turned with a button down), and for "Stay visible after the mouse stops" seconds
+-- after. It is only looked at while the box is ticked: one cursor position read per update, compared with the one before.
+local mouseActive
+do
+	local lastX, lastY, activeUntil = nil, nil, 0
+	mouseActive = function(now)
+		local stay = math.max(1, DB.mouseSeconds or 3)
+		local ok, x, y = pcall(GetCursorPosition)
+		if ok and type(x) == "number" and type(y) == "number" and not (issecretvalue and (issecretvalue(x) or issecretvalue(y))) then
+			if lastX and (x ~= lastX or y ~= lastY) then activeUntil = now + stay end
+			lastX, lastY = x, y
+		end
+		if IsMouseButtonDown then
+			local okL, left = pcall(IsMouseButtonDown, "LeftButton")
+			local okR, right = pcall(IsMouseButtonDown, "RightButton")
+			if (okL and left) or (okR and right) then activeUntil = now + stay end
+		end
+		return now < activeUntil
 	end
 end
 
@@ -1811,7 +2061,7 @@ local function update(dt)
 
 	local inside = inDungeonOrRaid()
 	local active = edit or (DB.inCombat and (combat or now < combatEnd)) or (DB.sheathShows and weaponDrawn())
-		or (DB.showOnTarget and UnitExists("target"))
+		or (DB.showOnTarget and UnitExists("target")) or (DB.mouseShows and mouseActive(now))
 	lastActive = active and true or false
 	local okMove, moving = pcall(isMoving)
 	if okMove and moving then moveUntil = now + MOVE_LINGER end
@@ -1865,7 +2115,7 @@ local function update(dt)
 		-- Fade is off for this element, but it has an opacity of its own: it stays at that opacity (Edit Mode shows it solid).
 		local fixedA = enabled and not edit and not flags[g] and ownOpacity(g)
 		if enabled and flags[g] then
-			cur[g] = step(cur[g], vis[g] and 1 or 0, dt, g == "chat" and DB.chatFadeSeconds or nil)
+			cur[g] = step(cur[g], vis[g] and 1 or 0, dt, g == "chat" and DB.chatFadeSeconds or DB.fadeOutSeconds)
 			local peak = DB.base or 0.6
 			if edit or (g == "map" and not DB.mapFollowsHud) then
 				peak = 1
@@ -2029,7 +2279,11 @@ local PAGES = {
 		{ "check", "inCombat", "Show in combat" },
 		{ "check", "sheathShows", "Show while my weapon is drawn" },
 		{ "check", "showOnTarget", "Show while I have a target" },
-		{ "slider", "linger", "Stay visible after combat (seconds)", 0, 15, 1, "%.0f" },
+		{ "slider", "linger", "Stay visible after combat (seconds)", 0, 180, 1, "%.0f", nil, nil, "Only for Show in combat: how long the HUD stays up after a fight ends.", 420 },
+		{ "check", "mouseShows", "Show while I move the mouse" },
+		{ "slider", "mouseSeconds", "Stay visible after the mouse stops (seconds)", 1, 60, 1, "%.0f", nil, nil, "Only for Show while I move the mouse: how long the HUD stays up after you stop moving the cursor or turning the camera." },
+		{ "heading", "Fading out" },
+		{ "slider", "fadeOutSeconds", "Fade out animation (seconds)", 0.1, 5, 0.05, "%.2f", nil, nil, "How long an element takes to fade out, whatever brought it up. The chat has its own on the Chat page." },
 		{ "heading", "Show the whole HUD on demand" },
 		{ "check", "peekAlt", "While I hold Alt" },
 		{ "check", "peekCtrl", "While I hold Ctrl" },
@@ -2077,7 +2331,7 @@ local PAGES = {
 	} },
 	{ title = "Extras", items = {
 		{ "heading", "Timing" },
-		{ "slider", "questSeconds", "New info stays, for quests and zone changes (seconds)", 3, 30, 1, "%.0f" },
+		{ "slider", "questSeconds", "New info stays, for quests and zone changes (seconds)", 3, 180, 1, "%.0f", nil, nil, nil, 420 },
 		{ "heading", "Pixel shift (OLED, experimental)" },
 		{ "check", "pixelShift", "Move the minimap and tracker a little every few minutes" },
 		{ "check", "shiftBars", "Also the action bars, bags and menu bar" },
@@ -2167,11 +2421,13 @@ do
 		return ok and loaded and true or false
 	end
 
+	-- With QuietHUD switched off the bags go back to the game's spot and full opacity (the saved spot and opacity are kept).
 	local function canMoveBags()
-		return DB.moveBags and not blizzMoveLoaded()
+		return DB.enabled and DB.moveBags and not blizzMoveLoaded()
 	end
 
 	local function bagOpacity()
+		if not DB.enabled then return 1 end
 		local a = DB.bagAlpha or 1
 		if a <= 0 then return DB.base or 0.6 end -- 0 is Global: the "When active" opacity
 		return math.max(a, 0.1)
@@ -2380,18 +2636,25 @@ do
 		local ok2, body = pcall(GetMacroBody, index)
 		if not ok2 or type(body) ~= "string" then return end
 		restoredBags = true
-		local x, y = body:match("x=(%-?[%d%.]+);y=(%-?[%d%.]+)")
-		if x then DB.bagX, DB.bagY = tonumber(x) or 0, tonumber(y) or 0 end
-		DB.moveBags = body:match(";m=1") ~= nil
+		if not fromSavedFile then
+			local x, y = body:match("x=(%-?[%d%.]+);y=(%-?[%d%.]+)")
+			if x then DB.bagX, DB.bagY = tonumber(x) or 0, tonumber(y) or 0 end
+			DB.moveBags = body:match(";m=1") ~= nil
+		end
 		applyBags()
 		if onRestored then onRestored() end -- (the Extras box shows the restored value)
 	end
 
 	local bagEvents = CreateFrame("Frame")
-	for _, e in ipairs({ "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD", "UPDATE_MACROS", "PLAYER_REGEN_ENABLED" }) do
+	for _, e in ipairs({ "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD", "UPDATE_MACROS", "PLAYER_REGEN_ENABLED", "PLAYER_LOGOUT" }) do
 		pcall(bagEvents.RegisterEvent, bagEvents, e)
 	end
-	bagEvents:SetScript("OnEvent", function()
+	bagEvents:SetScript("OnEvent", function(_, event)
+		-- A change made just before a reload is written now, so the macro is not left behind (the wait is 1.5 seconds).
+		if event == "PLAYER_LOGOUT" then
+			if userChanged then pcall(writeBagMacro) end
+			return
+		end
 		for _, f in ipairs(bagFrames()) do pcall(hookFrame, f) end
 		restoreBags()
 		applyBags()
@@ -2506,11 +2769,61 @@ do
 		apply()
 	end
 
-	local function tick()
+	-- Looked for when they can appear, not on a timer (up to 1.3.10 every 2 seconds): when an addon loads, at login and entering
+	-- the world, when the saved settings come back, when LibDBIcon makes a button (its LibDBIcon_IconCreated callback), and when
+	-- an addon makes a button on the minimap or straight on the screen (a CreateFrame hook, only while the option is on). The look
+	-- is half a second later, so a new button has its border by then, and at most one every 2 seconds. A button its addon shows
+	-- again is hidden at once by its OnShow hook, and switching the option on or off looks at once (persistBags, above).
+	local pending, lastLook, libHooked, libKey = false, -10, false, {}
+	local function look()
+		pending = false
+		lastLook = GetTime()
 		apply()
-		C_Timer.After(2, tick)
 	end
-	if C_Timer and C_Timer.After then C_Timer.After(3, tick) end
+	local function soon()
+		if pending or not (C_Timer and C_Timer.After) then return end
+		pending = true
+		C_Timer.After(math.max(0.5, lastLook + 2 - GetTime()), look)
+	end
+	-- An addon that puts the round border on its button a moment after making it is missed by that first look, so a button an
+	-- addon makes gets one more look about 5 seconds later: one timer for a burst of buttons, and it never repeats.
+	local latePending = false
+	local function lookLater()
+		if latePending or not (C_Timer and C_Timer.After) then return end
+		latePending = true
+		C_Timer.After(5, function()
+			latePending = false
+			apply()
+		end)
+	end
+	local function hookLib()
+		if libHooked then return end
+		local lib = LibStub and LibStub("LibDBIcon-1.0", true)
+		if lib and lib.RegisterCallback then
+			libHooked = pcall(lib.RegisterCallback, libKey, "LibDBIcon_IconCreated", soon)
+		end
+	end
+	local events = CreateFrame("Frame")
+	for _, e in ipairs({ "ADDON_LOADED", "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD", "UPDATE_MACROS" }) do
+		pcall(events.RegisterEvent, events, e)
+	end
+	events:SetScript("OnEvent", function()
+		hookLib()
+		soon()
+	end)
+	pcall(hooksecurefunc, "CreateFrame", function(kind, _, parent)
+		if parent ~= nil and (parent == Minimap or parent == UIParent) and DB.enabled and DB.hideMmButtons
+			and type(kind) == "string" and kind:lower() == "button" then
+			soon()
+			lookLater()
+		end
+	end)
+	local afterRestore = onRestored
+	onRestored = function()
+		if afterRestore then afterRestore() end
+		soon()
+	end
+	hookLib()
 end-- Own opacity per element (the Opacity page). The main settings macro is almost full, so these have a small macro of their own,
 -- "QuietHUD opacity". Only the ones that are set (above 0) are written.
 do
@@ -2546,6 +2859,7 @@ do
 		local ok2, body = pcall(GetMacroBody, index)
 		if not ok2 or type(body) ~= "string" then return end
 		restoredOv = true
+		if fromSavedFile then return end
 		for k, v in body:gmatch("(ov%a+)=([%d%.]+)") do
 			if DEFAULTS[k] ~= nil then DB[k] = tonumber(v) or 0 end
 		end
@@ -2562,10 +2876,16 @@ do
 	end
 
 	local ovEvents = CreateFrame("Frame")
-	for _, e in ipairs({ "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD", "UPDATE_MACROS" }) do
+	for _, e in ipairs({ "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD", "UPDATE_MACROS", "PLAYER_LOGOUT" }) do
 		pcall(ovEvents.RegisterEvent, ovEvents, e)
 	end
-	ovEvents:SetScript("OnEvent", restoreOv)
+	ovEvents:SetScript("OnEvent", function(_, event)
+		if event == "PLAYER_LOGOUT" then
+			if userChanged then pcall(writeOvMacro) end -- (see the bags macro)
+			return
+		end
+		restoreOv()
+	end)
 end
 -- The split groups (see SPLIT): their Fade, triggers and opacity, in a macro of their own, "QuietHUD groups". Written whenever a
 -- setting changes, once any of them has a value of its own; each group is written as name=fade,triggers,opacity.
@@ -2641,16 +2961,20 @@ do
 	end
 
 	local groupEvents = CreateFrame("Frame")
-	for _, e in ipairs({ "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD", "UPDATE_MACROS" }) do
+	for _, e in ipairs({ "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD", "UPDATE_MACROS", "PLAYER_LOGOUT" }) do
 		pcall(groupEvents.RegisterEvent, groupEvents, e)
 	end
 	local restoredG = false
-	groupEvents:SetScript("OnEvent", function()
+	groupEvents:SetScript("OnEvent", function(_, event)
+		if event == "PLAYER_LOGOUT" then
+			if userChanged then pcall(writeGroupsMacro) end -- (see the bags macro)
+			return
+		end
 		if restoredG then return end
 		local ok, index = pcall(GetMacroIndexByName, G_MACRO)
 		if ok and index and index > 0 then
 			restoredG = true
-			restoreGroups()
+			if not fromSavedFile then restoreGroups() end
 		end
 	end)
 end
@@ -2700,6 +3024,7 @@ do
 		local body = readFrames()
 		if not body then return end
 		restoredF = true
+		if fromSavedFile then return end -- (the saved file has the list as it was left; the macro could bring back a removed frame)
 		local valid = {}
 		for _, g in ipairs(EXTRA_GROUPS) do valid[g] = true end
 		local changed = false
@@ -2828,7 +3153,7 @@ do
 	-- compact puts the label to the left of the slider on one short row (the Opacity page), instead of above it. compact "column" is
 	-- a narrower row in one of the two columns of the Opacity page (x is where the column starts): the name is white and indented
 	-- under its group heading, like the rows of the Elements grid. help is the tooltip of the name.
-	local function makeSlider(parent, y, label, key, minV, maxV, stepV, fmt, zeroText, compact, x, help)
+	local function makeSlider(parent, y, label, key, minV, maxV, stepV, fmt, zeroText, compact, x, help, width)
 		x = x or 0
 		local column = compact == "column"
 		local title = parent:CreateFontString(nil, "OVERLAY", column and "GameFontHighlight" or "GameFontNormal")
@@ -2849,7 +3174,7 @@ do
 			s:SetSize(200, 16)
 		else
 			s:SetPoint("TOPLEFT", 16, y - 22)
-			s:SetSize(220, 16)
+			s:SetSize(width or 220, 16) -- (a long range gets a wider bar, so one second is more than a pixel)
 		end
 		s:SetOrientation("HORIZONTAL")
 		s:SetMinMaxValues(minV, maxV)
@@ -3171,6 +3496,7 @@ do
 		for _, k in ipairs({ "ovBars", "ovPlayer", "ovHud", "ovQuest", "ovMap", "ovBagsBar", "ovMicro" }) do DB[k] = 0 end
 		for _, s in ipairs(SPLIT) do DB[s.fadeKey], DB[s.trigKey], DB[s.ovKey] = nil, nil, 0 end
 		DB.moveBags = false -- (the spot they were moved to stays saved, as before)
+		DB.hideMmButtons, DB.hidePanel = false, false -- (not in FIELDS: kept in the groups macro)
 		persistSoon()
 		rebuildLists()
 		syncControls()
@@ -3237,6 +3563,8 @@ do
 				if before and before[1] == "button" then before = page.items[idx - 2] end
 				local prevKind = before and before[1]
 				if item[1] == "check" then
+					-- A box right under a slider gets some room, so a click meant for the slider does not land on the box.
+					if prevKind == "slider" and not before[9] then y = y - 10 end
 					makeCheck(frame, y, item[3], item[2], item[4])
 					y = y - 26
 				elseif item[1] == "kinds" then
@@ -3278,7 +3606,7 @@ do
 					makeButton(frame, prevKind == "check" and (y + 21) or (y + 24), item[2], item[3], item[4])
 				else
 					if prevKind == "check" then y = y - 6 end
-					makeSlider(frame, y, item[3], item[2], item[4], item[5], item[6], item[7], item[8], item[9], nil, item[10])
+					makeSlider(frame, y, item[3], item[2], item[4], item[5], item[6], item[7], item[8], item[9], nil, item[10], item[11])
 					y = y - (item[9] and 22 or 46)
 				end
 			end
@@ -3358,6 +3686,34 @@ do
 	toggleConfig = function()
 		if not config then buildConfig() end
 		config:SetShown(not config:IsShown())
+	end
+
+	-- The game's own list of addons (Esc, Options, AddOns): QuietHUD has a page there with one button, which opens this window
+	-- on top of the game's options. The window itself is not put inside the game's panel: it is taller and has its own tabs.
+	if Settings and Settings.RegisterCanvasLayoutCategory and Settings.RegisterAddOnCategory then
+		pcall(function()
+			local page = CreateFrame("Frame")
+			page:Hide()
+			local title = page:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+			title:SetPoint("TOPLEFT", 16, -16)
+			title:SetText("QuietHUD")
+			local text = page:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+			text:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -10)
+			text:SetWidth(560)
+			text:SetJustifyH("LEFT")
+			text:SetText("QuietHUD has its own settings window. Typing /qhud in chat opens it too.")
+			local open = CreateFrame("Button", nil, page, "UIPanelButtonTemplate")
+			open:SetSize(200, 24)
+			open:SetPoint("TOPLEFT", text, "BOTTOMLEFT", 0, -14)
+			open:SetText("Open QuietHUD settings")
+			open:SetScript("OnClick", function()
+				if not config then buildConfig() end
+				config:Show()
+				config:Raise()
+			end)
+			local category = Settings.RegisterCanvasLayoutCategory(page, "QuietHUD")
+			Settings.RegisterAddOnCategory(category)
+		end)
 	end
 end
 
@@ -3982,6 +4338,7 @@ ev:SetScript("OnEvent", function(_, event, arg1, _, _, arg4)
 	elseif event == "PLAYER_REGEN_ENABLED" then
 		combatEnd = GetTime() + (DB.linger or 4)
 		run.combatWarned = false
+		releaseNav()
 		armEntry()
 	elseif event == "PLAYER_STARTED_MOVING" then
 		moveUntil = GetTime() + MOVE_LINGER
@@ -4056,9 +4413,10 @@ SlashCmdList["QUIETHUD"] = function(msg)
 			end
 			print(string.format("QuietHUD state: enabled=%s, shown opacity=%.2f, idle opacity=%.2f, HUD active=%s",
 				tostring(DB.enabled and true or false), DB.base or 0, DB.idle or 0, tostring(lastActive)))
-			print(string.format("QuietHUD triggers: in combat=%s, after-combat linger=%s, weapon drawn=%s, has target=%s",
+			print(string.format("QuietHUD triggers: in combat=%s, after-combat linger=%s, weapon drawn=%s, has target=%s, mouse moving=%s",
 				tostring(UnitAffectingCombat("player") and true or false), tostring(GetTime() < combatEnd),
-				tostring((weaponDrawn())), tostring(UnitExists("target") and true or false)))
+				tostring((weaponDrawn())), tostring(UnitExists("target") and true or false),
+DB.mouseShows and tostring(mouseActive(GetTime())) or "option off"))
 			print("QuietHUD alpha now: PlayerFrame=" .. alpha("PlayerFrame") .. ", MainActionBar=" .. alpha("MainActionBar")
 				.. ", TargetFrame=" .. alpha("TargetFrame") .. ", MinimapCluster=" .. alpha("MinimapCluster"))
 			local okSpeed, speed = pcall(GetUnitSpeed, "player")

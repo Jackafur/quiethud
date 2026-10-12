@@ -8,11 +8,12 @@ optional, and nothing is hidden unless you turn it on.
 
 ## What it does
 
-Open the settings with `/qhud`. There are eight pages. Hover a column heading or an element's name to see what it means.
+Open the settings with `/qhud`, or from the game's options: Esc, Options, AddOns, QuietHUD, "Open QuietHUD settings". There are eight pages. Hover a column heading or an element's name to see what it means.
 
 **Show when** (what brings the HUD back)
 - Master on/off switch.
-- Show in combat, while your weapon is drawn, or while you have a target, and how long the HUD stays after combat. These decide when the HUD is "awake", one of the things that can bring each element up (see Elements).
+- Show in combat, while your weapon is drawn, while you have a target, or while you move the mouse (off by default, with its own slider for how many seconds the HUD stays after the mouse stops), and how long the HUD stays after combat (up to 3 minutes). These decide when the HUD is "awake", one of the things that can bring each element up (see Elements).
+- How long elements take to fade out (the chat has its own time on the Chat page).
 - Show the whole HUD on demand: while you hold Alt, Ctrl or Shift, or with a key you bind (Esc, Options, Keybindings, AddOns, QuietHUD).
 
 **Elements** (what fades, and what brings each one back)
@@ -202,13 +203,13 @@ QuietHUD only changes opacity, and hides what you ask it to hide, so it sits nex
 
 ## Settings on the Forever beta
 
-The Forever beta (build 1.60.1.69977) writes saved variables at logout but never reads them back, so
-an addon's settings would reset every launch. QuietHUD keeps its normal saved variable, which starts
-working as soon as Blizzard fixes this, and also stores its settings in small account-wide macros,
-`QuietHUD data`, `QuietHUD bags`, `QuietHUD opacity`, `QuietHUD groups` and `QuietHUD frames` (the
-frames you added with `/qhud add`), which the client does save and reload. Please leave those macros
-alone: deleting them resets the settings they hold. They use five of the account's macro slots, and
-they are written out of combat, a moment after a change. Both
+Until build 1.60.1.70338 the Forever beta wrote saved variables at logout but never read them back, so
+an addon's settings reset every launch. QuietHUD therefore also stores its settings in small
+account-wide macros, `QuietHUD data` (and `QuietHUD data 2` when there are many), `QuietHUD bags`,
+`QuietHUD opacity`, `QuietHUD groups` and `QuietHUD frames` (the frames you added with `/qhud add`).
+Since build 70338 the game reads the saved variables again, and QuietHUD goes by them. The macros are
+still written as a backup, out of combat, a moment after a change and at logout, and they are what
+QuietHUD falls back on if the saved variables do not load. Please leave them alone. Both
 `QuietHUD.toc` and `QuietHUD_Camelot.toc` are shipped, because the client looks for the `_Camelot`
 manifest.
 
