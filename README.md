@@ -72,6 +72,12 @@ brighter than the "active" opacity, so if you drag one slider past the other, th
 **Show while my weapon is drawn.** Draw your weapon (or your wand) to bring the HUD up, sheathe it to send it
 away. QuietHUD asks the game whether a weapon is out, so it stays right through fights and the wand.
 
+**Keep my weapon drawn after spells, chests and crafting** (off by default). Out of combat the game puts
+your weapon away by itself when you buff, open a chest, pick a lock, craft or loot, and the HUD drops with
+it. With this ticked, QuietHUD draws the weapon again as soon as the cast is over, so the HUD stays up. You
+will see your character draw it again. The sheath key still puts it away and hides the HUD. The weapon is
+left alone while you are mounted, swimming, dead, on a flight path or in a fight.
+
 **Show while I have a target.** For people who want the HUD whenever they are interacting with something,
 whether or not it is a fight.
 

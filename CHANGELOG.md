@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.5.0-beta1 (test build)
+
+**This is a test build.** If you hit a really bad bug, go back to 1.4.0 (CurseForge Files tab, or set QuietHUD back to Release in the CurseForge app) and tell me in the comments what happened.
+
+Your settings carry over.
+
+### Added
+
+- **"Keep my weapon drawn after spells, chests and crafting"**, under "Show while my weapon is drawn" (off by default). Out of combat the game puts your weapon away by itself when you buff, open a chest, pick a lock, craft or loot, and the HUD drops with it. With this ticked, QuietHUD draws the weapon again once the cast is over, so the HUD stays up. The sheath key still puts the weapon and the HUD away. Left alone while mounted, swimming, dead, on a taxi or in a fight.
+
+### Changed
+
+- **QuietHUD does far less work while nothing changes.** It used to set every faded frame's opacity on every frame drawn. Now it only writes an opacity when it changes, and while nothing is fading it checks ten times a second instead of every frame; combat, a target, a cast, moving, the mouse on a frame and the other things it watches still wake it at once. Standing still in Elwynn it went from 0.230 ms a frame to 0.010.
+
+### Fixed
+
+- **Leatrix Plus's Square minimap:** the border and buttons faded but the map picture stayed solid. QuietHUD now notices Leatrix putting its own mask back and fades the minimap with the dark layer instead (as with "Darken the minimap"). One chat line at login says so.
+
 ## 1.4.0
 
 Your settings carry over.

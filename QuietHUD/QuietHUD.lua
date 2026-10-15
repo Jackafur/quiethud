@@ -67,6 +67,7 @@ local FIELDS = {
 	{ key = "mouseShows", code = "ms", kind = "bool", def = false },
 	{ key = "mouseSeconds", code = "mt", kind = "num", def = 3 },
 	{ key = "notFullShows", code = "nf", kind = "bool", def = false },
+	{ key = "keepDrawn", code = "kd", kind = "bool", def = false },
 }
 local DEFAULTS, BY_CODE = {}, {}
 for _, f in ipairs(FIELDS) do
@@ -173,6 +174,25 @@ local EXTRA_GROUPS = { "bars", "player", "hud", "quest", "map", "hidden", "chat"
 local FADE_ORDER = { "bars", "player", "hud", "quest", "map", "chat", "nav", "rxp", "bags", "micro" }
 for _, s in ipairs(SPLIT) do FADE_ORDER[#FADE_ORDER + 1] = s.g end
 local HIDE_TOGGLES = { { "reporter", "hideReporter" } }
+-- The order the main loop writes the lists in. A frame in two lists (/qhud add hidden PlayerFrame) belongs to the later one,
+-- hidden last of all: up to 1.4.0 every list was written every frame and the last write won; now a list is written only when
+-- its value changes, so the frame is skipped in every list but its owner (rebuildLists fills woc.owner from this).
+local WRITE_ORDER = {}
+for _, g in ipairs(FADE_ORDER) do
+	WRITE_ORDER[#WRITE_ORDER + 1] = g
+	if g == "bars" then
+		for i = 1, #BAR_DEFS do WRITE_ORDER[#WRITE_ORDER + 1] = "bar" .. i end
+	end
+end
+for _, pair in ipairs(HIDE_TOGGLES) do WRITE_ORDER[#WRITE_ORDER + 1] = pair[1] end
+WRITE_ORDER[#WRITE_ORDER + 1] = "hidden"
+-- The cast bar fades itself out after a cast: it lowers its own opacity a little each frame and hides itself at 0. Setting its
+-- opacity again on every tick would undo that, and the finished bar would stay on screen. So it only gets the group's opacity
+-- while a cast is in progress (the game sets it to full when a cast starts); before and after, the game is left alone.
+-- The breath, fatigue and feign death timers (the "mirror timers") are treated the same way: they are part of the player row,
+-- get its opacity while a timer is running, and a running timer shows the row (see the main loop).
+local SELF_FADING = { PlayerCastingBarFrame = "cast", CastingBarFrame = "cast", MirrorTimerContainer = "mirror",
+	MirrorTimer1 = "mirror", MirrorTimer2 = "mirror", MirrorTimer3 = "mirror" }
 -- The frames that count for "mouse over" on the Action bars row. The flyouts (the totem bar's column of totems and the arrow
 -- that opens it, and Blizzard's spell flyout) open outside their bar, so they count too while they are shown, or the bars
 -- would fade the moment the mouse moves up into them. Buttons another addon moved out of their bar are added in rebuildLists.
@@ -237,6 +257,87 @@ local barHover, discovered = {}, {}
 -- faded on their own and counted for mouse over. ignoring: the buttons told to ignore their parent's opacity (checkElsewhere).
 local elsewhere = { bars = {}, extra = {}, ignoring = {} }
 local debugOn = false
+
+-- Write on change (since 1.5.0). Up to 1.4.0 the main loop set the opacity of every faded frame on every frame drawn, whether
+-- or not it had changed: about 50 SetAlpha calls a frame at idle, up to about 180 with another addon's buttons out of their
+-- bars, two thirds of all addon time on the owner's PC. Now a group is written when its opacity changes, and when something
+-- else could have changed its frames: the lists, a setting, buttons moving out of or back into their bar, an addon loading,
+-- a listed frame being made later. A frame QuietHUD holds below full opacity is watched: the game or another addon setting
+-- it back (RestedXP on every redraw of its targets window) is undone in the same call, by a hook on that frame's SetAlpha,
+-- not a frame later. An opacity moved without a SetAlpha call (an animation, as on the loss of control frame) is caught on
+-- the half-second pass (woc.drift). At full opacity a frame is let go: nothing is held there, so a frame that left a group,
+-- or an unticked bar, is another addon's to set. The cast bar and the breath bar are the exception: the game puts them to
+-- full itself at every cast, so while a cast or a timer runs they are written every frame, as before (SELF_FADING).
+-- (one table, not eight locals: the file is near the game's limit of 200 locals in one file)
+local woc = {
+	applied = {}, all = {},         -- per group: the opacity last written, and whether it went to every action bar
+	names = {}, selfFading = {},    -- every frame name in a list; the groups with a cast bar or a breath bar in them
+	owner = {},                     -- frame name -> the list that owns it (the last in WRITE_ORDER that holds the name)
+}
+do
+	local want = setmetatable({}, { __mode = "k" })    -- frame -> the opacity QuietHUD holds it at (below full)
+	local hooked = setmetatable({}, { __mode = "k" })
+	local writing = false
+	-- Someone else set a held frame's opacity: QuietHUD's goes back on in the same call.
+	local function keep(f, a)
+		if writing or not DB.enabled then return end
+		local w = want[f]
+		if w == nil then return end
+		if type(a) == "number" and not (issecretvalue and issecretvalue(a)) and math.abs(a - w) < 0.005 then return end
+		writing = true
+		pcall(f.SetAlpha, f, w)
+		writing = false
+	end
+	woc.write = function(f, a)
+		if a >= 0.999 then
+			want[f] = nil
+		else
+			want[f] = a
+			if not hooked[f] then hooked[f] = pcall(hooksecurefunc, f, "SetAlpha", keep) or nil end
+		end
+		writing = true
+		local ok, err = pcall(f.SetAlpha, f, a)
+		writing = false
+		if not ok then error(err, 0) end -- (said once by the loop, as before; the flag is clear by then)
+	end
+	-- Every group is written again at the next update.
+	woc.forget = function()
+		woc.applied, woc.all = {}, {}
+	end
+	-- Twice a second: a held frame whose opacity moved without a SetAlpha call gets QuietHUD's back.
+	woc.drift = function()
+		if not DB.enabled then return end
+		for f, w in pairs(want) do
+			local ok, a = pcall(f.GetAlpha, f)
+			if ok and type(a) == "number" and not (issecretvalue and issecretvalue(a)) and math.abs(a - w) > 0.01 then
+				writing = true
+				pcall(f.SetAlpha, f, w)
+				writing = false
+			end
+		end
+	end
+	-- A listed frame made after its group was last written (an addon making its window on demand) is faded at the next update.
+	pcall(hooksecurefunc, "CreateFrame", function(_, name)
+		if type(name) == "string" and woc.names[name] then woc.forget() end
+	end)
+end
+
+-- The sleeping loop, step 1 (2026-10-13; the plan is in memory, rules-quiethud, "The goal is ElvUI's zero"). update() runs
+-- every frame only while a fade is moving (loop.moving, set by update itself). Otherwise it runs ten times a second, and at
+-- once when something wakes it (wakeLoop): a game message (combat, a target, a cast, moving, a zone, the sheath key, a
+-- timer, health or power), the mouse entering or leaving a listed frame, a setting, a slash command. The tick keeps it right
+-- on its own for anything that lasts; a wake only makes it instant. What a tick can miss is something shorter than a tenth
+-- of a second that leaves no trace: with "Show while I move the mouse", the cursor leaving and coming back to the very same
+-- spot between two looks (accepted; a mouse press has a message and wakes it). Step 2, later: the questions that have a game message stop being asked at all.
+local loop = { clock = 0, wake = true, moving = false, hovered = setmetatable({}, { __mode = "k" }) }
+local function wakeLoop() loop.wake = true end
+-- The mouse entering or leaving a frame wakes the loop (a frame with no mouse never fires these: the tick sees it).
+local function hookHover(f)
+	if type(f) ~= "table" or not f.HookScript or loop.hovered[f] then return end
+	loop.hovered[f] = true
+	pcall(f.HookScript, f, "OnEnter", wakeLoop)
+	pcall(f.HookScript, f, "OnLeave", wakeLoop)
+end
 local lastActive = false
 
 -- Debug output: printed, and also kept in DB.trace (saved to the addon's saved-variables file on /reload).
@@ -325,7 +426,7 @@ local function rebuildLists()
 	end
 	for n in pairs(before) do
 		local f = not stillListed[n] and _G[n]
-		if f and f.SetAlpha then f:SetAlpha(1) end
+		if f and f.SetAlpha then woc.write(f, 1) end
 	end
 	barHover = {}
 	local seen = {}
@@ -348,6 +449,20 @@ local function rebuildLists()
 			for j = 1, set[2] do barHover[#barHover + 1] = set[1] .. j end
 		end
 	end
+	-- The lists changed: every group is written again (write on change, above).
+	woc.names, woc.selfFading, woc.owner = {}, {}, {}
+	for g, list in pairs(LISTS) do
+		for _, n in ipairs(list) do
+			woc.names[n] = true
+			if SELF_FADING[n] then woc.selfFading[g] = true end
+		end
+	end
+	for _, list in ipairs(WRITE_ORDER) do
+		for _, n in ipairs(LISTS[list] or {}) do woc.owner[n] = list end
+	end
+	woc.forget()
+	for n in pairs(woc.names) do hookHover(_G[n]) end
+	for _, n in ipairs(barHover) do hookHover(_G[n]) end
 end
 rebuildLists()
 
@@ -496,6 +611,9 @@ local hiddenMmButtons -- names of the minimap buttons of other addons that are h
 
 local function persistSoon()
 	userChanged = true
+	woc.forget()
+	wakeLoop()
+	if applyMouseWatch then applyMouseWatch() end
 	persist()
 	if persistBags then persistBags() end
 	if C_Timer and C_Timer.After then
@@ -595,13 +713,6 @@ local function initDB()
 end
 
 -- Helpers
--- The cast bar fades itself out after a cast: it lowers its own opacity a little each frame and hides itself at 0. Setting its
--- opacity again on every tick would undo that, and the finished bar would stay on screen. So it only gets the group's opacity
--- while a cast is in progress (the game sets it to full when a cast starts); before and after, the game is left alone.
--- The breath, fatigue and feign death timers (the "mirror timers") are treated the same way: they are part of the player row,
--- get its opacity while a timer is running, and a running timer shows the row (see the main loop).
-local SELF_FADING = { PlayerCastingBarFrame = "cast", CastingBarFrame = "cast", MirrorTimerContainer = "mirror",
-	MirrorTimer1 = "mirror", MirrorTimer2 = "mirror", MirrorTimer3 = "mirror" }
 
 	-- The setting that gives a group its own opacity, in place of "Opacity when active".
 	local OVERRIDE_KEYS = { bars = "ovBars", player = "ovPlayer", hud = "ovHud", quest = "ovQuest", map = "ovMap", bags = "ovBagsBar", micro = "ovMicro" }
@@ -623,6 +734,7 @@ do
 		pcall(events.RegisterEvent, events, e)
 	end
 	events:SetScript("OnEvent", function(_, event, timer)
+		wakeLoop()
 		if event == "PLAYER_ENTERING_WORLD" then
 			mirror.running = {}
 			for i = 1, 3 do
@@ -639,23 +751,25 @@ do
 	end)
 end
 
-local function setAlpha(names, a, onlySelfFading)
+-- list: the list being written; a frame that belongs to another list (woc.owner) is left to that one.
+local function setAlpha(names, a, onlySelfFading, list)
 	for i = 1, #names do
 		local f = _G[names[i]]
-		if f and f.SetAlpha then
+		local owner = list and woc.owner[names[i]]
+		if f and f.SetAlpha and (owner == nil or owner == list) then
 			if SELF_FADING[names[i]] then
 				if (SELF_FADING[names[i]] == "cast" and (f.casting or f.channeling)) or (SELF_FADING[names[i]] == "mirror" and mirrorTimerActive()) then
 					f:SetAlpha(a)
 				end
 			else
-				if not onlySelfFading then f:SetAlpha(a) end
+				if not onlySelfFading then woc.write(f, a) end
 			end
 		end
 	end
 end
 
 local function applyList(name, a)
-	setAlpha(LISTS[name], a)
+	setAlpha(LISTS[name], a, nil, name)
 end
 
 -- Also fades the frames you added to the chat group (/qhud add chat <frame name>), for example the window or
@@ -687,14 +801,14 @@ do
 	end
 	applyChat = function(a)
 		chatA = a
-		for i = 1, #chatList do chatList[i]:SetAlpha(a) end
-		setAlpha(LISTS.chat, a)
+		for i = 1, #chatList do woc.write(chatList[i], a) end
+		setAlpha(LISTS.chat, a, nil, "chat")
 		for i = 1, #chatButtons do
 			local b = chatButtons[i]
 			for k = 1, #STATE_TEXTURES do
 				local get = b[STATE_TEXTURES[k]]
 				local tex = get and get(b)
-				if type(tex) == "table" and tex.IsIgnoringParentAlpha and tex:IsIgnoringParentAlpha() then tex:SetAlpha(a) end
+				if type(tex) == "table" and tex.IsIgnoringParentAlpha and tex:IsIgnoringParentAlpha() then woc.write(tex, a) end
 			end
 			local flash = b.Flash
 			if type(flash) == "table" and flash.IsIgnoringParentAlpha and flash.SetIgnoreParentAlpha then
@@ -717,7 +831,7 @@ end
 local function applyButtons(prefix, count, a)
 	for j = 1, count do
 		local b = _G[prefix .. j]
-		if b and b.SetAlpha then b:SetAlpha(a) end
+		if b and b.SetAlpha then woc.write(b, a) end
 	end
 end
 
@@ -764,7 +878,7 @@ end
 -- in their bar, or when their bar is not faded. Out of combat only, in case the buttons are protected then.
 local function checkElsewhere()
 	if InCombatLockdown() then return end
-	local changed = false
+	local changed, flipped = false, false
 	local fadeOn = DB.enabled and DB.fadeBars
 	local function look(kind, key, prefix, count, frames, ticked)
 		local first = _G[prefix .. "1"]
@@ -779,13 +893,18 @@ local function checkElsewhere()
 			if b and b.SetIgnoreParentAlpha and (elsewhere.ignoring[b] or false) ~= ignore then
 				elsewhere.ignoring[b] = ignore or nil
 				b:SetIgnoreParentAlpha(ignore)
-				if not ignore then b:SetAlpha(1) end
+				if not ignore then woc.write(b, 1) end
+				flipped = true
 			end
 		end
 	end
 	for i, def in ipairs(BAR_DEFS) do look(elsewhere.bars, i, def.buttons, 12, def.frames, barBit(DB.barFade, i)) end
 	for k, set in ipairs(EXTRA_BUTTONS) do look(elsewhere.extra, k, set[1], set[2], set[3], true) end
-	if changed then rebuildLists() end
+	if changed then
+		rebuildLists()
+	elseif flipped then
+		woc.forget() -- (the buttons were told to ignore, or follow, their holder: their bar is written again)
+	end
 end
 
 -- Fading in takes FADE. Fading out takes the "Fade out animation" time of the Show when page (FADE unless it was changed), and
@@ -906,6 +1025,7 @@ local function buildChat()
 			button(f)
 		end
 	end
+	woc.forget()
 end
 
 -- Whether the weapon is drawn. The game says so: GetSheathState is 1 sheathed, 2 melee weapon, 3 ranged weapon or wand.
@@ -944,12 +1064,15 @@ local function toggleDrawn()
 	print("QuietHUD: HUD " .. (weaponDrawn(true) and "shown" or "hidden"))
 end
 
--- The fallback guess follows the Toggle Sheath key (see weaponDrawn).
-local lastSheath, hooked = 0, false
+-- The fallback guess follows the Toggle Sheath key (see weaponDrawn). ownSheath is up while QuietHUD itself draws the
+-- weapon (see keepDrawn): that is not a key press. sheathKeyAt is the last press that no weapon change has answered yet.
+local lastSheath, hooked, ownSheath, sheathKeyAt = 0, false, false, nil
 local function sheathToggled(source)
+	wakeLoop()
+	if ownSheath then return end
 	local now = GetTime()
 	if now - lastSheath < 0.25 then return end
-	lastSheath = now
+	lastSheath, sheathKeyAt = now, now
 	drawn = not drawn
 	-- (the game changes its sheath state a moment after the key, so the line waits for it)
 	if debugOn and C_Timer and C_Timer.After then
@@ -958,6 +1081,94 @@ local function sheathToggled(source)
 			print("QuietHUD: sheath key via " .. source .. ", now the game says " .. tostring(state)
 				.. " (1 sheathed, 2 melee, 3 ranged), HUD " .. (isDrawn and "shown" or "hidden"))
 		end)
+	end
+end
+
+-- "Keep my weapon drawn after spells, chests and crafting" (Show when page, off by default). The game puts the weapon away
+-- by itself for a cast out of combat (a buff, opening a chest, a lock, crafting, looting), which would drop the HUD with it.
+-- With the box ticked QuietHUD draws the weapon again a moment later, so the weapon and the HUD never disagree: one press of
+-- the sheath key puts both away. Told apart by the key: a weapon that went away with no press of the Toggle Sheath key
+-- before it was put away by the game. Left alone while mounted, swimming, dead, on a flight path or in a fight (the game
+-- handles the weapon itself there), and while a cast is still running (it waits for the cast to end, so a craft is never
+-- disturbed and a row of crafts gets one draw at the end). A press of the key while a draw is on its way calls the draw
+-- off: the weapon is yours again. It rides the main loop and the sheath state that loop already reads: no timer of its
+-- own, and nothing at all with the box unticked.
+-- Returns true while a draw is on its way, so the HUD stays up through the gap.
+local keepDrawn
+do
+	local SETTLE = 0.4 -- seconds after the weapon went away, or after the cast ended, before it is drawn again
+	local prev, want, dueAt, calls, calledAt, armedAt
+	-- True when the game says yes, and also when it will not say (then the weapon is left alone).
+	local function says(fn, ...)
+		if not fn then return false end
+		local ok, v = pcall(fn, ...)
+		if not ok or (issecretvalue and issecretvalue(v)) then return true end
+		return v and true or false
+	end
+	-- Whether fn (the game's cast or channel question) names a cast of yours: true, false, or nil when it cannot be asked.
+	-- (a name the game hides is still a cast)
+	local function busyWith(fn)
+		if not fn then return nil end
+		local ok, name = pcall(fn, "player")
+		if not ok then return nil end
+		if issecretvalue and issecretvalue(name) then return true end
+		return name ~= nil
+	end
+	-- Casting or channeling, asked of the game itself: a cast bar addon can switch the game's own cast bar off, and that
+	-- bar then never hears of a cast (or keeps an old one). Only when the game cannot be asked does its cast bar decide.
+	local function casting()
+		local cast, channel = busyWith(UnitCastingInfo), busyWith(UnitChannelInfo)
+		if cast or channel then return true end
+		if cast == false and channel == false then return false end
+		local castBar = PlayerCastingBarFrame or CastingBarFrame
+		return (castBar and (castBar.casting or castBar.channeling)) and true or false
+	end
+	keepDrawn = function(on, now, state, combat)
+		if not on or not state or not ToggleSheath then
+			prev, want = state, nil
+			return false
+		end
+		if state ~= prev then
+			local byKey = sheathKeyAt and now - sheathKeyAt < 1.5
+			sheathKeyAt = nil
+			if byKey then
+				want = nil -- your own key: the weapon is yours again
+			elseif state == 1 and prev and not want then
+				want, dueAt, calls, calledAt, armedAt = prev, now + SETTLE, 0, 0, now
+				trace("QuietHUD: the game put the weapon away, drawing it again")
+			end
+			prev = state
+		end
+		if not want then return false end
+		-- A press of the key since then, also one the weapon has not answered (or never will): the weapon is yours again.
+		if lastSheath > armedAt then
+			want = nil
+			return false
+		end
+		-- Out again (or somewhere the key would only put it away): done. From melee one more step reaches the wand.
+		if state == want or (state ~= 1 and not (state == 2 and want == 3)) then
+			want = nil
+			return false
+		end
+		if combat or says(IsMounted) or says(IsSwimming) or says(UnitIsDeadOrGhost, "player") or says(UnitOnTaxi, "player") then
+			want = nil
+			return false
+		end
+		if casting() then
+			dueAt = now + SETTLE
+			return true
+		end
+		-- (the game changes its state a moment after a call, so each one gets time to show)
+		if now < dueAt or now - calledAt < 1.5 then return true end
+		if calls >= 3 then
+			want = nil -- the game does not draw it (a shapeshift form, for example): give up
+			return false
+		end
+		calls, calledAt = calls + 1, now
+		ownSheath = true
+		pcall(ToggleSheath)
+		ownSheath = false
+		return true
 	end
 end
 
@@ -1009,7 +1220,7 @@ local navHosts, navLastError = {}, nil
 local navForce = false   -- /qhud arrow: keeps the nav group visible whatever else is going on
 local releaseNav
 local function applyNav(a)
-	local wanted = {}
+	local wanted, pending = {}, false
 	for _, name in ipairs(LISTS.nav) do
 		local f = _G[name]
 		if f and f.SetParent then
@@ -1028,11 +1239,13 @@ local function applyNav(a)
 					navHosts[f] = rec
 				else
 					navLastError = tostring(made)
+					pending = true
 				end
 			end
 			if rec then rec.host:SetAlpha(a) end
 		end
 	end
+	woc.navPending = pending -- (a host that could not be made is tried again at every update; see woc.group and releaseNav)
 	releaseNav(wanted)
 end
 -- Frames taken out of the group go back where they were. The game blocks that for a protected frame during combat (without
@@ -1045,6 +1258,7 @@ releaseNav = function(wanted)
 			if _G[name] then wanted[_G[name]] = true end
 		end
 	end
+	local waiting = false
 	for f, rec in pairs(navHosts) do
 		if not wanted[f] then
 			rec.host:SetAlpha(1)
@@ -1060,8 +1274,11 @@ releaseNav = function(wanted)
 					navHosts[f] = nil
 				end
 			end
+			if navHosts[f] then waiting = true end
 		end
 	end
+	-- While a frame waits to go back, or one still has no host, the nav group goes through every update (see woc.group).
+	woc.navWaits = waiting or woc.navPending or false
 end
 -- A short log of the minimap decisions, saved with the settings on /reload. It is kept even without debug mode,
 -- so a minimap that does not show can be diagnosed afterwards.
@@ -1200,7 +1417,7 @@ do
 
 	-- Everything around the map at opacity a: the cluster stays at 1, its parts and the frames added to the map group fade.
 	local function fadeMapAround(a)
-		MinimapCluster:SetAlpha(1)
+		woc.write(MinimapCluster, 1) -- (releases the hold the opacity mode put on it, or the hook would dim it again)
 		mapFactor = a
 		local ok, err = pcall(function()
 			fadeMapParts(MinimapCluster, a)
@@ -1209,8 +1426,16 @@ do
 		if not ok then mapLog("could not fade the minimap parts: " .. tostring(err)) end
 		for _, name in ipairs(LISTS.map) do
 			local f = name ~= "MinimapCluster" and _G[name]
-			if f and f.SetAlpha then f:SetAlpha(a) end
+			if f and f.SetAlpha and (woc.owner[name] or "map") == "map" then woc.write(f, a) end
 		end
+		woc.applied.map = nil -- (the group's frames were set here, not by applyMapList: it writes again at the next change)
+	end
+
+	-- The frames of the map group (the cluster and anything added to the group), written when their opacity changes.
+	local function applyMapList(a)
+		if woc.applied.map == a then return end
+		woc.applied.map = a
+		applyList("map", a)
 	end
 
 	-- Building interiors and cities (the game's rest areas: Stormwind's streets count as outdoors, but are rest areas). The map is
@@ -1231,7 +1456,7 @@ do
 				if mapOverlay then mapOverlay:Hide() end
 				restoreMapParts()
 			end
-			applyList("map", 1)
+			applyMapList(1)
 			return
 		end
 		if mapDimApplied and math.abs(mapDimApplied - a) < 0.004 then return end
@@ -1253,6 +1478,19 @@ do
 	-- shown. mapMaskStep is nil while that mask is on, the step of ours otherwise, or -1 when ours has to be set again (after
 	-- the map was shrunk or moved, or something else changed the mask).
 	local mapMaskOrig, mapMaskStep, mapMaskOurs, mapMaskFactor, mapMaskPartsAt, mapMaskShape = nil, nil, false, nil, 0, nil
+	-- Another addon's hook can put its own mask straight back inside QuietHUD's call (Leatrix Plus's Square minimap does since
+	-- 1.60.17: the parts around the map faded, the map picture never did). A mask set back inside QuietHUD's own call, while
+	-- one of its faded masks is being set, can only mean that, so the first one gives the mask up for the session: the
+	-- minimap fades with the dark layer instead, as if "Darken the minimap" were ticked (at login the map starts faded, so
+	-- it is known from the first frame). Said once in chat and in the map log.
+	local mapMaskSetting, mapMaskFading, mapMaskContested = nil, false, false
+	local function maskFought(asset)
+		mapMaskOrig = asset -- (the other addon's own mask: the one to put back at full)
+		if mapMaskContested then return end
+		mapMaskContested = true
+		mapLog("another addon puts its minimap mask back whenever QuietHUD sets one (Leatrix Plus's Square minimap does): the minimap fades with the dark layer from now on")
+		print("QuietHUD: another addon keeps putting the minimap mask back (Leatrix Plus's Square minimap does), so the minimap fades with the dark layer instead.")
+	end
 
 	-- The mask to put back: the last one another addon set, or else the game's round one, or a plain square for a square
 	-- minimap whose addon set its mask before QuietHUD was loaded.
@@ -1261,8 +1499,9 @@ do
 		return shape == "SQUARE" and "Interface\\ChatFrame\\ChatFrameBackground" or "ui-hud-minimap-frame-generic-mask"
 	end
 
-	local function setMapMask(asset)
-		mapMaskOurs = true
+	-- faded: one of QuietHUD's faded masks, not the one put back at full (only those count as a fight when set back).
+	local function setMapMask(asset, faded)
+		mapMaskOurs, mapMaskSetting, mapMaskFading = true, asset, faded and true or false
 		local ok, err = pcall(Minimap.SetMaskTexture, Minimap, asset)
 		mapMaskOurs = false
 		if not ok then mapLog("could not set the minimap mask: " .. tostring(err)) end
@@ -1270,7 +1509,10 @@ do
 
 	if Minimap and Minimap.SetMaskTexture then
 		hooksecurefunc(Minimap, "SetMaskTexture", function(_, asset)
-			if mapMaskOurs then return end
+			if mapMaskOurs then
+				if mapMaskFading and asset ~= mapMaskSetting then maskFought(asset) end
+				return
+			end
 			mapMaskOrig = asset
 			if mapMaskStep then mapMaskStep = -1 end
 		end)
@@ -1293,14 +1535,14 @@ do
 				setMapMask(originalMask(mapMaskShape or shape))
 				restoreMapParts()
 			end
-			applyList("map", 1)
+			applyMapList(1)
 			return
 		end
 		local level = math.max(0, math.floor(a * 20 + 0.5))
 		if level ~= mapMaskStep or shape ~= mapMaskShape then
 			mapMaskStep, mapMaskShape = level, shape
 			local prefix = shape == "SQUARE" and "s" or "m"
-			setMapMask(level >= 20 and originalMask(shape) or ("Interface\\AddOns\\QuietHUD\\masks\\" .. prefix .. level * 5 .. ".tga"))
+			setMapMask(level >= 20 and originalMask(shape) or ("Interface\\AddOns\\QuietHUD\\masks\\" .. prefix .. level * 5 .. ".tga"), level < 20)
 		end
 		-- The parts again every half second, for map pins that addons add or change while the map is faded.
 		local now = GetTime()
@@ -1314,7 +1556,7 @@ do
 	local mapMode
 	applyMap = function(a)
 		local mode = "alpha"
-		if DB.mapDarken then
+		if DB.mapDarken or mapMaskContested then
 			mode = "dark"
 		elseif mapMaskUsable() then
 			mode = "mask"
@@ -1324,6 +1566,7 @@ do
 		if mode ~= mapMode then
 			mapLog("minimap fades with " .. (mode == "mask" and "its mask" or mode == "dark" and "the dark layer" or "its opacity"))
 			mapMode = mode
+			woc.applied.map = nil -- (each mode sets the group's frames its own way: written again)
 		end
 		if mode ~= "mask" and mapMaskStep then applyMinimapMask(1) end
 		if mode ~= "dark" and mapDimApplied then applyMinimapAlpha(1) end
@@ -1332,7 +1575,7 @@ do
 		elseif mode == "dark" then
 			applyMinimapAlpha(a)
 		else
-			applyList("map", a)
+			applyMapList(a)
 		end
 	end
 
@@ -1679,17 +1922,21 @@ do
 		if a <= 0 then a = DB.base or 0.6 elseif a < 0.1 then a = 0.1 end -- 0 is Global: the "When active" opacity
 		local restoring = false
 		if a >= 0.999 then
-			if not tooltipTouched then return end
+			if not tooltipTouched then loop.tips = false return end
 			a = 1
 			restoring = true
 		end
+		local shown = false
 		for i = 1, #TOOLTIPS do
 			local f = _G[TOOLTIPS[i]]
 			if f and f.SetAlpha and f.GetAlpha then
 				local now = f:GetAlpha()
 				if (restoring and math.abs(now - a) > 0.01) or (not restoring and now > a + 0.01) then f:SetAlpha(a) end
+				if not restoring and f.IsShown and f:IsShown() then shown = true end
 			end
 		end
+		-- (the sleeping loop looks at the tooltips every frame while one is on screen below full opacity: see the driver)
+		loop.tips = shown
 		tooltipTouched = a < 1
 	end
 	-- The game also puts a tooltip back to full opacity when it gets new content while it is already shown (moving the mouse
@@ -1779,6 +2026,23 @@ local function applyGroup(g, a, allBars)
 	else
 		applyList(g, a)
 	end
+end
+
+-- Sets a group when its opacity changed since the last write, or when woc.forget was called (write on change, above). The
+-- minimap group goes through every time: applyMap picks between the mask, the dark layer and plain opacity as you move, and
+-- writes only on a change itself. So does the nav group while a frame taken out of it waits for a fight to end. A cast bar or
+-- a breath bar in a steady group is still written while it runs.
+woc.group = function(g, a, allBars)
+	if g == "map" or (g == "nav" and woc.navWaits) then
+		applyGroup(g, a, allBars)
+		return
+	end
+	if woc.applied[g] == a and woc.all[g] == allBars then
+		if woc.selfFading[g] then setAlpha(LISTS[g], a, true, g) end
+		return
+	end
+	woc.applied[g], woc.all[g] = a, allBars
+	applyGroup(g, a, allBars)
 end
 
 -- 3D models (portraits drawn as a live model, for example by Animated Blizzard Portraits, which also puts them on RestedXP's
@@ -2091,6 +2355,7 @@ do
 		changedAt = GetTime()
 		-- (never cut short: a health tick does not end the longer wait a mana change started)
 		showUntil = math.max(showUntil, changedAt + hold)
+		wakeLoop()
 	end)
 	-- peek (for /qhud state): seconds since the last change that counted and seconds the frame still stays for it (nil: no
 	-- change yet, or not listening).
@@ -2122,7 +2387,16 @@ local function update(dt)
 	local enabled = DB.enabled
 
 	local inside = inDungeonOrRaid()
-	local active = edit or (DB.inCombat and (combat or now < combatEnd)) or (DB.sheathShows and weaponDrawn())
+	local weaponOut = false
+	if DB.sheathShows then
+		local state
+		weaponOut, state = weaponDrawn()
+		-- (the weapon the game put away counts as out while QuietHUD draws it again; see keepDrawn)
+		if keepDrawn((enabled and DB.keepDrawn) and true or false, now, state, combat) then weaponOut = true end
+	else
+		keepDrawn(false) -- (forgets the weapon state, so nothing is drawn on old news when the box is ticked again)
+	end
+	local active = edit or (DB.inCombat and (combat or now < combatEnd)) or weaponOut
 		or (DB.showOnTarget and UnitExists("target")) or (DB.mouseShows and mouseActive(now))
 	lastActive = active and true or false
 	local okMove, moving = pcall(isMoving)
@@ -2176,12 +2450,15 @@ local function update(dt)
 	for _, s in ipairs(SPLIT) do flags[s.g] = gFade(s) end
 	if DB.hidePanel then flags.panel = true end
 	local idle = DB.idle or 0
-	local mapAlpha = 1
+	local mapAlpha, anyFade = 1, false
 	for _, g in ipairs(FADE_ORDER) do
 		-- Fade is off for this element, but it has an opacity of its own: it stays at that opacity (Edit Mode shows it solid).
 		local fixedA = enabled and not edit and not flags[g] and ownOpacity(g)
 		if enabled and flags[g] then
-			cur[g] = step(cur[g], vis[g] and 1 or 0, dt, g == "chat" and DB.chatFadeSeconds or DB.fadeOutSeconds)
+			local target = vis[g] and 1 or 0
+			if cur[g] ~= target then anyFade = true end
+			-- (a fade that starts on a tick, after up to a tenth of a second asleep, begins with one small step, not a jump)
+			cur[g] = step(cur[g], target, loop.moving and dt or math.min(dt, 1 / 60), g == "chat" and DB.chatFadeSeconds or DB.fadeOutSeconds)
 			local peak = DB.base or 0.6
 			if edit or (g == "map" and not DB.mapFollowsHud) then
 				peak = 1
@@ -2205,15 +2482,15 @@ local function update(dt)
 			local low = math.min(floor, peak)
 			local a = low + (peak - low) * cur[g]
 			if g == "panel" and DB.hidePanel and not edit then a = 0 end
-			applyGroup(g, a, false)
+			woc.group(g, a, false)
 			if g == "map" then mapAlpha = a end
 			fading[g] = true
 		elseif fixedA then
-			applyGroup(g, fixedA, true)
+			woc.group(g, fixedA, true)
 			fading[g] = true
 			cur[g] = 1
 		elseif fading[g] then
-			applyGroup(g, 1, true)
+			woc.group(g, 1, true)
 			fading[g] = false
 			cur[g] = 1
 		end
@@ -2231,18 +2508,18 @@ local function update(dt)
 	for _, pair in ipairs(HIDE_TOGGLES) do
 		local fixed = enabled and not edit and fixedAlpha(pair[2]) or 1
 		if fixed < 0.999 then
-			applyList(pair[1], fixed)
+			woc.group(pair[1], fixed, false)
 			hiddenOn[pair[1]] = true
 		elseif hiddenOn[pair[1]] then
-			applyList(pair[1], 1)
+			woc.group(pair[1], 1, false)
 			hiddenOn[pair[1]] = false
 		end
 	end
 	if enabled and not edit then
-		applyList("hidden", 0)
+		woc.group("hidden", 0, false)
 		hiddenOn.hidden = true
 	elseif hiddenOn.hidden then
-		applyList("hidden", 1)
+		woc.group("hidden", 1, false)
 		hiddenOn.hidden = false
 	end
 
@@ -2254,6 +2531,7 @@ local function update(dt)
 	if hotkeyClock > 0.5 then
 		hotkeyClock = 0
 		pcall(checkElsewhere)
+		pcall(woc.drift)
 		if MinimapCluster and MinimapCluster:GetScale() > 0.5 then pcall(rememberMapRect) end
 		if MinimapCluster and mapSavedScale and MinimapCluster:GetScale() > 0.01 then MinimapCluster:SetScale(0.001) end
 		local wantShort = enabled and DB.shortHotkeys
@@ -2281,17 +2559,46 @@ local function update(dt)
 			end
 		end
 	end
+	loop.moving = anyFade
 end
 
 local lastError
 local driver = CreateFrame("Frame")
 driver:SetScript("OnUpdate", function(_, dt)
-	local ok, err = pcall(update, dt)
+	loop.clock = loop.clock + dt
+	if not (loop.wake or loop.moving or loop.clock >= 0.1) then
+		-- Asleep, one thing is still looked at every frame, and only while a tooltip is on screen with the tooltip opacity
+		-- below full: the game puts a tooltip back to full when something sets new content on it, and a frame that does so
+		-- in its own update after the tooltip's (an action button refreshing its tooltip) would flash it until the next tick.
+		if loop.tips then pcall(applyTooltips) end
+		return
+	end
+	local elapsed = loop.clock
+	loop.clock, loop.wake = 0, false
+	local ok, err = pcall(update, elapsed)
 	if not ok and err ~= lastError then
 		lastError = err
 		print("QuietHUD error (shown once): " .. tostring(err))
 	end
 end)
+-- The messages that wake the loop besides the ones QuietHUD's own handlers already take (see wakeLoop).
+do
+	local waker = CreateFrame("Frame")
+	for _, e in ipairs({ "PLAYER_TARGET_CHANGED", "PLAYER_FOCUS_CHANGED", "PLAYER_STOPPED_MOVING", "MODIFIER_STATE_CHANGED",
+		"PLAYER_DEAD", "PLAYER_ALIVE", "PLAYER_UNGHOST", "UPDATE_SHAPESHIFT_FORM", "PLAYER_MOUNT_DISPLAY_CHANGED", "UNIT_PET",
+		"GROUP_ROSTER_UPDATE", "UI_SCALE_CHANGED" }) do
+		pcall(waker.RegisterEvent, waker, e)
+	end
+	for _, e in ipairs({ "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_STOP", "UNIT_SPELLCAST_CHANNEL_START", "UNIT_SPELLCAST_CHANNEL_STOP",
+		"UNIT_SPELLCAST_INTERRUPTED", "UNIT_SPELLCAST_FAILED", "UNIT_SPELLCAST_SUCCEEDED" }) do
+		if not pcall(waker.RegisterUnitEvent, waker, e, "player") then pcall(waker.RegisterEvent, waker, e) end
+	end
+	waker:SetScript("OnEvent", wakeLoop)
+	if EditModeManagerFrame and EditModeManagerFrame.HookScript then
+		pcall(EditModeManagerFrame.HookScript, EditModeManagerFrame, "OnShow", wakeLoop)
+		pcall(EditModeManagerFrame.HookScript, EditModeManagerFrame, "OnHide", wakeLoop)
+	end
+end
 
 -- Settings menu
 
@@ -2344,6 +2651,7 @@ local PAGES = {
 		{ "note", "These decide when the HUD counts as awake, one of the things that can bring an element up. Which elements come up when it is awake is set per element in the Awake column of the Elements page." },
 		{ "check", "inCombat", "Show in combat" },
 		{ "check", "sheathShows", "Show while my weapon is drawn" },
+		{ "check", "keepDrawn", "Keep my weapon drawn after spells, chests and crafting", "Only for Show while my weapon is drawn. When the game puts your weapon away by itself (a buff, a chest, a lock, crafting, looting), QuietHUD draws it again as soon as the cast is over, so the HUD stays up. You will see your character draw the weapon again. Pressing the sheath key still puts it away and hides the HUD. Not while mounted, swimming, dead, on a flight path or in a fight." },
 		{ "check", "showOnTarget", "Show while I have a target" },
 		{ "slider", "linger", "Stay visible after combat (seconds)", 0, 180, 1, "%.0f", nil, nil, "Only for Show in combat: how long the HUD stays up after a fight ends.", 420 },
 		{ "check", "mouseShows", "Show while I move the mouse" },
@@ -3719,6 +4027,7 @@ do
 		now:SetScript("OnClick", function()
 			local t = GetTime()
 			peekUntil = t < peekUntil and 0 or t + 120
+			wakeLoop()
 			print("QuietHUD: " .. (peekUntil > 0 and "the whole HUD is shown (press again to go back to normal)" or "back to normal"))
 		end)
 		local reset = CreateFrame("Button", nil, config, "UIPanelButtonTemplate")
@@ -4361,10 +4670,13 @@ end
 for e in pairs(kindOf) do pcall(ev.RegisterEvent, ev, e) end
 for e in pairs(chatKindOf) do pcall(ev.RegisterEvent, ev, e) end
 -- The mouse press event is only listened to while the watcher is on, so none of this runs for anyone who has not asked.
+-- "Show while I move the mouse" listens too: a press wakes the sleeping loop at once, so a click shorter than its tenth of
+-- a second still counts (the handler below takes any event as a wake; the watcher's own line stays behind its setting).
 applyMouseWatch = function()
-	if DB.watchMouse and not mouseRegistered then
+	local want = DB.watchMouse or (DB.enabled and DB.mouseShows)
+	if want and not mouseRegistered then
 		mouseRegistered = pcall(ev.RegisterEvent, ev, "GLOBAL_MOUSE_DOWN")
-	elseif not DB.watchMouse and mouseRegistered then
+	elseif not want and mouseRegistered then
 		pcall(ev.UnregisterEvent, ev, "GLOBAL_MOUSE_DOWN")
 		mouseRegistered = false
 	end
@@ -4372,7 +4684,9 @@ end
 applyMouseWatch()
 
 ev:SetScript("OnEvent", function(_, event, arg1, _, _, arg4)
+	wakeLoop()
 	if event == "ADDON_LOADED" then
+		woc.forget()
 		if arg1 == ADDON then initDB() end
 	elseif event == "VARIABLES_LOADED" then
 		initDB()
@@ -4801,4 +5115,8 @@ DB.mouseShows and tostring(mouseActive(GetTime())) or "option off"))
 	else
 		print("QuietHUD: /qhud (menu), toggle, peek, shift, reset, target, quest, map, chat, bars, instance, state, debug, where, hotkeys, arrow, nav, mouse, alpha <frame> <0-1>, chain <frame>, around <frame>, find <text>, methods <frame> [text], add <group> [name], remove <name>, list")
 	end
+end
+do -- a slash command wakes the loop, so what it changes shows at once
+	local slashRun = SlashCmdList["QUIETHUD"]
+	SlashCmdList["QUIETHUD"] = function(msg) slashRun(msg) wakeLoop() end
 end
