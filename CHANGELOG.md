@@ -1,10 +1,10 @@
 # Changelog
 
-## 1.5.0-beta2 (test build)
+## 1.5.0-beta3 (test build)
 
-**This is a test build.** If something breaks badly, go back to 1.4.0 (CurseForge Files tab, or set QuietHUD back to Release in the CurseForge app) and let me know in the comments what happened. One catch if you do: 1.4.0 doesn't know the new Combat, Weapon, Target and Mouse move columns, so stuff won't come up for those there until you tick Awake again on the Elements page.
+**This is a test build.** If something breaks badly, go back to 1.4.0 (CurseForge Files tab, or set QuietHUD back to Release in the CurseForge app) and let me know in the comments what happened. One catch if you do: 1.4.0 doesn't know the new Show in combat, Weapon drawn, Target and Mouse move columns, so stuff won't come up for those there until you tick Awake again on the Elements page.
 
-Your settings carry over. New since beta1: "Awake" split into its own columns, Dominos, new defaults for new installs, the fix for bars other addons hid, and the Issue Reporter fading. The rest was already in beta1.
+Your settings carry over. New since beta2: Show in combat and Hide in combat sit together and Hide in combat really hides, RestedXP moved onto the Elements and Opacity pages (the RXP tab is gone), every row gets the same defaults on a new install, the Opacity page uses clearer names, and the "world will refresh" notice fades with Alerts. Everything else was already in beta2.
 
 ### Added
 
@@ -13,14 +13,20 @@ Your settings carry over. New since beta1: "Awake" split into its own columns, D
 
 ### Changed
 
-- **The settings window got sorted.** It opens on Elements now. Show when has a heading for each column it goes with (Combat, Weapon, Mouse move, New info), and the New info time moved there from Extras. Bars is called Action bars, and RXP is called Other addons; RestedXP's settings only show up there when you have RestedXP, and its four sliders take half the room now. Enable QuietHUD sits in the bottom bar so you can reach it from any page, and the hide boxes on Extras are together under Always hidden. Your settings stay as they were, things just moved.
-- **"Awake" is gone, its parts are columns now.** The Elements page has Combat, Weapon, Target and Mouse move columns where the one Awake box used to be, so every element picks its own. Bars up in combat but the minimap only with your weapon out? That works now. The four boxes on the Show when page went with it (the timing sliders stayed there). Your settings get moved over the first time you log in, so nothing changes on your screen.
-- **New installs start hidden.** Stuff comes up in combat or while you move, and the weapon is off by default now. Chat is the exception, it still only pops up for new messages. If you already use QuietHUD nothing changes for you, your settings stay. Want the sheath key back as a HUD toggle? Tick Weapon on the rows you want on the Elements page.
+- **The settings window got sorted.** It opens on Elements now. Show when has a heading for each column it goes with (Show in combat, Weapon drawn, Mouse move, New info), and the New info time moved there from Extras. Bars is called Action bars. The RXP tab is gone: when you have RestedXP, its windows are rows on the Elements page (each with its own Fade box) and its sliders are on the Opacity page, and the "Works with" list moved to About. On a fresh install RestedXP's windows fade like everything else now; if you already use QuietHUD, yours stay as you set them. Enable QuietHUD sits in the bottom bar so you can reach it from any page, and the hide boxes on Extras are together under Always hidden. Your settings stay as they were, things just moved.
+- **"Awake" is gone, its parts are columns now.** The Elements page has Show in combat, Weapon drawn, Target and Mouse move columns where the one Awake box used to be, so every element picks its own. Bars up in combat but the minimap only with your weapon out? That works now. The four boxes on the Show when page went with it (the timing sliders stayed there). Your settings get moved over the first time you log in, so nothing changes on your screen.
+- **First time using QuietHUD? Everything starts faded out.** It comes up when you move, fight or point at it, and the tracker, chat and minimap also pop up for something new. Already using it? Your settings stay as they are.
+- **Show in combat and Hide in combat sit together now,** right after Fade, between two thin lines. Show in combat (it was just "Combat") brings the row up in a fight, Hide in combat (red) takes it away. Ticking one unticks the other, since they say opposite things, and with both empty the fight doesn't matter.
+- **Hide in combat really hides now.** It used to drop the row to your Faded opacity, so with Faded above 0 it stayed on the screen in a fight. Now it goes all the way to 0, whatever the slider says.
+- **Same words everywhere.** Shown when something brings it up, Faded when it's down, Fade for the switch. On the Opacity page "Active" is "Shown" now and "Idle" is "Faded", and the minimap and RestedXP sliders say Faded too; at 0 they all read Hidden. The minimap's Faded slider has its own Minimap heading on the Opacity page. Hidden only means gone completely. The Weapon column is called Weapon drawn, the "Show/hide HUD now" button is "Show the whole HUD" (that's what it does), and the "Show/hide HUD" keybind is "Toggle Weapon drawn", which is what it always did.
+- **The columns on Elements moved around a bit.** Moving is called that now (it was "While moving"), and Weapon drawn sits near the end.
+- **The "world around you will refresh" notice and its little arrow fade** with the Alerts row now, like the durability icon. It still comes up when you move or mouse over it.
 - **The beta Issue Reporter button fades.** It used to just sit there solid unless you hid it. Now it fades with the Menu bar row. Hiding it still works.
 - **QuietHUD does a lot less work when nothing's going on.** It used to set every faded frame's opacity on every single frame. Now it only writes when something actually changes, and while nothing is fading it checks ten times a second instead of every frame. Combat, targeting, casting, moving and the mouse still wake it up right away. Standing around in Elwynn it went from 0.230 ms a frame to 0.010.
 
 ### Fixed
 
+- **The Elements page shows the right boxes after a reset.** Target and focus, Pet frame, the party rows, Buffs, Debuffs, Cooldown trackers, Alerts and Damage meter showed empty boxes on a fresh install or after Reset to defaults, even though they worked like the Added frames row. They show what they really do now.
 - **Bars another addon hid could come back.** Some addons hide the game's action bar by making it invisible instead of actually hiding it (EllesmereUI does this), and QuietHUD was making it visible again. So you'd get the old bar art showing up behind your bars. QuietHUD leaves that stuff alone now.
 - **Leatrix Plus Square minimap:** the border and buttons faded but the map itself stayed solid. QuietHUD now notices Leatrix putting its own mask back and fades the map with a dark layer instead, like "Darken the minimap" does. You'll see one chat line about it at login.
 

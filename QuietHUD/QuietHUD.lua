@@ -30,18 +30,20 @@ local FIELDS = {
 	-- 3 new info, 4 mouse over, 5 hide in combat, 6 dungeon or raid, 7 combat, 8 weapon drawn, 9 a target, 10 the mouse
 	-- moving). Bit 1 was "Awake" up to 1.5.0-beta2: one box per row, with what counted as awake set once for all rows on the
 	-- Show when page; since the Awake split (1.6) bits 7 to 10 are columns of their own and a saved bit 1 is turned into them
-	-- (see rebuildLists). A new install starts hidden and comes up in combat, while moving, or with the mouse over it (the
-	-- chat for new messages instead of moving: it would cover the screen at every step). The weapon is off by default.
+	-- (see rebuildLists). A new install starts hidden and every row comes up the same way: in combat, while moving, or with
+	-- the mouse over it (74); the tracker, the chat, the minimap and RestedXP also for new info (78). The weapon is off by
+	-- default. (Up to 1.5.0-beta2 the unit frames had no mouse over (66) and the chat only messages and mouse over (12).)
 	{ key = "trigBars", code = "tb", kind = "num", def = 74 },
-	{ key = "trigPlayer", code = "tp", kind = "num", def = 66 },
-	{ key = "trigUnits", code = "tu", kind = "num", def = 66 },
+	{ key = "trigPlayer", code = "tp", kind = "num", def = 74 },
+	{ key = "trigUnits", code = "tu", kind = "num", def = 74 },
 	{ key = "trigTracker", code = "tq", kind = "num", def = 78 },
-	{ key = "trigChat", code = "tc", kind = "num", def = 12 },
+	{ key = "trigChat", code = "tc", kind = "num", def = 78 },
 	{ key = "trigRxp", code = "tr", kind = "num", def = 78 },
 	{ key = "trigNav", code = "tn", kind = "num", def = 26 },
-	{ key = "rxpGuide", code = "rg", kind = "bool", def = false },
-	{ key = "rxpTargets", code = "rt", kind = "bool", def = false },
-	{ key = "rxpArrow", code = "ra", kind = "bool", def = false },
+	-- (RestedXP's windows fade by default since 1.5.0, the owner's ask; off up to beta2, see restoreFromStore)
+	{ key = "rxpGuide", code = "rg", kind = "bool", def = true },
+	{ key = "rxpTargets", code = "rt", kind = "bool", def = true },
+	{ key = "rxpArrow", code = "ra", kind = "bool", def = true },
 	{ key = "rxpShown", code = "rs", kind = "num", def = 0.7 },
 	{ key = "rxpIdle", code = "ri", kind = "num", def = 0 },
 	{ key = "navShown", code = "ns", kind = "num", def = 0.6 },
@@ -76,6 +78,8 @@ local FIELDS = {
 	-- The Awake split (1.6) has been applied to these settings (see rebuildLists). Kept in the settings macro too, so the
 	-- macro alone tells old settings from new ones.
 	{ key = "awakeSplit", code = "as", kind = "bool", def = false },
+	-- Settings written since every row got the same defaults (after 1.5.0-beta2); see restoreFromStore.
+	{ key = "sameDefaults", code = "ud", kind = "bool", def = false },
 }
 local DEFAULTS, BY_CODE = {}, {}
 for _, f in ipairs(FIELDS) do
@@ -110,7 +114,11 @@ local SPLIT = {
 	{ g = "debuffs", label = "Debuffs", frames = { "DebuffFrame" }, follow = "auras" },
 	{ g = "cooldowns", label = "Cooldown trackers", frames = { "EssentialCooldownViewer", "UtilityCooldownViewer", "BuffIconCooldownViewer", "BuffBarCooldownViewer" } },
 	{ g = "meter", label = "Damage meter", frames = { "DamageMeter" } },
-	{ g = "alerts", label = "Alerts", frames = { "DurabilityFrame", "LossOfControlFrame", "ExternalDefensivesFrame" } },
+	-- ShardTransferImminentFrame is the game's "The world around you will refresh in 10 minutes" notice and
+	-- ShardTransferImminentMinimizeButton the arrow beside it that folds it away (Blizzard_SocialToast, above the chat; found
+	-- with /fstack, 2026-10-20). Only those two: ChatAlertFrame around them also holds the friend toasts.
+	{ g = "alerts", label = "Alerts", frames = { "DurabilityFrame", "LossOfControlFrame", "ExternalDefensivesFrame", "ShardTransferImminentFrame",
+		"ShardTransferImminentMinimizeButton" } },
 	{ g = "cast", label = "Cast bar", frames = { "PlayerCastingBarFrame", "CastingBarFrame" }, cols = { 5 }, trig = 0, own = true, noGrid = true },
 	{ g = "breath", label = "Breath bar", frames = { "MirrorTimerContainer", "MirrorTimer1", "MirrorTimer2", "MirrorTimer3" }, cols = {}, trig = 0, own = true, noGrid = true },
 }
@@ -448,7 +456,10 @@ woc.splitAwake = function(m)
 		local w = 2 ^ (bit - 1)
 		if on and math.floor(m / w) % 2 == 0 then m = m + w end
 	end
-	add(DB.inCombat ~= false, 7)
+	-- (a row with Hide in combat, bit 5, does not get Combat as well: the two untick each other on the Elements page. In a
+	-- fight Hide in combat won anyway; the one difference is the after-combat linger, which such a row no longer gets: the
+	-- owner's call, 2026-10-20, ChatGPT job 45 Q2. New info still brings the tracker up for quest progress after a fight.)
+	add(DB.inCombat ~= false and math.floor(m / 16) % 2 == 0, 7)
 	add(DB.sheathShows, 8)
 	add(DB.showOnTarget, 9)
 	add(DB.mouseShows, 10)
@@ -459,7 +470,7 @@ local function rebuildLists()
 	for _, s in ipairs(SPLIT) do
 		if DB[s.trigKey] ~= nil then DB[s.trigKey] = woc.splitAwake(DB[s.trigKey]) end
 	end
-	DB.awakeSplit = true
+	DB.awakeSplit, DB.sameDefaults = true, true
 	local before = {}
 	for g, list in pairs(LISTS) do
 		if g ~= "nav" and g ~= "shift" then
@@ -734,8 +745,14 @@ local function restoreFromStore()
 	local old = not (";" .. s .. ";"):find(";as=1;", 1, true)
 	if old then
 		local OLD = { sheathShows = true, trigBars = 9, trigPlayer = 1, trigUnits = 1, trigTracker = 13, trigRxp = 13,
-			trigMap = 14, trigBagsBar = 9, trigMicro = 9 }
+			trigMap = 14, trigBagsBar = 9, trigMicro = 9, trigChat = 12, rxpGuide = false, rxpTargets = false, rxpArrow = false }
 		for k, v in pairs(OLD) do DB[k] = v end
+	elseif not (";" .. s .. ";"):find(";ud=1;", 1, true) then
+		-- Written by 1.5.0-beta2 (public since 2026-10-20), before every row got the same defaults ("ud=1"): what it leaves
+		-- out had beta2's defaults, the unit frames without mouse over, the chat for messages and mouse over only, and
+		-- RestedXP's windows not faded.
+		DB.trigPlayer, DB.trigUnits, DB.trigChat = 66, 66, 12
+		DB.rxpGuide, DB.rxpTargets, DB.rxpArrow = false, false, false -- (RestedXP's windows did not fade by default yet)
 	end
 	local legacyInstance, legacyMapInstance, sawTrigMap = false, false, false
 	local legacyMapMoving, legacyMapDim, legacyMapDimOpacity
@@ -1082,7 +1099,8 @@ end
 -- What brings an element up comes from its row of the trigger grid (bit i of the mask is trigger i): while moving, new
 -- info, mouse over, hide in combat (which beats the rest), being inside a dungeon or raid, and since the Awake split the
 -- four that "awake" used to bundle: combat, the weapon drawn, a target, the mouse moving. wake holds those four as they are
--- right now (see update). COMBAT is the Hide in combat column (its name from before); FIGHT is the Combat column.
+-- right now (see update). COMBAT is Hide in combat, FIGHT is Combat
+-- (the two untick each other on the Elements page).
 local T = { MOVING = 2, NEWS = 3, HOVER = 4, COMBAT = 5, INST = 6, FIGHT = 7, WEAPON = 8, TARGET = 9, MOUSE = 10 }
 -- Whether one of a row's four wake columns is ticked and true right now.
 local function woken(mask, wake)
@@ -1193,7 +1211,7 @@ do
 end
 
 local function toggleDrawn()
-	print("QuietHUD: HUD " .. (weaponDrawn(true) and "shown" or "hidden"))
+	print("QuietHUD: the weapon counts as " .. (weaponDrawn(true) and "drawn" or "put away"))
 end
 
 -- The fallback guess follows the Toggle Sheath key (see weaponDrawn). ownSheath is up while QuietHUD itself draws the
@@ -1211,7 +1229,7 @@ local function sheathToggled(source)
 		C_Timer.After(0.5, function()
 			local isDrawn, state = weaponDrawn()
 			print("QuietHUD: sheath key via " .. source .. ", now the game says " .. tostring(state)
-				.. " (1 sheathed, 2 melee, 3 ranged), HUD " .. (isDrawn and "shown" or "hidden"))
+				.. " (1 sheathed, 2 melee, 3 ranged), weapon " .. (isDrawn and "drawn" or "put away"))
 		end)
 	end
 end
@@ -2592,6 +2610,18 @@ local function update(dt)
 	for _, s in ipairs(SPLIT) do flags[s.g] = gFade(s) end
 	if DB.hidePanel then flags.panel = true end
 	local idle = DB.idle or 0
+	-- Hide in combat (bit 5): in a fight the element goes all the way to 0, whatever its Faded opacity (up to
+	-- 1.5.0-beta2 it went to the Faded opacity, so at anything above 0 "Hide in combat" left it on the screen). Only worked out
+	-- in a fight: one bit per element per update then, nothing outside one.
+	local gone
+	if combat then
+		gone = { bars = DB.trigBars, player = DB.trigPlayer, hud = DB.trigUnits, bags = DB.trigBagsBar, micro = DB.trigMicro,
+			quest = DB.trigTracker, map = DB.trigMap, chat = DB.trigChat, nav = DB.trigNav, rxp = DB.trigRxp }
+		for _, s in ipairs(SPLIT) do
+			if not s.noGrid then gone[s.g] = gTrig(s) end
+		end
+		for g, m in pairs(gone) do gone[g] = barBit(m, T.COMBAT) end
+	end
 	local mapAlpha, anyFade = 1, false
 	for _, g in ipairs(FADE_ORDER) do
 		-- Fade is off for this element, but it has an opacity of its own: it stays at that opacity (Edit Mode shows it solid).
@@ -2621,6 +2651,7 @@ local function update(dt)
 				floor = DB.navIdle or 0
 			end
 			if g == "map" then floor = DB.mapIdle or 0 end
+			if gone and gone[g] then floor = 0 end
 			local low = math.min(floor, peak)
 			local a = low + (peak - low) * cur[g]
 			if g == "panel" and DB.hidePanel and not edit then a = 0 end
@@ -2747,29 +2778,30 @@ end
 -- The settings window's layout. width is the least it is (it grows when the tabs need more room); the grid is the trigger grid
 -- (the Fade column, the first trigger column and the distance between columns); the columns are the two columns of sliders on
 -- the Opacity page (where the right one starts, and the width of a name and of a slider).
-local WIN = { width = 720, gridFade = 156, gridFirst = 206, gridPitch = 56, col2 = 330, labelW = 128, sliderW = 108 }
+local WIN = { width = 720, gridFade = 156, gridFirst = 206, gridPitch = 56, gridPairPitch = 56, gridGap = 10, col2 = 330, labelW = 128,
+	sliderW = 108 }
 
 -- Hover help: what each trigger column means (by its bit, and the Fade column), and what each element is (by its name, the
 -- same on the Elements grid and the Opacity page).
 local HELP = {
 	cols = {
-		fade = "Ticked: it fades out when nothing brings it up. Unticked: it never fades and stays at its opacity from the Opacity page (fully solid on Global).",
-		[7] = "Comes up in combat, and stays for a few seconds after the fight (how long is set on the Show when page).",
-		[8] = "Comes up while your weapon or your wand is drawn, so the sheath key works as a switch for it.",
-		[9] = "Comes up while you have a target.",
-		[10] = "Comes up while you move the mouse or turn the camera with it, and stays for a few seconds after (how long is set on the Show when page).",
-		[2] = "Comes up while you move, and for a moment after you stop.",
-		[3] = "Comes up for a while when there is something new: quest progress for the tracker and RestedXP, a chat message for the chat, a new zone for the minimap. How long is set on the Show when page (the Chat page for the chat).",
-		[4] = "Comes up while your mouse is over it. For mouse over only, leave just this box ticked.",
-		[5] = "Hidden while you are in combat, whatever else is ticked.",
-		[6] = "Comes up while you are inside a dungeon or a raid.",
+		fade = "Ticked: it fades when nothing shows it. Unticked: it never fades and stays at its opacity from the Opacity page (fully solid on Global).",
+		[7] = "Shown in a fight, and for a few seconds after (how long is set on the Show when page). Ticking it unticks Hide in combat.",
+		[5] = "Gone completely in a fight, whatever else is ticked and whatever the Faded opacity is. Leaving Show in combat empty is not the same: then moving or mouse over can still show it mid-fight. Ticking it unticks Show in combat.",
+		[8] = "Shown while your weapon or your wand is drawn, so the sheath key works as a switch for it.",
+		[9] = "Shown while you have a target.",
+		[10] = "Shown while you move the mouse or turn the camera with it, and for a few seconds after (how long is set on the Show when page).",
+		[2] = "Shown while you move, and for a moment after you stop.",
+		[3] = "Shown for a while when there is something new: quest progress for the tracker and RestedXP, a chat message for the chat, a new zone for the minimap. How long is set on the Show when page (the Chat page for the chat).",
+		[4] = "Shown while your mouse is over it. For mouse over only, leave just this box ticked.",
+		[6] = "Shown while you are inside a dungeon or a raid.",
 	},
 	rows = {
-		["Action bars"] = "Action Bars 1 to 8, plus the stance, pet, totem and XP bars. Which of the eight fade is picked on the Action bars page.",
+		["Action bars"] = "Action Bars 1 to 8, plus the stance, pet, totem and XP bars. Which of the eight fade is picked on the Action bars page. With Dominos, this row is all of Dominos' bars (its bag bar and menu go with the Bags bar and Menu bar rows).",
 		["Bags bar"] = "The row of bag buttons.",
 		["Menu bar"] = "The row of small menu buttons (character, spellbook, talents and so on).",
-		["Cast bar"] = "Your cast bar. It comes up by itself while you cast, so it only has an opacity.",
-		["Breath bar"] = "The breath, fatigue and feign death timer. It comes up by itself while it runs, so it only has an opacity.",
+		["Cast bar"] = "Your cast bar. It shows by itself while you cast, so it only has an opacity.",
+		["Breath bar"] = "The breath, fatigue and feign death timer. It shows by itself while it runs, so it only has an opacity.",
 		["Player frame"] = "Your own frame: portrait, health and power.",
 		["Target and focus"] = "The target frame and the focus frame.",
 		["Pet frame"] = "Your pet's frame, and its cast bar if BetterBlizzFrames adds one.",
@@ -2778,56 +2810,73 @@ local HELP = {
 		["Buffs"] = "Your buffs, weapon enchants and totem timers.",
 		["Debuffs"] = "Your debuffs. To keep them on the screen while your buffs fade, untick Fade for Debuffs on the Elements page.",
 		["Cooldown trackers"] = "The game's cooldown manager: the essential and utility cooldowns, and the tracked buff icons and bars.",
-		["Alerts"] = "The durability icon, the loss of control alert and external defensives.",
+		["Alerts"] = "The durability icon, the loss of control alert, external defensives and the game's \"world will refresh\" notice.",
 		["Objective tracker"] = "The quest and objective tracker (Questie's tracker too).",
-		["Chat"] = "The chat windows. Which messages bring the chat up is set on the Chat page. Typing always brings it up.",
+		["Chat"] = "The chat windows. Which messages show the chat is set on the Chat page. Typing always shows it.",
 		["Minimap"] = "The minimap and the buttons around it.",
 		["Damage meter"] = "The game's own damage meter.",
 		["Added frames"] = "Frames you added yourself with /qhud add hud. Empty unless you did that.",
 		["Guide, targets, items"] = "The RestedXP guide window and its targets and items windows.",
 		["Arrow"] = "The RestedXP waypoint arrow.",
+		["Guide window"] = "The RestedXP guide window.",
+		["Targets, items"] = "The RestedXP targets and items windows. They come up with the guide window: its boxes on the row above count for them too.",
 	},
 }
 
 -- The settings window's pages, in tab order (1.6: Elements first; Show when holds what goes with the Elements columns, under
--- headings named like them). An item with addon is only shown while that addon is loaded (the RestedXP part of Other addons).
+-- headings named like them). An item with addon is only shown while that addon is loaded (RestedXP's section on Opacity).
 local PAGES = {
 	{ title = "Elements", items = {
 		{ "grid", "elements" },
-		{ "note", "Hover a column heading or a name to see what it means. The cast bar and the breath bar come up by themselves when they are needed, so they are only on the Opacity page." },
+		{ "note", "Fade ticked: the element fades when nothing shows it. Show in combat and Hide in combat: tick one or neither. Every other ticked box shows the element while it is true. Hover a heading or a name for more. The cast bar and the breath bar show by themselves, so they are only on the Opacity page." },
 	} },
 	{ title = "Show when", items = {
-		{ "note", "What brings each element up is ticked on the Elements page. These go with its columns of the same name." },
-		{ "heading", "Combat" },
-		{ "slider", "linger", "Stay visible after combat (seconds)", 0, 180, 1, "%.0f", nil, nil, "How long an element stays up after a fight ends.", 420 },
-		{ "heading", "Weapon" },
-		{ "check", "keepDrawn", "Keep my weapon drawn after spells, chests and crafting", "When the game puts your weapon away by itself (a buff, a chest, a lock, crafting, looting), QuietHUD draws it again as soon as the cast is over, so the HUD stays up. You will see your character draw the weapon again. Pressing the sheath key still puts it away and hides the HUD. Not while mounted, swimming, dead, on a flight path or in a fight." },
+		{ "note", "What shows each element is ticked on the Elements page. These go with its columns of the same name." },
+		{ "heading", "Show in combat" },
+		{ "slider", "linger", "Stay shown after combat (seconds)", 0, 180, 1, "%.0f", nil, nil, "How long an element stays shown after a fight ends.", 420 },
+		{ "heading", "Weapon drawn" },
+		{ "check", "keepDrawn", "Keep my weapon drawn after spells, chests and crafting", "When the game puts your weapon away by itself (a buff, a chest, a lock, crafting, looting), QuietHUD draws it again as soon as the cast is over, so the HUD stays shown. You will see your character draw the weapon again. Pressing the sheath key still puts it away, and then Weapon drawn stops showing the HUD. Not while mounted, swimming, dead, on a flight path or in a fight." },
 		{ "heading", "Mouse move" },
-		{ "slider", "mouseSeconds", "Stay visible after the mouse stops (seconds)", 1, 60, 1, "%.0f", nil, nil, "How long an element stays up after you stop moving the cursor or turning the camera.", 420 },
+		{ "slider", "mouseSeconds", "Stay shown after the mouse stops (seconds)", 1, 60, 1, "%.0f", nil, nil, "How long an element stays shown after you stop moving the cursor or turning the camera.", 420 },
 		{ "heading", "New info" },
-		{ "slider", "questSeconds", "Stay visible after quest progress or a new zone (seconds)", 3, 180, 1, "%.0f", nil, nil, "How long the tracker, the minimap and RestedXP stay up after something new. The chat has its own on the Chat page.", 420 },
+		{ "slider", "questSeconds", "Stay shown after quest progress or a new zone (seconds)", 3, 180, 1, "%.0f", nil, nil, "How long the tracker, the minimap and RestedXP stay shown after something new. The chat has its own on the Chat page.", 420 },
 		{ "heading", "Player frame" },
-		{ "check", "notFullShows", "Show the player frame while health or power is changing", "Brings up the player frame only, while your health or your power bar goes up or down and for a few seconds after (3, or 8 for mana, which waits a moment before it comes back). In practice: until you are topped off. The game does not let addons read your health or power, so QuietHUD goes by them changing. Hide in combat on the Player frame row still wins." },
+		{ "check", "notFullShows", "Show the player frame while health or power is changing", "Shows the player frame only, while your health or your power bar goes up or down and for a few seconds after (3, or 8 for mana, which waits a moment before it comes back). In practice: until you are topped off. The game does not let addons read your health or power, so QuietHUD goes by them changing. Hide in combat on the Player frame row still wins in a fight." },
 		{ "heading", "Fading out" },
-		{ "slider", "fadeOutSeconds", "Fade out animation (seconds)", 0.1, 5, 0.05, "%.2f", nil, nil, "How long an element takes to fade out, whatever brought it up. The chat has its own on the Chat page.", 420 },
+		{ "slider", "fadeOutSeconds", "Fade out animation (seconds)", 0.1, 5, 0.05, "%.2f", nil, nil, "How long an element takes to fade out, whatever showed it. The chat has its own on the Chat page.", 420 },
 		{ "heading", "Show the whole HUD on demand" },
 		{ "check", "peekAlt", "While I hold Alt" },
 		{ "check", "peekCtrl", "While I hold Ctrl" },
 		{ "check", "peekShift", "While I hold Shift" },
 	} },
 	{ title = "Opacity", items = {
-		{ "heading", "All elements" },
-		{ "slider", "base", "Active (when it's up)", 0.1, 1, 0.05, "%.2f", nil, true, "How solid the HUD is when it is up. Every element set to Global uses this." },
-		{ "slider", "idle", "Idle (0 = hidden)", 0, 1, 0.05, "%.2f", nil, true, "How solid an element is while it is faded. 0 hides it completely." },
-		{ "heading", "Each element (Global = the active value)" },
+		{ "heading", "Global" },
+		{ "slider", "base", "Shown", 0.1, 1, 0.05, "%.2f", nil, true, "How solid an element is while it is shown. Every element set to Global uses this, except one with Fade unticked on the Elements page: on Global that one is fully solid." },
+		{ "slider", "idle", "Faded", 0, 1, 0.05, "%.2f", "Hidden", true, "How solid an element is while it is faded. 0 hides it completely." },
+		{ "heading", "Shown per element" },
 		-- (a slider for every element goes here, in two columns: see below)
-		{ "heading", "Windows and the minimap" },
+		{ "heading", "Windows" },
 		{ "slider", "bagAlpha", "Open bag windows", 0, 1, 0.05, "%.2f", "Global", true, "Your open bags. To move them around, see Open bags on the Extras page." },
 		{ "slider", "tooltipAlpha", "Tooltips", 0, 1, 0.05, "%.2f", "Global", true, "The game's tooltips, like this one." },
-		{ "slider", "mapIdle", "Minimap idle (0 = hidden)", 0, 1, 0.05, "%.2f", nil, true, "How solid the minimap is while it is faded. 0 hides it completely." },
-		{ "check", "mapDarken", "Darken the minimap instead of making it see-through" },
-		{ "note", "Unticked (default): as the minimap fades it turns see-through. The little icons on it (your arrow, quest and party icons) stay bright, because the game does not let addons fade them.\nTicked: as the minimap fades it turns darker instead, and the icons darken with it." },
-		{ "note", "Chat, the minimap, open bags and tooltips stay solid until you change them. An element with Fade unticked on the Elements page stays at its value here and never fades. RestedXP's are on the Other addons page. Hover a name for more." },
+		{ "heading", "Minimap" },
+		{ "slider", "mapIdle", "Faded", 0, 1, 0.05, "%.2f", "Hidden", true, "How solid the minimap is while it is faded. 0 hides it completely. It has its own, apart from the Global one, because its arrow and quest icons stay bright as it fades (the game does not let addons fade them), so it may look best lower or higher than the rest." },
+		-- (its note became its hover text in 1.5.0: RestedXP's sliders made this page the tallest)
+		{ "check", "mapDarken", "Darken the minimap instead of making it see-through", "Unticked (default): as the minimap fades it turns see-through. The little icons on it (your arrow, quest and party icons) stay bright, because the game does not let addons fade them.\nTicked: as the minimap fades it turns darker instead, and the icons darken with it." },
+		{ "heading", "RestedXP", addon = "RXPGuides" },
+		-- (its own Shown and Faded, in two short columns named like its rows on the Elements page)
+		{ "columns", addon = "RXPGuides",
+			left = {
+				{ "group", "Guide, targets, items" },
+				{ "slider", "rxpShown", "Shown", 0.1, 1, 0.05, "%.2f", nil, "column", "How solid the guide, targets and items windows are while they are shown." },
+				{ "slider", "rxpIdle", "Faded", 0, 1, 0.05, "%.2f", "Hidden", "column", "How solid they are while faded. At 0 they are hidden completely, so a small value helps you find them." },
+			},
+			right = {
+				{ "group", "Arrow" },
+				{ "slider", "navShown", "Shown", 0.1, 1, 0.05, "%.2f", nil, "column", "How solid the waypoint arrow is while it is shown." },
+				{ "slider", "navIdle", "Faded", 0, 1, 0.05, "%.2f", "Hidden", "column", "How solid it is while faded. At 0 it is hidden completely." },
+			},
+		},
+		{ "note", "Chat, the minimap, open bags and tooltips stay solid until you change them. An element with Fade unticked on the Elements page never fades: it stays at its value here, fully solid on Global. Hover a name for more." },
 	} },
 	{ title = "Action bars", items = {
 		{ "note", "Fade picks which action bars fade. It only counts while Fade is ticked for Action bars on the Elements page, which is the master switch (the stance, pet, totem and XP bars follow that switch)." },
@@ -2835,37 +2884,10 @@ local PAGES = {
 		{ "check", "shortHotkeys", "Shorten hotkey text (Num Pad 1 shows N1)" },
 	} },
 	{ title = "Chat", items = {
-		{ "note", "Fading the chat, and what brings it up, is on the Elements page. Its opacity is on the Opacity page." },
-		{ "slider", "chatSeconds", "Chat stays after a message (seconds)", 2, 30, 1, "%.0f" },
+		{ "note", "Fading the chat, and what shows it, is on the Elements page. Its opacity is on the Opacity page." },
+		{ "slider", "chatSeconds", "Chat stays shown after a message (seconds)", 2, 30, 1, "%.0f" },
 		{ "slider", "chatFadeSeconds", "Chat fade out animation (seconds)", 0.3, 5, 0.1, "%.1f" },
 		{ "kinds" },
-	} },
-	-- Other addons never get rows on the Elements page: their frame names go into the existing rows, and an addon with
-	-- settings of its own (RestedXP, the one the author uses) gets a part here.
-	{ title = "Other addons", items = {
-		{ "heading", "RestedXP", addon = "RXPGuides" },
-		{ "check", "rxpGuide", "Fade the guide window", addon = "RXPGuides" },
-		{ "check", "rxpTargets", "Fade the targets and items windows", addon = "RXPGuides" },
-		{ "check", "rxpArrow", "Fade the waypoint arrow", addon = "RXPGuides" },
-		-- Its opacity in two short columns named like the grid's rows, the way the Opacity page lays out its sliders.
-		{ "columns", addon = "RXPGuides",
-			left = {
-				{ "group", "Guide, targets, items" },
-				{ "slider", "rxpShown", "When shown", 0.1, 1, 0.05, "%.2f", nil, "column", "How solid the guide, targets and items windows are while they are up." },
-				{ "slider", "rxpIdle", "When idle", 0, 1, 0.05, "%.2f", "Hidden", "column", "How solid they are while faded. At 0 they are hidden completely." },
-			},
-			right = {
-				{ "group", "Arrow" },
-				{ "slider", "navShown", "When shown", 0.1, 1, 0.05, "%.2f", nil, "column", "How solid the waypoint arrow is while it is up." },
-				{ "slider", "navIdle", "When idle", 0, 1, 0.05, "%.2f", "Hidden", "column", "How solid it is while faded. At 0 it is hidden completely." },
-			},
-		},
-		{ "grid", "rxp", addon = "RXPGuides" },
-		{ "note", "The same columns as on the Elements page. At idle opacity 0 the windows are hidden completely, so a small value helps you find them.", addon = "RXPGuides" },
-		{ "heading", "Works with" },
-		{ "note", "Dominos, Questie, RestedXP, Chattynator, ClassicUI Forever, BetterBlizzFrames, Animated Blizzard Portraits, Leatrix Plus and BlizzMove. QuietHUD handles their frames by itself." },
-		{ "heading", "Something does not fade?" },
-		{ "note", "Hover it and type /qhud add hud. It then fades with the Added frames row on the Elements page." },
 	} },
 	{ title = "Extras", items = {
 		{ "heading", "Always hidden" },
@@ -2888,6 +2910,11 @@ local PAGES = {
 	} },
 	{ title = "About", items = {
 		{ "about" },
+		-- (from the Other addons page, gone since 1.5.0: RestedXP's rows went to Elements, its sliders to Opacity)
+		{ "heading", "Works with" },
+		{ "note", "Dominos, Questie, RestedXP, Chattynator, ClassicUI Forever, BetterBlizzFrames, Animated Blizzard Portraits, Leatrix Plus and BlizzMove. QuietHUD handles their frames by itself." },
+		{ "heading", "Something does not fade?" },
+		{ "note", "Hover it and type /qhud add hud. It then fades with the Added frames row on the Elements page." },
 	} },
 }
 
@@ -2909,7 +2936,7 @@ do
 	end
 	for _, page in ipairs(PAGES) do
 		for i, item in ipairs(page.items) do
-			if item[1] == "heading" and item[2]:find("^Each element") then
+			if item[1] == "heading" and item[2] == "Shown per element" then -- (the heading's text: rename both together)
 				table.insert(page.items, i + 1, { "columns", left = left, right = right })
 				break
 			end
@@ -3755,19 +3782,36 @@ do
 
 	local CELL = 24 -- the size of a tick box in the grids (the Action bars page and the Elements page look the same)
 
+	-- What a grid box shows and starts from: the setting, or for a split row with none of its own (a fresh install, after a
+	-- reset) what it follows, as gTrig and gFade do: Added frames, or Buffs for Debuffs. A click then saves the row's own.
+	-- (Up to 1.5.0-beta2 the grid read only the row's own setting: nine rows showed empty boxes while they worked like Added
+	-- frames.)
+	local effective
+	do
+		local splitOf = {}
+		for _, s in ipairs(SPLIT) do splitOf[s.trigKey], splitOf[s.fadeKey] = s, s end
+		effective = function(key)
+			local s = splitOf[key]
+			if not s then return DB[key] end
+			if key == s.trigKey then return gTrig(s) end
+			return gFade(s)
+		end
+	end
+
 	local function makeMaskCheck(parent, x, y, key, index)
 		local check = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
 		check:SetSize(CELL, CELL)
 		check:SetPoint("TOPLEFT", x, y)
 		check:SetScript("OnClick", function(self)
-			local mask = DB[key] or 0
+			local mask = effective(key) or 0
 			local weight = 2 ^ (index - 1)
 			if barBit(mask, index) then mask = mask - weight else mask = mask + weight end
 			DB[key] = mask
 			self:SetChecked(barBit(mask, index))
 			persistSoon()
+			syncControls() -- (the rows that follow this one show the change too)
 		end)
-		controls[#controls + 1] = function() check:SetChecked(barBit(DB[key], index)) end
+		controls[#controls + 1] = function() check:SetChecked(barBit(effective(key), index)) end
 		controls[#controls]()
 		return check
 	end
@@ -3776,7 +3820,7 @@ do
 	local function makeChatKinds(parent, y)
 		local heading = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 		heading:SetPoint("TOPLEFT", 16, y)
-		heading:SetText("What brings the chat up")
+		heading:SetText("What shows the chat")
 		for i, kind in ipairs(CHAT_KINDS) do
 			local check = makeMaskCheck(parent, 12, y - 14 - (i - 1) * 22, "chatKinds", i)
 			local text = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
@@ -3808,13 +3852,24 @@ do
 
 	-- The trigger grid: a row per element, a column per thing that can bring it up. Each cell is one bit of the row's
 	-- number, like the bar grid, and only the cells that mean something for that element are drawn. The columns are
-	-- ordered so that no row has a gap: the ones every element has come first, then hide in combat, then new info.
+	-- ordered so that no row has a gap: the ones every element has come first, new info last. Since 1.5.0 Show in combat
+	-- (bit 7, comes up in a fight) and Hide in combat (bit 5: gone in a fight, whatever else is ticked; red = true, the one
+	-- box that takes an element away) are a pair (pair = "combat": barred off together, two-line headings like the rest).
+	-- The two untick each other; neither leaves the fight to the other boxes. They sit next to Fade, a small gap after them
+	-- (gapAfter), then the rest, the defaults first (Moving, "While moving" before), the Weapon drawn column (off by default
+	-- since 1.5.0-beta2) near the end. (Tried on Oct 20 and dropped: Combat as one box with three states, then as a word
+	-- with a list, Shown / Hidden / -, then Hide in combat as a column of its own. The first two hid the third choice or
+	-- needed explaining; the third did not show that the two belong together.)
 	local TRIGGER_COLS = {
-		{ "Combat", 7 }, { "Weapon", 8 }, { "Target", 9 }, { "Mouse\nmove", 10 }, { "While\nmoving", 2 }, { "Mouse\nover", 4 },
-		{ "Dungeon\nor raid", 6 }, { "Hide in\ncombat", 5 }, { "New\ninfo", 3 },
+		gapAfter = 2,
+		{ "Show in\ncombat", 7, pair = "combat" }, { "Hide in\ncombat", 5, pair = "combat", red = true },
+		{ "Moving", 2 }, { "Target", 9 }, { "Mouse\nmove", 10 }, { "Mouse\nover", 4 },
+		{ "Dungeon\nor raid", 6 }, { "Weapon\ndrawn", 8 }, { "New\ninfo", 3 },
 	}
 	local COL_AT = {}
-	for position, col in ipairs(TRIGGER_COLS) do COL_AT[col[2]] = position end
+	for position, col in ipairs(TRIGGER_COLS) do
+		COL_AT[col[2]] = position
+	end
 	local GRIDS = {
 		elements = {
 			fade = true,
@@ -3830,13 +3885,15 @@ do
 				{ "Menu bar", "fadeMicro", "trigMicro", { 7, 8, 9, 10, 2, 4, 6, 5 } },
 			},
 		},
-		rxp = {
-			rows = {
-				{ "Guide, targets, items", false, "trigRxp", { 7, 8, 9, 10, 2, 3, 4, 5, 6 } },
-				{ "Arrow", false, "trigNav", { 7, 8, 9, 10, 2, 4, 5, 6 } },
-			},
-		},
 	}
+	-- RestedXP's rows, a group at the end of the Elements grid while RestedXP is loaded (since 1.5.0; they were a grid of their
+	-- own on the Other addons page, without Fade boxes). Its three fade switches are the Fade boxes. The targets and items
+	-- windows come up with the guide window (one setting, trigRxp), so their row has only its Fade box.
+	GRIDS.elements.extra = { addon = "RXPGuides", heading = "RestedXP", rows = {
+		{ "Guide window", "rxpGuide", "trigRxp", { 7, 8, 9, 10, 2, 3, 4, 5, 6 } },
+		{ "Targets, items", "rxpTargets", "trigRxp", {} },
+		{ "Arrow", "rxpArrow", "trigNav", { 7, 8, 9, 10, 2, 4, 5, 6 } },
+	} }
 
 	-- The rows of the Elements grid, in the groups of SPLIT.groups, each group under its heading ({ heading = name }). The cast bar
 	-- and the breath bar have no row: they only appear when they are needed (see the main loop), so Fade and the triggers mean
@@ -3874,36 +3931,76 @@ do
 		check:SetSize(CELL, CELL)
 		check:SetPoint("TOPLEFT", x, y)
 		check:SetScript("OnClick", function(self)
-			DB[key] = not DB[key]
+			DB[key] = not effective(key)
 			self:SetChecked(DB[key] and true or false)
 			persistSoon()
+			-- RestedXP's Fade boxes say which of its windows are in the rxp and nav lists, so the lists are built again (the
+			-- other rows' Fade is read on every update). Up to 1.5.0 they were boxes on the Other addons page, which did this.
+			if key == "rxpGuide" or key == "rxpTargets" or key == "rxpArrow" then rebuildLists() end
+			syncControls() -- (the rows that follow this one show the change too)
 		end)
-		controls[#controls + 1] = function() check:SetChecked(DB[key] and true or false) end
+		controls[#controls + 1] = function() check:SetChecked(effective(key) and true or false) end
 		controls[#controls]()
 	end
 
-	-- Returns the height it took. Rows under a group heading are indented, and every second row of a group has a faint band behind
-	-- it, so a row is easy to follow across the columns. Hovering a column heading or a name shows what it means.
+	-- Returns the height it took. Rows under a group heading are indented, and every second row has a faint band behind it, so a
+	-- row is easy to follow across the columns. The count runs through the whole grid (up to 1.5.0-beta2 it began again under
+	-- each heading, and the bands came out uneven). Hovering a column heading or a name shows what it means.
 	local function makeTriggerGrid(parent, y, grid)
 		local fadeX, firstX, pitch = WIN.gridFade, WIN.gridFirst, WIN.gridPitch
-		local bandRight = firstX + (#TRIGGER_COLS - 1) * pitch + CELL + 10
-		local function header(x, text, help)
+		-- Where each column starts. Fade and the Combat pair sit together; the rest start a small gap after the pair (gapAfter).
+		-- (gridPairPitch was tried at 40 and 52 on Oct 20: at 40 "Show in" no longer fit its heading, and a narrower pair left an
+		-- empty strip at the right of the grid. It is the normal pitch now; the bars mark the pair.)
+		local X = {}
+		for position, col in ipairs(TRIGGER_COLS) do
+			local prev = TRIGGER_COLS[position - 1]
+			X[position] = not prev and firstX or X[position - 1] + ((col.pair and col.pair == prev.pair) and WIN.gridPairPitch or pitch)
+				+ (position - 1 == (TRIGGER_COLS.gapAfter or 1) and WIN.gridGap or 0)
+		end
+		local function colX(position) return X[position] end
+		-- (the stripes reach the end of the last heading, which is wider than its box: ending at the box, they looked cut off)
+		local bandRight = colX(#TRIGGER_COLS) + 16 + pitch / 2 + 2
+		local function header(x, text, help, red, title, width)
 			local h = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 			h:SetPoint("TOP", parent, "TOPLEFT", x + 16, y)
-			h:SetWidth(WIN.gridPitch)
+			h:SetWidth(width or WIN.gridPitch)
 			h:SetJustifyH("CENTER")
 			h:SetText(text)
-			addHelp(parent, h, (text:gsub("\n", " ")), help)
+			if red then h:SetTextColor(1, 0.3, 0.3) end
+			addHelp(parent, h, title or (text:gsub("\n", " ")), help)
 		end
 		if grid.fade then header(fadeX, "Fade", HELP.cols.fade) end
-		for position, col in ipairs(TRIGGER_COLS) do header(firstX + (position - 1) * pitch, col[1], HELP.cols[col[2]]) end
-		local labelX = (grid.rows[1] and grid.rows[1].heading) and 24 or 16
+		-- (every heading is gridPitch wide, the pair's too, so "Show in" and "Hide in" fit on a line; spans remembers where each
+		-- pair starts and ends, for its bars)
+		local spans = {}
+		for position, col in ipairs(TRIGGER_COLS) do
+			header(colX(position), col[1], HELP.cols[col[2]], col.red)
+			if col.pair then
+				local span = spans[col.pair] or { first = position }
+				span.last, spans[col.pair] = position, span
+			end
+		end
+		-- An addon's own rows (grid.extra) go at the end under its name, only while it is loaded. (A client that cannot say
+		-- gets them, as the pages' addon items do.)
+		local rows = grid.rows
+		local extra = grid.extra
+		if extra then
+			local isLoaded = (C_AddOns and C_AddOns.IsAddOnLoaded) or IsAddOnLoaded
+			local ok, loaded = true, true
+			if isLoaded then ok, loaded = pcall(isLoaded, extra.addon) end
+			if not ok or loaded then
+				rows = { unpack(grid.rows) }
+				rows[#rows + 1] = { heading = extra.heading }
+				for _, row in ipairs(extra.rows) do rows[#rows + 1] = row end
+			end
+		end
+		local labelX = (rows[1] and rows[1].heading) and 24 or 16
 		local rowY, band = y - 30, 0
-		for n, row in ipairs(grid.rows) do
+		for n, row in ipairs(rows) do
 			if row.heading then
 				if n > 1 then rowY = rowY - 4 end
 				makeGroupHeading(parent, 16, rowY, row.heading)
-				rowY, band = rowY - 18, 0
+				rowY = rowY - 18
 			else
 				band = band + 1
 				if band % 2 == 0 then
@@ -3917,12 +4014,58 @@ do
 				label:SetText(row[1])
 				addHelp(parent, label, row[1], HELP.rows[row[1]])
 				if row[2] then makeFadeCell(parent, fadeX, rowY, row[2]) end
+				local made = {}
 				for _, i in ipairs(row[4]) do
-					makeMaskCheck(parent, firstX + (COL_AT[i] - 1) * pitch, rowY, row[3], i)
+					made[i] = makeMaskCheck(parent, colX(COL_AT[i]), rowY, row[3], i)
+				end
+				-- Combat and Hide in combat say opposite things about a fight: ticking one unticks the other on this row, so a row
+				-- never gets both (an old one that has them keeps them until one is clicked: gone in the fight, then shown for the
+				-- after-combat linger, as beta2 did).
+				for on, off in pairs({ [T.FIGHT] = T.COMBAT, [T.COMBAT] = T.FIGHT }) do
+					if made[on] and made[off] then
+						made[on]:HookScript("OnClick", function(self)
+							if self:GetChecked() and barBit(effective(row[3]), off) then
+								DB[row[3]] = effective(row[3]) - 2 ^ (off - 1)
+								made[off]:SetChecked(false)
+								persistSoon()
+								-- (again, now both bits are right: the click's own redraw came before this, and the rows that
+								-- follow this one showed both boxes until the next redraw; ChatGPT job 46, F1)
+								syncControls()
+							end
+						end)
+					end
 				end
 				rowY = rowY - 24
 			end
 		end
+		-- A pair is barred off: a thin line on each side, from the top of its heading to the last row, halfway between its
+		-- boxes and the next ones, so its heading and its two boxes read as one setting. Both as wide as one unit rounded to
+		-- whole screen pixels (at least one; two on a 1440 tall screen), on whole pixels, with the game's PixelUtil: one plain
+		-- unit is part of a pixel at most scales, and the two bars came out one and two pixels wide. Set again every time the
+		-- page shows, because fitting the window to a short screen changes its scale (ChatGPT job 46, F2).
+		local bars = {}
+		local function placeBars()
+			for _, b in ipairs(bars) do
+				b.bar:ClearAllPoints()
+				if PixelUtil and PixelUtil.SetWidth and PixelUtil.SetPoint then
+					PixelUtil.SetWidth(b.bar, 1, 1)
+					PixelUtil.SetPoint(b.bar, "TOPLEFT", parent, "TOPLEFT", b.x, y + 2)
+				else
+					b.bar:SetWidth(1)
+					b.bar:SetPoint("TOPLEFT", b.x, y + 2)
+				end
+			end
+		end
+		for _, span in pairs(spans) do
+			for _, x in ipairs({ colX(span.first) - 13, colX(span.last) + CELL + 21 }) do
+				local bar = parent:CreateTexture(nil, "ARTWORK")
+				bar:SetColorTexture(1, 1, 1, 0.18)
+				bar:SetHeight(y + 2 - rowY)
+				bars[#bars + 1] = { bar = bar, x = x }
+			end
+		end
+		placeBars()
+		parent:HookScript("OnShow", placeBars)
 		return y - rowY + 6
 	end
 
@@ -3944,7 +4087,7 @@ do
 		name:SetText(titleText)
 		local what = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 		what:SetPoint("TOPLEFT", 100, y - 32)
-		what:SetText("Fades the HUD out when you are idle, to protect OLED screens.")
+		what:SetText("Fades the HUD out when you are not doing anything, to protect OLED screens.")
 		local by = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 		by:SetPoint("TOPLEFT", 100, y - 50)
 		by:SetText("Made by Jackafur. Tested by Vada.")
@@ -4031,7 +4174,7 @@ do
 
 	resetDefaults = function()
 		for _, f in ipairs(FIELDS) do DB[f.key] = f.def end
-		DB.awakeSplit = true -- (today's defaults are already in the shape since the Awake split; see rebuildLists)
+		DB.awakeSplit, DB.sameDefaults = true, true -- (today's defaults are already in the shape since the Awake split; see rebuildLists)
 		for _, k in ipairs({ "ovBars", "ovPlayer", "ovHud", "ovQuest", "ovMap", "ovBagsBar", "ovMicro" }) do DB[k] = 0 end
 		for _, s in ipairs(SPLIT) do DB[s.fadeKey], DB[s.trigKey], DB[s.ovKey] = nil, nil, 0 end
 		DB.moveBags = false -- (the spot they were moved to stays saved, as before)
@@ -4198,7 +4341,7 @@ do
 		local now = CreateFrame("Button", nil, config, "UIPanelButtonTemplate")
 		now:SetSize(150, buttonH)
 		now:SetPoint("BOTTOMLEFT", buttonX, buttonY)
-		now:SetText("Show/hide HUD now")
+		now:SetText("Show the whole HUD")
 		-- Shows the whole HUD (the same as /qhud peek); pressing it again puts things back to normal. (It used to flip the "weapon
 		-- drawn" state, which does nothing unless a row has its Weapon column ticked.) It also ends by itself after two minutes.
 		now:SetScript("OnClick", function()
@@ -4935,7 +5078,7 @@ ev:SetScript("OnEvent", function(_, event, arg1, _, _, arg4)
 end)
 
 BINDING_HEADER_QUIETHUD = "QuietHUD"
-BINDING_NAME_QUIETHUD_TOGGLE = "Show/hide HUD"
+BINDING_NAME_QUIETHUD_TOGGLE = "Toggle Weapon drawn"
 BINDING_NAME_QUIETHUD_PEEK = "Hold to show the whole HUD"
 _G["BINDING_NAME_CLICK QuietHUDTargetButton:LeftButton"] = "Target highlighted quest mob"
 
