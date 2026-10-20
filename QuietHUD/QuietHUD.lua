@@ -5,15 +5,17 @@ local FIELDS = {
 	{ key = "enabled", code = "e", kind = "bool", def = true },
 	{ key = "base", code = "b", kind = "num", def = 0.6 },
 	{ key = "idle", code = "i", kind = "num", def = 0 },
+	-- What counted as "awake" up to 1.5.0-beta2 (the Show when page's four boxes; mouseShows is further down). Since the
+	-- Awake split they are only read once, to turn a saved Awake box into the columns it stood for (see rebuildLists).
 	{ key = "inCombat", code = "k", kind = "bool", def = true },
-	{ key = "sheathShows", code = "w", kind = "bool", def = true },
+	{ key = "sheathShows", code = "w", kind = "bool", def = false }, -- (on up to 1.4.0)
 	{ key = "showOnTarget", code = "t", kind = "bool", def = false },
 	{ key = "linger", code = "l", kind = "num", def = 4 },
 	{ key = "fadeBars", code = "fb", kind = "bool", def = true },
 	{ key = "fadePlayer", code = "fp", kind = "bool", def = true },
 	{ key = "fadeUnits", code = "fu", kind = "bool", def = true },
 	{ key = "fadeMinimap", code = "fm", kind = "bool", def = true },
-	{ key = "trigMap", code = "tm", kind = "num", def = 14 },
+	{ key = "trigMap", code = "tm", kind = "num", def = 78 },
 	{ key = "mapIdle", code = "mz", kind = "num", def = 0 },
 	{ key = "mapFollowsHud", code = "mf", kind = "bool", def = false },
 	{ key = "mapDarken", code = "mk", kind = "bool", def = false },
@@ -24,15 +26,18 @@ local FIELDS = {
 	{ key = "chatKinds", code = "ck", kind = "num", def = 71 },
 	{ key = "chatOpacity", code = "co", kind = "num", def = 1 },
 	{ key = "chatFadeSeconds", code = "cf", kind = "num", def = 1.5 },
-	-- What brings each element up: one number per element, where bit i is column i of the trigger grid (1 awake,
-	-- 2 while moving, 3 new info, 4 mouse over, 5 hide in combat, 6 dungeon or raid). The defaults are what each element
-	-- did before.
-	{ key = "trigBars", code = "tb", kind = "num", def = 9 },
-	{ key = "trigPlayer", code = "tp", kind = "num", def = 1 },
-	{ key = "trigUnits", code = "tu", kind = "num", def = 1 },
-	{ key = "trigTracker", code = "tq", kind = "num", def = 13 },
+	-- What brings each element up: one number per element, where bit i is column i of the trigger grid (2 while moving,
+	-- 3 new info, 4 mouse over, 5 hide in combat, 6 dungeon or raid, 7 combat, 8 weapon drawn, 9 a target, 10 the mouse
+	-- moving). Bit 1 was "Awake" up to 1.5.0-beta2: one box per row, with what counted as awake set once for all rows on the
+	-- Show when page; since the Awake split (1.6) bits 7 to 10 are columns of their own and a saved bit 1 is turned into them
+	-- (see rebuildLists). A new install starts hidden and comes up in combat, while moving, or with the mouse over it (the
+	-- chat for new messages instead of moving: it would cover the screen at every step). The weapon is off by default.
+	{ key = "trigBars", code = "tb", kind = "num", def = 74 },
+	{ key = "trigPlayer", code = "tp", kind = "num", def = 66 },
+	{ key = "trigUnits", code = "tu", kind = "num", def = 66 },
+	{ key = "trigTracker", code = "tq", kind = "num", def = 78 },
 	{ key = "trigChat", code = "tc", kind = "num", def = 12 },
-	{ key = "trigRxp", code = "tr", kind = "num", def = 13 },
+	{ key = "trigRxp", code = "tr", kind = "num", def = 78 },
 	{ key = "trigNav", code = "tn", kind = "num", def = 26 },
 	{ key = "rxpGuide", code = "rg", kind = "bool", def = false },
 	{ key = "rxpTargets", code = "rt", kind = "bool", def = false },
@@ -44,8 +49,8 @@ local FIELDS = {
 	{ key = "questSeconds", code = "q", kind = "num", def = 10 },
 	{ key = "fadeBags", code = "fg", kind = "bool", def = true },
 	{ key = "fadeMicro", code = "fo", kind = "bool", def = true },
-	{ key = "trigBagsBar", code = "tg", kind = "num", def = 9 },
-	{ key = "trigMicro", code = "to", kind = "num", def = 9 },
+	{ key = "trigBagsBar", code = "tg", kind = "num", def = 74 },
+	{ key = "trigMicro", code = "to", kind = "num", def = 74 },
 	{ key = "barFade", code = "af", kind = "num", def = 255 },
 	{ key = "barHotkeys", code = "ah", kind = "num", def = 0 },
 	{ key = "barNames", code = "an", kind = "num", def = 0 },
@@ -68,6 +73,9 @@ local FIELDS = {
 	{ key = "mouseSeconds", code = "mt", kind = "num", def = 3 },
 	{ key = "notFullShows", code = "nf", kind = "bool", def = false },
 	{ key = "keepDrawn", code = "kd", kind = "bool", def = false },
+	-- The Awake split (1.6) has been applied to these settings (see rebuildLists). Kept in the settings macro too, so the
+	-- macro alone tells old settings from new ones.
+	{ key = "awakeSplit", code = "as", kind = "bool", def = false },
 }
 local DEFAULTS, BY_CODE = {}, {}
 for _, f in ipairs(FIELDS) do
@@ -110,10 +118,13 @@ local SPLIT_BY = {}
 for _, s in ipairs(SPLIT) do
 	local cap = s.g:sub(1, 1):upper() .. s.g:sub(2)
 	s.fadeKey, s.trigKey, s.ovKey = "fade" .. cap, "trig" .. cap, "ov" .. cap
-	s.cols = s.cols or { 1, 2, 4, 6, 5 }
+	s.cols = s.cols or { 7, 8, 9, 10, 2, 4, 6, 5 }
 	DEFAULTS[s.ovKey] = 0
 	SPLIT_BY[s.g] = s
 end
+-- The trigger rows that are settings of their own (the split groups above have theirs in s.trigKey).
+SPLIT.mainTrig = { "trigBars", "trigPlayer", "trigUnits", "trigTracker", "trigChat", "trigRxp", "trigNav", "trigMap",
+	"trigBagsBar", "trigMicro" }
 -- The rows of the Elements grid and the sliders of the Opacity page, in groups, in this order. Info is the rows with a New info
 -- column. (The cast bar and the breath bar have no grid row: they only appear when they are needed, so they are only on the
 -- Opacity page.)
@@ -136,8 +147,8 @@ local DEFAULT_LISTS = {
 	hud = {}, -- frames you add with /qhud add hud (the old big list is split into the rows below)
 	quest = { "ObjectiveTrackerFrame", "Questie_BaseFrame" }, -- Questie hides the game's tracker and shows its own
 	map = { "MinimapCluster" },
-	micro = { "MicroMenuContainer" },
-	bags = { "BagsBar" },
+	micro = { "MicroMenuContainer", "DominosFramemenu" }, -- (Dominos' menu bar, see the Dominos block below)
+	bags = { "BagsBar", "DominosFramebags" },
 	reporter = { "PTR_IssueReporter", "PTR_IssueReporterButton", "PTR_IssueReporterFrame" },
 	hidden = {},
 	chat = {},
@@ -201,6 +212,22 @@ local ACTION_BARS = {
 	"MultiBarLeft", "MultiBar5", "MultiBar6", "MultiBar7", "MultiBar8", "StanceBar", "PetActionBar", "MultiCastActionBarFrame",
 	"MultiCastFlyoutFrame", "MultiCastFlyoutFrameOpenButton", "SpellFlyout",
 }
+-- Dominos (since 1.5.0) puts the action buttons into bars of its own, named DominosFrame1 to DominosFrame14, with its pet,
+-- stance ("class") and possess bars beside them (names from Dominos' frame.lua and bars folder). They fade with the Action
+-- bars row and count for its mouse over; its bags bar and menu bar are in the Bags bar and Menu bar lists above. Dominos
+-- tucks the game's own bars under a hidden frame, so those stay out of sight. The names mean nothing without Dominos.
+do
+	local names = { "DominosFramepet", "DominosFrameclass", "DominosFramepossess" }
+	for i = 1, 14 do names[#names + 1] = "DominosFrame" .. i end
+	for _, n in ipairs(names) do
+		table.insert(DEFAULT_LISTS.bars, n)
+		ACTION_BARS[#ACTION_BARS + 1] = n
+	end
+	-- Its XP bar (Dominos_Progress, ids "exp" and "artifact" in its main.lua): with the Action bars row, like the game's
+	-- own XP bar (StatusTrackingBarManager), and like that one not counted for the row's mouse over.
+	table.insert(DEFAULT_LISTS.bars, "DominosFrameexp")
+	table.insert(DEFAULT_LISTS.bars, "DominosFrameartifact")
+end
 local CHAT_EXTRAS = {
 	"GeneralDockManager", "ChatFrameMenuButton", "ChatFrameChannelButton",
 	"ChatFrameToggleVoiceDeafenButton", "ChatFrameToggleVoiceMuteButton", "QuickJoinToastButton",
@@ -277,10 +304,30 @@ local woc = {
 do
 	local want = setmetatable({}, { __mode = "k" })    -- frame -> the opacity QuietHUD holds it at (below full)
 	local hooked = setmetatable({}, { __mode = "k" })
+	local written = setmetatable({}, { __mode = "k" }) -- every frame QuietHUD has written at least once
+	-- Frames another addon hid by setting their opacity to 0 (since 1.5.0). EllesmereUI hides the game's main action bar that
+	-- way and keeps it in place; QuietHUD put its own opacity back over that, and the bar's art showed up behind EllesmereUI's
+	-- bars. Now such a frame is left at 0 and nothing is written to it until something shows it again (its owner setting it
+	-- above 0, or the half-second pass seeing it above 0), then QuietHUD takes it back. In the 1.60.1 UI source the game
+	-- sets no frame in QuietHUD's lists to a plain 0 (the chat tabs go down to 0.2); the loss of control alert can pass
+	-- through a computed 0 as it runs out, and its next update sets 1, which takes it back.
+	local yielded = setmetatable({}, { __mode = "k" })
 	local writing = false
-	-- Someone else set a held frame's opacity: QuietHUD's goes back on in the same call.
+	local function num(a) return type(a) == "number" and not (issecretvalue and issecretvalue(a)) end
+	-- Someone else set a held frame's opacity: QuietHUD's goes back on in the same call, unless they hid it (see yielded).
 	local function keep(f, a)
-		if writing or not DB.enabled then return end
+		if writing then return end
+		if num(a) then
+			if a < 0.01 then
+				yielded[f], want[f] = true, nil
+				return
+			elseif yielded[f] then
+				yielded[f] = nil
+				woc.forget() -- (shown again by its owner: written at the next update)
+				return
+			end
+		end
+		if not DB.enabled then return end
 		local w = want[f]
 		if w == nil then return end
 		if type(a) == "number" and not (issecretvalue and issecretvalue(a)) and math.abs(a - w) < 0.005 then return end
@@ -289,12 +336,21 @@ do
 		writing = false
 	end
 	woc.write = function(f, a)
-		if a >= 0.999 then
-			want[f] = nil
-		else
-			want[f] = a
-			if not hooked[f] then hooked[f] = pcall(hooksecurefunc, f, "SetAlpha", keep) or nil end
+		if yielded[f] then return end
+		-- The hook goes on every written frame, also one written at full, so another addon hiding it later is seen (tried
+		-- again at the next write if the game refused it once).
+		if not hooked[f] then hooked[f] = pcall(hooksecurefunc, f, "SetAlpha", keep) or nil end
+		if not written[f] then
+			-- First sight: a frame already at 0 that QuietHUD never wrote was hidden by another addon, shown or not (one
+			-- set to 0 and hidden, then shown again by the game with no SetAlpha call, stays at 0; audit job 43, F2).
+			local okA, now = pcall(f.GetAlpha, f)
+			if okA and num(now) and now < 0.01 then
+				yielded[f] = true
+				return
+			end
+			written[f] = true
 		end
+		want[f] = (a < 0.999) and a or nil
 		writing = true
 		local ok, err = pcall(f.SetAlpha, f, a)
 		writing = false
@@ -304,8 +360,16 @@ do
 	woc.forget = function()
 		woc.applied, woc.all = {}, {}
 	end
-	-- Twice a second: a held frame whose opacity moved without a SetAlpha call gets QuietHUD's back.
+	-- Twice a second: a held frame whose opacity moved without a SetAlpha call gets QuietHUD's back, and a frame left to
+	-- another addon (yielded) that is above 0 again, however it got there, is QuietHUD's again.
 	woc.drift = function()
+		for f in pairs(yielded) do
+			local ok, a = pcall(f.GetAlpha, f)
+			if ok and num(a) and a >= 0.01 then
+				yielded[f] = nil
+				woc.forget()
+			end
+		end
 		if not DB.enabled then return end
 		for f, w in pairs(want) do
 			local ok, a = pcall(f.GetAlpha, f)
@@ -327,7 +391,7 @@ end
 -- once when something wakes it (wakeLoop): a game message (combat, a target, a cast, moving, a zone, the sheath key, a
 -- timer, health or power), the mouse entering or leaving a listed frame, a setting, a slash command. The tick keeps it right
 -- on its own for anything that lasts; a wake only makes it instant. What a tick can miss is something shorter than a tenth
--- of a second that leaves no trace: with "Show while I move the mouse", the cursor leaving and coming back to the very same
+-- of a second that leaves no trace: with a Mouse move column ticked, the cursor leaving and coming back to the very same
 -- spot between two looks (accepted; a mouse press has a message and wakes it). Step 2, later: the questions that have a game message stop being asked at all.
 local loop = { clock = 0, wake = true, moving = false, hovered = setmetatable({}, { __mode = "k" }) }
 local function wakeLoop() loop.wake = true end
@@ -338,7 +402,6 @@ local function hookHover(f)
 	pcall(f.HookScript, f, "OnEnter", wakeLoop)
 	pcall(f.HookScript, f, "OnLeave", wakeLoop)
 end
-local lastActive = false
 
 -- Debug output: printed, and also kept in DB.trace (saved to the addon's saved-variables file on /reload).
 local function trace(msg)
@@ -373,7 +436,30 @@ local SHIFT_FRAMES = {
 	},
 	units ={ "PlayerFrame", "PlayerCastingBarFrame", "TargetFrame", "FocusFrame", "PetFrame", "PartyFrame" },
 }
+-- The Awake split (1.6). Up to 1.5.0-beta2 a row had one Awake box (bit 1), and the Show when page said once for all rows
+-- what awake meant: in combat, weapon drawn, a target, the mouse moving. Those are columns of their own now (bits 7 to 10).
+-- This turns a row saved the old way into the columns its Awake stood for, so nothing changes on anyone's screen. No column
+-- writes bit 1 any more, so a bit 1 can only be an old setting: it is converted wherever it turns up (rebuildLists for the
+-- main settings, restoreGroups for the groups macro, which is read later; audit job 44, F2), and a converted row has none.
+woc.splitAwake = function(m)
+	if type(m) ~= "number" or m % 2 ~= 1 then return m end
+	m = m - 1
+	local function add(on, bit)
+		local w = 2 ^ (bit - 1)
+		if on and math.floor(m / w) % 2 == 0 then m = m + w end
+	end
+	add(DB.inCombat ~= false, 7)
+	add(DB.sheathShows, 8)
+	add(DB.showOnTarget, 9)
+	add(DB.mouseShows, 10)
+	return m
+end
 local function rebuildLists()
+	for _, k in ipairs(SPLIT.mainTrig) do DB[k] = woc.splitAwake(DB[k]) end
+	for _, s in ipairs(SPLIT) do
+		if DB[s.trigKey] ~= nil then DB[s.trigKey] = woc.splitAwake(DB[s.trigKey]) end
+	end
+	DB.awakeSplit = true
 	local before = {}
 	for g, list in pairs(LISTS) do
 		if g ~= "nav" and g ~= "shift" then
@@ -388,7 +474,17 @@ local function rebuildLists()
 				merged[#merged + 1] = n
 			end
 		end
-		for _, n in ipairs(DEFAULT_LISTS[g]) do add(n) end
+		-- The beta's Issue Reporter button (since 1.5.0): hidden with its box ticked; with it unticked (the default) it fades
+		-- and comes back with the Menu bar row instead of sitting solid on the screen. The owner, 2026-10-20: "should make it
+		-- fade in and out? just attch it to something maybe".
+		if g == "reporter" then
+			if DB.hideReporter then for _, n in ipairs(DEFAULT_LISTS.reporter) do add(n) end end
+		else
+			for _, n in ipairs(DEFAULT_LISTS[g]) do add(n) end
+		end
+		if g == "micro" and not DB.hideReporter then
+			for _, n in ipairs(DEFAULT_LISTS.reporter) do add(n) end
+		end
 		if g == "bars" then
 			for _, n in ipairs(discovered) do
 				if not KNOWN_BAR_FRAMES[n] then add(n) end
@@ -506,13 +602,15 @@ end
 -- writeMacro). The frames you added (/qhud add) are not in it: they have a macro of their own (see the frames block).
 local function encodeSettings()
 	local parts = {}
+	-- (whole numbers in full: a trigger row with every box ticked is 1022, which "%.3g" would round to 1020)
+	local function num(x) return (x == math.floor(x) and math.abs(x) < 1e9) and string.format("%d", x) or string.format("%.3g", x) end
 	for _, f in ipairs(FIELDS) do
 		local v = DB[f.key]
 		local text, default
 		if f.kind == "bool" then
 			text, default = (v and "1" or "0"), (f.def and "1" or "0")
 		else
-			text, default = string.format("%.3g", v or f.def), string.format("%.3g", f.def)
+			text, default = num(v or f.def), num(f.def)
 		end
 		if text ~= default then parts[#parts + 1] = f.code .. "=" .. text end
 	end
@@ -625,9 +723,20 @@ end
 local function restoreFromStore()
 	if restored then return end
 	local s = readMacroString() or getCVarString()
-	if not s or s == "" then return end
+	if not s then return end
 	restored = true
 	if userChanged then return end
+	-- Settings written since the Awake split always hold "as=1". Older ones only hold what differed from the defaults of
+	-- their day, so everything they leave out gets the 1.4.0 default first: the weapon switch was on, and every row had its
+	-- Awake box (rebuildLists then turns that into columns). That includes a macro with only its marker line left, which is
+	-- old settings all at their defaults (audit job 44, F1). The pre-split beta2 (weapon off by default) never went public:
+	-- its only player has the saved file, which is read instead of this.
+	local old = not (";" .. s .. ";"):find(";as=1;", 1, true)
+	if old then
+		local OLD = { sheathShows = true, trigBars = 9, trigPlayer = 1, trigUnits = 1, trigTracker = 13, trigRxp = 13,
+			trigMap = 14, trigBagsBar = 9, trigMicro = 9 }
+		for k, v in pairs(OLD) do DB[k] = v end
+	end
 	local legacyInstance, legacyMapInstance, sawTrigMap = false, false, false
 	local legacyMapMoving, legacyMapDim, legacyMapDimOpacity
 	for part in s:gmatch("[^;]+") do
@@ -859,12 +968,18 @@ end
 -- ClassicUI Forever hangs every action button under a holder of its own on UIParent, and copies the bar's opacity into the
 -- holder only when it lays the bar out again, so the buttons stayed solid while the bar faded, and after a target change
 -- they came up faded while everything else woke.
+-- A bar of another addon that QuietHUD fades itself (Dominos' bars, in the bars list) counts as the button's bar: the
+-- button just follows it. Without that, Dominos' reused game buttons were faded by name and told to ignore their bar, and
+-- stayed visible when Dominos hid the bar with its own fade (audit job 43, F1).
 local function outsideBar(button, frames)
 	local f = button
 	for _ = 1, 16 do
 		local p = f:GetParent()
 		if not p or p == f or p == UIParent then return true end
 		for _, name in ipairs(frames) do
+			if _G[name] == p then return false end
+		end
+		for _, name in ipairs(LISTS.bars or {}) do
 			if _G[name] == p then return false end
 		end
 		f = p
@@ -964,12 +1079,29 @@ local function anyHoveredDeep(names)
 	return cache.result
 end
 
--- What brings an element up comes from its row of the trigger grid (bit i of the mask is trigger i): awake, while
--- moving, new info, mouse over, hide in combat, which beats the rest, and being inside a dungeon or raid.
-local T = { AWAKE = 1, MOVING = 2, NEWS = 3, HOVER = 4, COMBAT = 5, INST = 6 }
-local function triggered(mask, awake, moved, news, combat, inside, names, deep, hoverNow)
+-- What brings an element up comes from its row of the trigger grid (bit i of the mask is trigger i): while moving, new
+-- info, mouse over, hide in combat (which beats the rest), being inside a dungeon or raid, and since the Awake split the
+-- four that "awake" used to bundle: combat, the weapon drawn, a target, the mouse moving. wake holds those four as they are
+-- right now (see update). COMBAT is the Hide in combat column (its name from before); FIGHT is the Combat column.
+local T = { MOVING = 2, NEWS = 3, HOVER = 4, COMBAT = 5, INST = 6, FIGHT = 7, WEAPON = 8, TARGET = 9, MOUSE = 10 }
+-- Whether one of a row's four wake columns is ticked and true right now.
+local function woken(mask, wake)
+	return (wake.fight and barBit(mask, T.FIGHT)) or (wake.weapon and barBit(mask, T.WEAPON))
+		or (wake.target and barBit(mask, T.TARGET)) or (wake.mouse and barBit(mask, T.MOUSE)) or false
+end
+-- Whether any row has a column ticked: the weapon state and the mouse watcher are only looked at while a row can use them.
+woc.anyRow = function(bit)
+	for _, k in ipairs(SPLIT.mainTrig) do
+		if barBit(DB[k], bit) then return true end
+	end
+	for _, s in ipairs(SPLIT) do
+		if barBit(gTrig(s), bit) then return true end
+	end
+	return false
+end
+local function triggered(mask, wake, moved, news, combat, inside, names, deep, hoverNow)
 	if barBit(mask, T.COMBAT) and combat then return false end
-	if barBit(mask, T.AWAKE) and awake then return true end
+	if woken(mask, wake) then return true end
 	if barBit(mask, T.MOVING) and moved then return true end
 	if barBit(mask, T.NEWS) and news then return true end
 	if barBit(mask, T.INST) and inside then return true end
@@ -1953,8 +2085,9 @@ do
 		if f and f.Show then pcall(hooksecurefunc, f, "Show", onTip) end
 	end
 end
--- The Issue Reporter button is hidden or not, with a checkbox, outside the fade. This turns the stored value into an
--- opacity: 1 leaves the frame alone, 0 hides it.
+-- The Issue Reporter button: its checkbox hides it; unticked it fades with the Menu bar row (since 1.5.0, see
+-- rebuildLists; up to 1.4.0 it then stayed solid). This turns the stored value into an opacity: 1 leaves the frame
+-- alone, 0 hides it.
 local function fixedAlpha(key)
 	local v = DB[key]
 	if type(v) == "boolean" then return v and 0 or 1 end
@@ -1991,8 +2124,11 @@ do
 	end
 	local function keep(f, a)
 		if busy or not wanted or not DB.enabled or type(a) ~= "number" or math.abs(a - wanted) < 0.01 or not listed(f) then return end
+		-- An outside 0 is someone hiding the window: woc's own hook lets it go (yielded), so it is not put back here first
+		-- (audit job 43, F3).
+		if not (issecretvalue and issecretvalue(a)) and a < 0.01 then return end
 		busy = true
-		pcall(f.SetAlpha, f, wanted)
+		pcall(woc.write, f, wanted) -- (through woc, so it is not taken for another addon hiding the frame at idle 0)
 		busy = false
 	end
 	applyRxp = function(a)
@@ -2296,9 +2432,10 @@ do
 	end
 end
 
--- "Show while I move the mouse" (off by default): the HUD counts as awake while the cursor moves or a mouse button is held (the
--- cursor stands still while the camera is turned with a button down), and for "Stay visible after the mouse stops" seconds
--- after. It is only looked at while the box is ticked: one cursor position read per update, compared with the one before.
+-- The Mouse move column (off by default; "Show while I move the mouse" before the Awake split): true while the cursor moves or
+-- a mouse button is held (the cursor stands still while the camera is turned with a button down), and for "Stay visible
+-- after the mouse stops" seconds after. Only looked at while a row has it ticked: one cursor position read per update,
+-- compared with the one before.
 local mouseActive
 do
 	local lastX, lastY, activeUntil = nil, nil, 0
@@ -2387,18 +2524,24 @@ local function update(dt)
 	local enabled = DB.enabled
 
 	local inside = inDungeonOrRaid()
+	-- The four wake columns (the Awake split). The weapon is only asked about while a row has Weapon ticked, and the mouse
+	-- only while a row has Mouse move ticked (the polling budget, memory rules-quiethud).
 	local weaponOut = false
-	if DB.sheathShows then
+	if woc.anyRow(T.WEAPON) then
 		local state
 		weaponOut, state = weaponDrawn()
 		-- (the weapon the game put away counts as out while QuietHUD draws it again; see keepDrawn)
 		if keepDrawn((enabled and DB.keepDrawn) and true or false, now, state, combat) then weaponOut = true end
 	else
-		keepDrawn(false) -- (forgets the weapon state, so nothing is drawn on old news when the box is ticked again)
+		keepDrawn(false) -- (forgets the weapon state, so nothing is drawn on old news when a Weapon box is ticked again)
 	end
-	local active = edit or (DB.inCombat and (combat or now < combatEnd)) or weaponOut
-		or (DB.showOnTarget and UnitExists("target")) or (DB.mouseShows and mouseActive(now))
-	lastActive = active and true or false
+	local wake = {
+		fight = combat or now < combatEnd,
+		weapon = weaponOut,
+		target = UnitExists("target") and true or false,
+		mouse = woc.anyRow(T.MOUSE) and mouseActive(now) and true or false,
+	}
+	woc.wake = wake -- (for /qhud state)
 	local okMove, moving = pcall(isMoving)
 	if okMove and moving then moveUntil = now + MOVE_LINGER end
 	if (okMove and moving and true or false) ~= lastLoggedMoving then
@@ -2409,35 +2552,34 @@ local function update(dt)
 
 	local vis = {}
 	local moved = now < moveUntil
-	vis.bars = triggered(DB.trigBars, active, moved, false, combat, inside, barHover)
-	vis.player = triggered(DB.trigPlayer, active, moved, false, combat, inside, LISTS.player)
+	vis.bars = triggered(DB.trigBars, wake, moved, false, combat, inside, barHover)
+	vis.player = triggered(DB.trigPlayer, wake, moved, false, combat, inside, LISTS.player)
 	-- Health or power changing brings the player frame up too (its own box on the Show when page); Hide in combat still wins.
 	if playerChanging((enabled and DB.notFullShows) and true or false, now) and not (combat and barBit(DB.trigPlayer, T.COMBAT)) then
 		vis.player = true
 	end
-	vis.hud = triggered(DB.trigUnits, active, moved, false, combat, inside, LISTS.hud)
+	vis.hud = triggered(DB.trigUnits, wake, moved, false, combat, inside, LISTS.hud)
 	for _, s in ipairs(SPLIT) do
-		vis[s.g] = triggered(gTrig(s), active, moved, false, combat, inside, LISTS[s.g])
+		vis[s.g] = triggered(gTrig(s), wake, moved, false, combat, inside, LISTS[s.g])
 	end
 	-- Casting shows the cast bar (not when it is set to hide in combat and you are in combat). A running breath, fatigue or feign
 	-- death timer shows the breath bar whatever its settings: with the HUD idle the breath bar would be invisible while you drown.
 	local castBar = PlayerCastingBarFrame or CastingBarFrame
 	if castBar and (castBar.casting or castBar.channeling) and not (combat and barBit(gTrig(SPLIT_BY.cast), T.COMBAT)) then vis.cast = true end
 	if mirrorTimerActive() then vis.breath = true end
-	vis.bags = triggered(DB.trigBagsBar, active, moved, false, combat, inside, LISTS.bags)
-	vis.micro = triggered(DB.trigMicro, active, moved, false, combat, inside, LISTS.micro)
-	vis.quest = triggered(DB.trigTracker, active, moved, now < questUntil, combat, inside, LISTS.quest)
-	vis.map = triggered(DB.trigMap, active, moved, now < mapUntil, combat, inside, LISTS.map, false,
+	vis.bags = triggered(DB.trigBagsBar, wake, moved, false, combat, inside, LISTS.bags)
+	vis.micro = triggered(DB.trigMicro, wake, moved, false, combat, inside, LISTS.micro)
+	vis.quest = triggered(DB.trigTracker, wake, moved, now < questUntil, combat, inside, LISTS.quest)
+	vis.map = triggered(DB.trigMap, wake, moved, now < mapUntil, combat, inside, LISTS.map, false,
 		mouseInMapRect() or anyHovered(LISTS.map))
 	-- Chat is the one element whose hover is a list of frames, and typing always brings it up, even in combat.
 	local chatMask = DB.trigChat
-	local chatWanted = (barBit(chatMask, T.AWAKE) and active) or (barBit(chatMask, T.MOVING) and moved)
-		or (barBit(chatMask, T.NEWS) and now < chatUntil) or (barBit(chatMask, T.INST) and inside)
-		or (barBit(chatMask, T.HOVER) and chatHovered())
-	if barBit(chatMask, T.COMBAT) and combat then chatWanted = false end
+	-- (through triggered, with the chat's own hover answer: update is at Lua's limit of 60 outside variables)
+	local chatWanted = triggered(chatMask, wake, moved, now < chatUntil, combat, inside, nil, false,
+		barBit(chatMask, T.HOVER) and chatHovered() or false)
 	vis.chat = (chatWanted or chatTyping()) and true or false
-	vis.nav = navForce or triggered(DB.trigNav, active, moved, false, combat, inside, LISTS.nav)
-	vis.rxp = triggered(DB.trigRxp, active, moved, now < questUntil, combat, inside, LISTS.rxp, true)
+	vis.nav = navForce or triggered(DB.trigNav, wake, moved, false, combat, inside, LISTS.nav)
+	vis.rxp = triggered(DB.trigRxp, wake, moved, now < questUntil, combat, inside, LISTS.rxp, true)
 	if edit or now < peekUntil or (DB.peekAlt and IsAltKeyDown()) or (DB.peekCtrl and IsControlKeyDown()) or (DB.peekShift and IsShiftKeyDown()) then
 		for g in pairs(vis) do vis[g] = true end
 	end
@@ -2605,14 +2747,17 @@ end
 -- The settings window's layout. width is the least it is (it grows when the tabs need more room); the grid is the trigger grid
 -- (the Fade column, the first trigger column and the distance between columns); the columns are the two columns of sliders on
 -- the Opacity page (where the right one starts, and the width of a name and of a slider).
-local WIN = { width = 660, gridFade = 156, gridFirst = 206, gridPitch = 60, col2 = 330, labelW = 128, sliderW = 108 }
+local WIN = { width = 720, gridFade = 156, gridFirst = 206, gridPitch = 56, col2 = 330, labelW = 128, sliderW = 108 }
 
 -- Hover help: what each trigger column means (by its bit, and the Fade column), and what each element is (by its name, the
 -- same on the Elements grid and the Opacity page).
 local HELP = {
 	cols = {
 		fade = "Ticked: it fades out when nothing brings it up. Unticked: it never fades and stays at its opacity from the Opacity page (fully solid on Global).",
-		[1] = "Comes up while the HUD is awake: in combat, with your weapon drawn or with a target. Which of those count is set on the Show when page.",
+		[7] = "Comes up in combat, and stays for a few seconds after the fight (how long is set on the Show when page).",
+		[8] = "Comes up while your weapon or your wand is drawn, so the sheath key works as a switch for it.",
+		[9] = "Comes up while you have a target.",
+		[10] = "Comes up while you move the mouse or turn the camera with it, and stays for a few seconds after (how long is set on the Show when page).",
 		[2] = "Comes up while you move, and for a moment after you stop.",
 		[3] = "Comes up for a while when there is something new: quest progress for the tracker and RestedXP, a chat message for the chat, a new zone for the minimap. How long is set on the Extras page (the Chat page for the chat).",
 		[4] = "Comes up while your mouse is over it. For mouse over only, leave just this box ticked.",
@@ -2647,19 +2792,15 @@ local HELP = {
 local PAGES = {
 	{ title = "Show when", items = {
 		{ "check", "enabled", "Enable QuietHUD" },
-		{ "heading", "When the HUD counts as awake" },
-		{ "note", "These decide when the HUD counts as awake, one of the things that can bring an element up. Which elements come up when it is awake is set per element in the Awake column of the Elements page." },
-		{ "check", "inCombat", "Show in combat" },
-		{ "check", "sheathShows", "Show while my weapon is drawn" },
-		{ "check", "keepDrawn", "Keep my weapon drawn after spells, chests and crafting", "Only for Show while my weapon is drawn. When the game puts your weapon away by itself (a buff, a chest, a lock, crafting, looting), QuietHUD draws it again as soon as the cast is over, so the HUD stays up. You will see your character draw the weapon again. Pressing the sheath key still puts it away and hides the HUD. Not while mounted, swimming, dead, on a flight path or in a fight." },
-		{ "check", "showOnTarget", "Show while I have a target" },
-		{ "slider", "linger", "Stay visible after combat (seconds)", 0, 180, 1, "%.0f", nil, nil, "Only for Show in combat: how long the HUD stays up after a fight ends.", 420 },
-		{ "check", "mouseShows", "Show while I move the mouse" },
-		{ "slider", "mouseSeconds", "Stay visible after the mouse stops (seconds)", 1, 60, 1, "%.0f", nil, nil, "Only for Show while I move the mouse: how long the HUD stays up after you stop moving the cursor or turning the camera." },
+		{ "heading", "Combat, weapon and mouse" },
+		{ "note", "What brings each element up is set per element on the Elements page. These go with its Combat, Weapon and Mouse move columns." },
+		{ "slider", "linger", "Stay visible after combat (seconds)", 0, 180, 1, "%.0f", nil, nil, "For the Combat column: how long an element stays up after a fight ends.", 420 },
+		{ "check", "keepDrawn", "Keep my weapon drawn after spells, chests and crafting", "For the Weapon column. When the game puts your weapon away by itself (a buff, a chest, a lock, crafting, looting), QuietHUD draws it again as soon as the cast is over, so the HUD stays up. You will see your character draw the weapon again. Pressing the sheath key still puts it away and hides the HUD. Not while mounted, swimming, dead, on a flight path or in a fight." },
+		{ "slider", "mouseSeconds", "Stay visible after the mouse stops (seconds)", 1, 60, 1, "%.0f", nil, nil, "For the Mouse move column: how long an element stays up after you stop moving the cursor or turning the camera.", 420 },
 		{ "heading", "Player frame" },
 		{ "check", "notFullShows", "Show the player frame while health or power is changing", "Brings up the player frame only, while your health or your power bar goes up or down and for a few seconds after (3, or 8 for mana, which waits a moment before it comes back). In practice: until you are topped off. The game does not let addons read your health or power, so QuietHUD goes by them changing. Hide in combat on the Player frame row still wins." },
 		{ "heading", "Fading out" },
-		{ "slider", "fadeOutSeconds", "Fade out animation (seconds)", 0.1, 5, 0.05, "%.2f", nil, nil, "How long an element takes to fade out, whatever brought it up. The chat has its own on the Chat page." },
+		{ "slider", "fadeOutSeconds", "Fade out animation (seconds)", 0.1, 5, 0.05, "%.2f", nil, nil, "How long an element takes to fade out, whatever brought it up. The chat has its own on the Chat page.", 420 },
 		{ "heading", "Show the whole HUD on demand" },
 		{ "check", "peekAlt", "While I hold Alt" },
 		{ "check", "peekCtrl", "While I hold Ctrl" },
@@ -2671,7 +2812,7 @@ local PAGES = {
 	} },
 	{ title = "Opacity", items = {
 		{ "heading", "All elements" },
-		{ "slider", "base", "Active (combat, target)", 0.1, 1, 0.05, "%.2f", nil, true, "How solid the HUD is when it is up. Every element set to Global uses this." },
+		{ "slider", "base", "Active (when it's up)", 0.1, 1, 0.05, "%.2f", nil, true, "How solid the HUD is when it is up. Every element set to Global uses this." },
 		{ "slider", "idle", "Idle (0 = hidden)", 0, 1, 0.05, "%.2f", nil, true, "How solid an element is while it is faded. 0 hides it completely." },
 		{ "heading", "Each element (Global = the active value)" },
 		-- (a slider for every element goes here, in two columns: see below)
@@ -3313,7 +3454,7 @@ do
 		for g, f, t, o in body:gmatch("(%a+)=(%d),(%d+),([%d%.]+)") do
 			local s = SPLIT_BY[g]
 			if s then
-				DB[s.fadeKey], DB[s.trigKey], DB[s.ovKey] = f == "1", tonumber(t) or 0, tonumber(o) or 0
+				DB[s.fadeKey], DB[s.trigKey], DB[s.ovKey] = f == "1", woc.splitAwake(tonumber(t) or 0), tonumber(o) or 0
 				saved[g] = true
 			end
 		end
@@ -3648,8 +3789,8 @@ do
 	-- number, like the bar grid, and only the cells that mean something for that element are drawn. The columns are
 	-- ordered so that no row has a gap: the ones every element has come first, then hide in combat, then new info.
 	local TRIGGER_COLS = {
-		{ "Awake", 1 }, { "While\nmoving", 2 }, { "Mouse\nover", 4 }, { "Dungeon\nor raid", 6 },
-		{ "Hide in\ncombat", 5 }, { "New\ninfo", 3 },
+		{ "Combat", 7 }, { "Weapon", 8 }, { "Target", 9 }, { "Mouse\nmove", 10 }, { "While\nmoving", 2 }, { "Mouse\nover", 4 },
+		{ "Dungeon\nor raid", 6 }, { "Hide in\ncombat", 5 }, { "New\ninfo", 3 },
 	}
 	local COL_AT = {}
 	for position, col in ipairs(TRIGGER_COLS) do COL_AT[col[2]] = position end
@@ -3657,21 +3798,21 @@ do
 		elements = {
 			fade = true,
 			rows = {
-				{ "Action bars", "fadeBars", "trigBars", { 1, 2, 4, 6, 5 } },
-				{ "Player frame", "fadePlayer", "trigPlayer", { 1, 2, 4, 6, 5 } },
+				{ "Action bars", "fadeBars", "trigBars", { 7, 8, 9, 10, 2, 4, 6, 5 } },
+				{ "Player frame", "fadePlayer", "trigPlayer", { 7, 8, 9, 10, 2, 4, 6, 5 } },
 				-- the old "Enemy, party, buffs" row: its frames have rows of their own now (SPLIT), what is left is /qhud add hud
-				{ "Added frames", "fadeUnits", "trigUnits", { 1, 2, 4, 6, 5 } },
-				{ "Objective tracker", "fadeTracker", "trigTracker", { 1, 2, 3, 4, 5, 6 } },
-				{ "Chat", "fadeChat", "trigChat", { 1, 2, 3, 4, 5, 6 } },
-				{ "Minimap", "fadeMinimap", "trigMap", { 1, 2, 3, 4, 5, 6 } },
-				{ "Bags bar", "fadeBags", "trigBagsBar", { 1, 2, 4, 6, 5 } },
-				{ "Menu bar", "fadeMicro", "trigMicro", { 1, 2, 4, 6, 5 } },
+				{ "Added frames", "fadeUnits", "trigUnits", { 7, 8, 9, 10, 2, 4, 6, 5 } },
+				{ "Objective tracker", "fadeTracker", "trigTracker", { 7, 8, 9, 10, 2, 3, 4, 5, 6 } },
+				{ "Chat", "fadeChat", "trigChat", { 7, 8, 9, 10, 2, 3, 4, 5, 6 } },
+				{ "Minimap", "fadeMinimap", "trigMap", { 7, 8, 9, 10, 2, 3, 4, 5, 6 } },
+				{ "Bags bar", "fadeBags", "trigBagsBar", { 7, 8, 9, 10, 2, 4, 6, 5 } },
+				{ "Menu bar", "fadeMicro", "trigMicro", { 7, 8, 9, 10, 2, 4, 6, 5 } },
 			},
 		},
 		rxp = {
 			rows = {
-				{ "Guide, targets, items", false, "trigRxp", { 1, 2, 3, 4, 5, 6 } },
-				{ "Arrow", false, "trigNav", { 1, 2, 4, 5, 6 } },
+				{ "Guide, targets, items", false, "trigRxp", { 7, 8, 9, 10, 2, 3, 4, 5, 6 } },
+				{ "Arrow", false, "trigNav", { 7, 8, 9, 10, 2, 4, 5, 6 } },
 			},
 		},
 	}
@@ -3728,7 +3869,7 @@ do
 		local function header(x, text, help)
 			local h = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 			h:SetPoint("TOP", parent, "TOPLEFT", x + 16, y)
-			h:SetWidth(64)
+			h:SetWidth(WIN.gridPitch)
 			h:SetJustifyH("CENTER")
 			h:SetText(text)
 			addHelp(parent, h, (text:gsub("\n", " ")), help)
@@ -3869,6 +4010,7 @@ do
 
 	resetDefaults = function()
 		for _, f in ipairs(FIELDS) do DB[f.key] = f.def end
+		DB.awakeSplit = true -- (today's defaults are already in the shape since the Awake split; see rebuildLists)
 		for _, k in ipairs({ "ovBars", "ovPlayer", "ovHud", "ovQuest", "ovMap", "ovBagsBar", "ovMicro" }) do DB[k] = 0 end
 		for _, s in ipairs(SPLIT) do DB[s.fadeKey], DB[s.trigKey], DB[s.ovKey] = nil, nil, 0 end
 		DB.moveBags = false -- (the spot they were moved to stays saved, as before)
@@ -4023,7 +4165,7 @@ do
 		now:SetPoint("BOTTOMLEFT", buttonX, buttonY)
 		now:SetText("Show/hide HUD now")
 		-- Shows the whole HUD (the same as /qhud peek); pressing it again puts things back to normal. (It used to flip the "weapon
-		-- drawn" state, which does nothing unless "Show while my weapon is drawn" is ticked.) It also ends by itself after two minutes.
+		-- drawn" state, which does nothing unless a row has its Weapon column ticked.) It also ends by itself after two minutes.
 		now:SetScript("OnClick", function()
 			local t = GetTime()
 			peekUntil = t < peekUntil and 0 or t + 120
@@ -4670,10 +4812,10 @@ end
 for e in pairs(kindOf) do pcall(ev.RegisterEvent, ev, e) end
 for e in pairs(chatKindOf) do pcall(ev.RegisterEvent, ev, e) end
 -- The mouse press event is only listened to while the watcher is on, so none of this runs for anyone who has not asked.
--- "Show while I move the mouse" listens too: a press wakes the sleeping loop at once, so a click shorter than its tenth of
+-- The Mouse move column listens too: a press wakes the sleeping loop at once, so a click shorter than its tenth of
 -- a second still counts (the handler below takes any event as a wake; the watcher's own line stays behind its setting).
 applyMouseWatch = function()
-	local want = DB.watchMouse or (DB.enabled and DB.mouseShows)
+	local want = DB.watchMouse or (DB.enabled and woc.anyRow(T.MOUSE)) -- (only while a row has Mouse move ticked)
 	if want and not mouseRegistered then
 		mouseRegistered = pcall(ev.RegisterEvent, ev, "GLOBAL_MOUSE_DOWN")
 	elseif not want and mouseRegistered then
@@ -4793,12 +4935,13 @@ SlashCmdList["QUIETHUD"] = function(msg)
 				local f = _G[name]
 				return (f and f.GetAlpha) and string.format("%.2f", f:GetAlpha()) or "none"
 			end
-			print(string.format("QuietHUD state: enabled=%s, shown opacity=%.2f, idle opacity=%.2f, HUD active=%s",
-				tostring(DB.enabled and true or false), DB.base or 0, DB.idle or 0, tostring(lastActive)))
+			print(string.format("QuietHUD state: enabled=%s, shown opacity=%.2f, idle opacity=%.2f, wake: combat=%s weapon=%s target=%s mouse=%s",
+				tostring(DB.enabled and true or false), DB.base or 0, DB.idle or 0, tostring((woc.wake or {}).fight or false),
+				tostring((woc.wake or {}).weapon or false), tostring((woc.wake or {}).target or false), tostring((woc.wake or {}).mouse or false)))
 			print(string.format("QuietHUD triggers: in combat=%s, after-combat linger=%s, weapon drawn=%s, has target=%s, mouse moving=%s",
 				tostring(UnitAffectingCombat("player") and true or false), tostring(GetTime() < combatEnd),
 				tostring((weaponDrawn())), tostring(UnitExists("target") and true or false),
-DB.mouseShows and tostring(mouseActive(GetTime())) or "option off"))
+woc.anyRow(T.MOUSE) and tostring(mouseActive(GetTime())) or "no row has Mouse move"))
 			do
 				local function shown(fn, ...)
 					local ok, v = pcall(fn, ...)

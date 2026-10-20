@@ -1,22 +1,27 @@
 # Changelog
 
-## 1.5.0-beta1 (test build)
+## 1.5.0-beta2 (test build)
 
-**This is a test build.** If you hit a really bad bug, go back to 1.4.0 (CurseForge Files tab, or set QuietHUD back to Release in the CurseForge app) and tell me in the comments what happened.
+**This is a test build.** If something breaks badly, go back to 1.4.0 (CurseForge Files tab, or set QuietHUD back to Release in the CurseForge app) and let me know in the comments what happened. One catch if you do: 1.4.0 doesn't know the new Combat, Weapon, Target and Mouse move columns, so stuff won't come up for those there until you tick Awake again on the Elements page.
 
-Your settings carry over.
+Your settings carry over. New since beta1: "Awake" split into its own columns, Dominos, new defaults for new installs, the fix for bars other addons hid, and the Issue Reporter fading. The rest was already in beta1.
 
 ### Added
 
-- **"Keep my weapon drawn after spells, chests and crafting"**, under "Show while my weapon is drawn" (off by default). Out of combat the game puts your weapon away by itself when you buff, open a chest, pick a lock, craft or loot, and the HUD drops with it. With this ticked, QuietHUD draws the weapon again once the cast is over, so the HUD stays up. The sheath key still puts the weapon and the HUD away. Left alone while mounted, swimming, dead, on a taxi or in a fight.
+- **Dominos.** Its action bars fade with the Action bars row now, and so do its pet, stance and possess bars and its XP bar. Its bag bar goes with Bags bar and its menu with Menu bar. The per-bar boxes on the Bars page only cover the game's own bars, so with Dominos the Action bars row does all of it. I'd leave Dominos' own fade off so the two don't fight.
+- **Keep my weapon drawn after spells, chests and crafting** (off by default, on the Show when page, goes with the Weapon column). Out of combat the game puts your weapon away on its own when you buff, loot, open a chest or craft, and the HUD went with it. Tick this and QuietHUD pulls the weapon back out once the cast is done. The sheath key still puts both away. It leaves you alone while you're mounted, swimming, dead, on a taxi or in a fight.
 
 ### Changed
 
-- **QuietHUD does far less work while nothing changes.** It used to set every faded frame's opacity on every frame drawn. Now it only writes an opacity when it changes, and while nothing is fading it checks ten times a second instead of every frame; combat, a target, a cast, moving, the mouse on a frame and the other things it watches still wake it at once. Standing still in Elwynn it went from 0.230 ms a frame to 0.010.
+- **"Awake" is gone, its parts are columns now.** The Elements page has Combat, Weapon, Target and Mouse move columns where the one Awake box used to be, so every element picks its own. Bars up in combat but the minimap only with your weapon out? That works now. The four boxes on the Show when page went with it (the timing sliders stayed there). Your settings get moved over the first time you log in, so nothing changes on your screen.
+- **New installs start hidden.** Stuff comes up in combat or while you move, and the weapon is off by default now. Chat is the exception, it still only pops up for new messages. If you already use QuietHUD nothing changes for you, your settings stay. Want the sheath key back as a HUD toggle? Tick Weapon on the rows you want on the Elements page.
+- **The beta Issue Reporter button fades.** It used to just sit there solid unless you hid it. Now it fades with the Menu bar row. Hiding it still works.
+- **QuietHUD does a lot less work when nothing's going on.** It used to set every faded frame's opacity on every single frame. Now it only writes when something actually changes, and while nothing is fading it checks ten times a second instead of every frame. Combat, targeting, casting, moving and the mouse still wake it up right away. Standing around in Elwynn it went from 0.230 ms a frame to 0.010.
 
 ### Fixed
 
-- **Leatrix Plus's Square minimap:** the border and buttons faded but the map picture stayed solid. QuietHUD now notices Leatrix putting its own mask back and fades the minimap with the dark layer instead (as with "Darken the minimap"). One chat line at login says so.
+- **Bars another addon hid could come back.** Some addons hide the game's action bar by making it invisible instead of actually hiding it (EllesmereUI does this), and QuietHUD was making it visible again. So you'd get the old bar art showing up behind your bars. QuietHUD leaves that stuff alone now.
+- **Leatrix Plus Square minimap:** the border and buttons faded but the map itself stayed solid. QuietHUD now notices Leatrix putting its own mask back and fades the map with a dark layer instead, like "Darken the minimap" does. You'll see one chat line about it at login.
 
 ## 1.4.0
 
