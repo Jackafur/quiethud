@@ -1,10 +1,10 @@
 # Changelog
 
-## 1.5.0-beta3 (test build)
+## 1.5.0-beta4 (test build)
 
 **This is a test build.** If something breaks badly, go back to 1.4.0 (CurseForge Files tab, or set QuietHUD back to Release in the CurseForge app) and let me know in the comments what happened. One catch if you do: 1.4.0 doesn't know the new Show in combat, Weapon drawn, Target and Mouse move columns, so stuff won't come up for those there until you tick Awake again on the Elements page.
 
-Your settings carry over. New since beta2: Show in combat and Hide in combat sit together and Hide in combat really hides, RestedXP moved onto the Elements and Opacity pages (the RXP tab is gone), every row gets the same defaults on a new install, the Opacity page uses clearer names, and the "world will refresh" notice fades with Alerts. Everything else was already in beta2.
+Your settings carry over. New since beta3: one fix, for clicks that got caught by faded bars (see Fixed, first line). Beta3 brought Show in combat and Hide in combat side by side, Hide in combat really hiding, RestedXP on the Elements and Opacity pages, the same defaults on every row and the "world will refresh" notice fading with Alerts.
 
 ### Added
 
@@ -26,6 +26,7 @@ Your settings carry over. New since beta2: Show in combat and Hide in combat sit
 
 ### Fixed
 
+- **Clicking the world through a faded bar works again.** Since beta1 QuietHUD could make the empty space of a bar catch your clicks. With Dominos bars in the middle of the screen you couldn't click an NPC or turn the camera behind them, even with the bar faded out. That space lets clicks through again, like it should.
 - **The Elements page shows the right boxes after a reset.** Target and focus, Pet frame, the party rows, Buffs, Debuffs, Cooldown trackers, Alerts and Damage meter showed empty boxes on a fresh install or after Reset to defaults, even though they worked like the Added frames row. They show what they really do now.
 - **Bars another addon hid could come back.** Some addons hide the game's action bar by making it invisible instead of actually hiding it (EllesmereUI does this), and QuietHUD was making it visible again. So you'd get the old bar art showing up behind your bars. QuietHUD leaves that stuff alone now.
 - **Leatrix Plus Square minimap:** the border and buttons faded but the map itself stayed solid. QuietHUD now notices Leatrix putting its own mask back and fades the map with a dark layer instead, like "Darken the minimap" does. You'll see one chat line about it at login.

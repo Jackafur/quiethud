@@ -404,11 +404,27 @@ end
 local loop = { clock = 0, wake = true, moving = false, hovered = setmetatable({}, { __mode = "k" }) }
 local function wakeLoop() loop.wake = true end
 -- The mouse entering or leaving a frame wakes the loop (a frame with no mouse never fires these: the tick sees it).
+-- Hooking OnEnter switches the mouse on for a frame in this client (Dominos' tooltip code says the same of its own wrap),
+-- so up to 1.5.0-beta3 a container that let clicks through caught every click over its whole box: a Dominos bar's 566
+-- wide frame around its buttons, over the middle of the screen, and no talking to NPCs or turning the camera behind it
+-- (a player's report, 2026-10-20; `/qhud mouse` named DominosFrame10, mouse=true). The frame's mouse goes back to what
+-- it was, so only frames that already took the mouse fire these. A protected frame cannot change its mouse in a fight:
+-- it is hooked after (the next list rebuild).
 local function hookHover(f)
 	if type(f) ~= "table" or not f.HookScript or loop.hovered[f] then return end
+	if InCombatLockdown and InCombatLockdown() and f.IsProtected and f:IsProtected() then return end
+	local okC, click = pcall(function() return f:IsMouseClickEnabled() end)
+	local okM, motion = pcall(function() return f:IsMouseMotionEnabled() end)
+	local okE, any = pcall(function() return f:IsMouseEnabled() end)
 	loop.hovered[f] = true
 	pcall(f.HookScript, f, "OnEnter", wakeLoop)
 	pcall(f.HookScript, f, "OnLeave", wakeLoop)
+	if okC and okM and f.SetMouseClickEnabled and f.SetMouseMotionEnabled then
+		pcall(f.SetMouseClickEnabled, f, click and true or false)
+		pcall(f.SetMouseMotionEnabled, f, motion and true or false)
+	elseif okE and f.EnableMouse then
+		pcall(f.EnableMouse, f, any and true or false)
+	end
 end
 
 -- Debug output: printed, and also kept in DB.trace (saved to the addon's saved-variables file on /reload).
