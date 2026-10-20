@@ -2144,7 +2144,7 @@ do
 	end
 end
 
--- Sets a group to opacity a. allBars: every action bar, not only the ones picked on the Bars page.
+-- Sets a group to opacity a. allBars: every action bar, not only the ones picked on the Action bars page.
 local function applyGroup(g, a, allBars)
 	if g == "chat" then
 		applyChat(a)
@@ -2759,13 +2759,13 @@ local HELP = {
 		[9] = "Comes up while you have a target.",
 		[10] = "Comes up while you move the mouse or turn the camera with it, and stays for a few seconds after (how long is set on the Show when page).",
 		[2] = "Comes up while you move, and for a moment after you stop.",
-		[3] = "Comes up for a while when there is something new: quest progress for the tracker and RestedXP, a chat message for the chat, a new zone for the minimap. How long is set on the Extras page (the Chat page for the chat).",
+		[3] = "Comes up for a while when there is something new: quest progress for the tracker and RestedXP, a chat message for the chat, a new zone for the minimap. How long is set on the Show when page (the Chat page for the chat).",
 		[4] = "Comes up while your mouse is over it. For mouse over only, leave just this box ticked.",
 		[5] = "Hidden while you are in combat, whatever else is ticked.",
 		[6] = "Comes up while you are inside a dungeon or a raid.",
 	},
 	rows = {
-		["Action bars"] = "Action Bars 1 to 8, plus the stance, pet, totem and XP bars. Which of the eight fade is picked on the Bars page.",
+		["Action bars"] = "Action Bars 1 to 8, plus the stance, pet, totem and XP bars. Which of the eight fade is picked on the Action bars page.",
 		["Bags bar"] = "The row of bag buttons.",
 		["Menu bar"] = "The row of small menu buttons (character, spellbook, talents and so on).",
 		["Cast bar"] = "Your cast bar. It comes up by itself while you cast, so it only has an opacity.",
@@ -2789,14 +2789,23 @@ local HELP = {
 	},
 }
 
+-- The settings window's pages, in tab order (1.6: Elements first; Show when holds what goes with the Elements columns, under
+-- headings named like them). An item with addon is only shown while that addon is loaded (the RestedXP part of Other addons).
 local PAGES = {
+	{ title = "Elements", items = {
+		{ "grid", "elements" },
+		{ "note", "Hover a column heading or a name to see what it means. The cast bar and the breath bar come up by themselves when they are needed, so they are only on the Opacity page." },
+	} },
 	{ title = "Show when", items = {
-		{ "check", "enabled", "Enable QuietHUD" },
-		{ "heading", "Combat, weapon and mouse" },
-		{ "note", "What brings each element up is set per element on the Elements page. These go with its Combat, Weapon and Mouse move columns." },
-		{ "slider", "linger", "Stay visible after combat (seconds)", 0, 180, 1, "%.0f", nil, nil, "For the Combat column: how long an element stays up after a fight ends.", 420 },
-		{ "check", "keepDrawn", "Keep my weapon drawn after spells, chests and crafting", "For the Weapon column. When the game puts your weapon away by itself (a buff, a chest, a lock, crafting, looting), QuietHUD draws it again as soon as the cast is over, so the HUD stays up. You will see your character draw the weapon again. Pressing the sheath key still puts it away and hides the HUD. Not while mounted, swimming, dead, on a flight path or in a fight." },
-		{ "slider", "mouseSeconds", "Stay visible after the mouse stops (seconds)", 1, 60, 1, "%.0f", nil, nil, "For the Mouse move column: how long an element stays up after you stop moving the cursor or turning the camera.", 420 },
+		{ "note", "What brings each element up is ticked on the Elements page. These go with its columns of the same name." },
+		{ "heading", "Combat" },
+		{ "slider", "linger", "Stay visible after combat (seconds)", 0, 180, 1, "%.0f", nil, nil, "How long an element stays up after a fight ends.", 420 },
+		{ "heading", "Weapon" },
+		{ "check", "keepDrawn", "Keep my weapon drawn after spells, chests and crafting", "When the game puts your weapon away by itself (a buff, a chest, a lock, crafting, looting), QuietHUD draws it again as soon as the cast is over, so the HUD stays up. You will see your character draw the weapon again. Pressing the sheath key still puts it away and hides the HUD. Not while mounted, swimming, dead, on a flight path or in a fight." },
+		{ "heading", "Mouse move" },
+		{ "slider", "mouseSeconds", "Stay visible after the mouse stops (seconds)", 1, 60, 1, "%.0f", nil, nil, "How long an element stays up after you stop moving the cursor or turning the camera.", 420 },
+		{ "heading", "New info" },
+		{ "slider", "questSeconds", "Stay visible after quest progress or a new zone (seconds)", 3, 180, 1, "%.0f", nil, nil, "How long the tracker, the minimap and RestedXP stay up after something new. The chat has its own on the Chat page.", 420 },
 		{ "heading", "Player frame" },
 		{ "check", "notFullShows", "Show the player frame while health or power is changing", "Brings up the player frame only, while your health or your power bar goes up or down and for a few seconds after (3, or 8 for mana, which waits a moment before it comes back). In practice: until you are topped off. The game does not let addons read your health or power, so QuietHUD goes by them changing. Hide in combat on the Player frame row still wins." },
 		{ "heading", "Fading out" },
@@ -2805,10 +2814,6 @@ local PAGES = {
 		{ "check", "peekAlt", "While I hold Alt" },
 		{ "check", "peekCtrl", "While I hold Ctrl" },
 		{ "check", "peekShift", "While I hold Shift" },
-	} },
-	{ title = "Elements", items = {
-		{ "grid", "elements" },
-		{ "note", "Hover a column heading or a name to see what it means. The cast bar and the breath bar come up by themselves when they are needed, so they are only on the Opacity page." },
 	} },
 	{ title = "Opacity", items = {
 		{ "heading", "All elements" },
@@ -2822,9 +2827,9 @@ local PAGES = {
 		{ "slider", "mapIdle", "Minimap idle (0 = hidden)", 0, 1, 0.05, "%.2f", nil, true, "How solid the minimap is while it is faded. 0 hides it completely." },
 		{ "check", "mapDarken", "Darken the minimap instead of making it see-through" },
 		{ "note", "Unticked (default): as the minimap fades it turns see-through. The little icons on it (your arrow, quest and party icons) stay bright, because the game does not let addons fade them.\nTicked: as the minimap fades it turns darker instead, and the icons darken with it." },
-		{ "note", "Chat, the minimap, open bags and tooltips stay solid until you change them. An element with Fade unticked on the Elements page stays at its value here and never fades. RestedXP has its own sliders on its page. Hover a name for more." },
+		{ "note", "Chat, the minimap, open bags and tooltips stay solid until you change them. An element with Fade unticked on the Elements page stays at its value here and never fades. RestedXP's are on the Other addons page. Hover a name for more." },
 	} },
-	{ title = "Bars", items = {
+	{ title = "Action bars", items = {
 		{ "note", "Fade picks which action bars fade. It only counts while Fade is ticked for Action bars on the Elements page, which is the master switch (the stance, pet, totem and XP bars follow that switch)." },
 		{ "bargrid" },
 		{ "check", "shortHotkeys", "Shorten hotkey text (Num Pad 1 shows N1)" },
@@ -2835,36 +2840,51 @@ local PAGES = {
 		{ "slider", "chatFadeSeconds", "Chat fade out animation (seconds)", 0.3, 5, 0.1, "%.1f" },
 		{ "kinds" },
 	} },
-	{ title = "RXP", items = {
-		{ "check", "rxpGuide", "Fade the RestedXP guide window" },
-		{ "check", "rxpTargets", "Fade the RestedXP targets and items windows" },
-		{ "check", "rxpArrow", "Fade the RestedXP waypoint arrow" },
-		{ "slider", "rxpShown", "Guide, targets, items: opacity when shown", 0.1, 1, 0.05, "%.2f" },
-		{ "slider", "rxpIdle", "Guide, targets, items: opacity when idle (0 = hidden)", 0, 1, 0.05, "%.2f" },
-		{ "slider", "navShown", "Arrow: opacity when shown", 0.1, 1, 0.05, "%.2f" },
-		{ "slider", "navIdle", "Arrow: opacity when idle (0 = hidden)", 0, 1, 0.05, "%.2f" },
-		{ "grid", "rxp" },
-		{ "note", "The same columns as on the Elements page. At idle opacity 0 the windows are hidden completely, so a small value helps you find them." },
+	-- Other addons never get rows on the Elements page: their frame names go into the existing rows, and an addon with
+	-- settings of its own (RestedXP, the one the author uses) gets a part here.
+	{ title = "Other addons", items = {
+		{ "heading", "RestedXP", addon = "RXPGuides" },
+		{ "check", "rxpGuide", "Fade the guide window", addon = "RXPGuides" },
+		{ "check", "rxpTargets", "Fade the targets and items windows", addon = "RXPGuides" },
+		{ "check", "rxpArrow", "Fade the waypoint arrow", addon = "RXPGuides" },
+		-- Its opacity in two short columns named like the grid's rows, the way the Opacity page lays out its sliders.
+		{ "columns", addon = "RXPGuides",
+			left = {
+				{ "group", "Guide, targets, items" },
+				{ "slider", "rxpShown", "When shown", 0.1, 1, 0.05, "%.2f", nil, "column", "How solid the guide, targets and items windows are while they are up." },
+				{ "slider", "rxpIdle", "When idle", 0, 1, 0.05, "%.2f", "Hidden", "column", "How solid they are while faded. At 0 they are hidden completely." },
+			},
+			right = {
+				{ "group", "Arrow" },
+				{ "slider", "navShown", "When shown", 0.1, 1, 0.05, "%.2f", nil, "column", "How solid the waypoint arrow is while it is up." },
+				{ "slider", "navIdle", "When idle", 0, 1, 0.05, "%.2f", "Hidden", "column", "How solid it is while faded. At 0 it is hidden completely." },
+			},
+		},
+		{ "grid", "rxp", addon = "RXPGuides" },
+		{ "note", "The same columns as on the Elements page. At idle opacity 0 the windows are hidden completely, so a small value helps you find them.", addon = "RXPGuides" },
+		{ "heading", "Works with" },
+		{ "note", "Dominos, Questie, RestedXP, Chattynator, ClassicUI Forever, BetterBlizzFrames, Animated Blizzard Portraits, Leatrix Plus and BlizzMove. QuietHUD handles their frames by itself." },
+		{ "heading", "Something does not fade?" },
+		{ "note", "Hover it and type /qhud add hud. It then fades with the Added frames row on the Elements page." },
 	} },
 	{ title = "Extras", items = {
-		{ "heading", "Timing" },
-		{ "slider", "questSeconds", "New info stays, for quests and zone changes (seconds)", 3, 180, 1, "%.0f", nil, nil, nil, 420 },
+		{ "heading", "Always hidden" },
+		{ "check", "hideReporter", "Hide the beta Issue Reporter button" },
+		{ "check", "hideMmButtons", "Hide other addons' minimap buttons" },
+		{ "check", "hidePanel", "Hide the party panel (Party 1/1, markers, Leave Party)" },
+		{ "heading", "Open bags" },
+		{ "check", "moveBags", "Let me drag my open bags around" },
+		{ "button", "Reset position", "bagPosition", "Puts your open bags back where the game places them." },
+		{ "note", "Drag any open bag by its title bar and they all move together. They always stay on the screen. If you use BlizzMove, QuietHUD leaves your bags to it, ticked or not." },
 		{ "heading", "Pixel shift (OLED, experimental)" },
 		{ "check", "pixelShift", "Move the minimap and tracker a little every few minutes" },
 		{ "check", "shiftBars", "Also the action bars, bags and menu bar" },
 		{ "check", "shiftUnits", "Also the player, target and party frames" },
 		{ "slider", "shiftPixels", "Distance (pixels)", 1, 4, 1, "%.0f" },
 		{ "slider", "shiftMinutes", "Minutes between moves", 1, 10, 1, "%.0f" },
-		{ "heading", "Open bags" },
-		{ "check", "moveBags", "Let me drag my open bags around" },
-		{ "button", "Reset position", "bagPosition", "Puts your open bags back where the game places them." },
-		{ "note", "Drag any open bag by its title bar and they all move together. They always stay on the screen. If you use BlizzMove, QuietHUD leaves your bags to it, ticked or not." },
-		{ "heading", "Other" },
-		{ "check", "hideReporter", "Hide the beta Issue Reporter button" },
-		{ "check", "hideMmButtons", "Hide other addons' minimap buttons" },
-		{ "check", "hidePanel", "Hide the party panel (Party 1/1, markers, Leave Party)" },
-		{ "check", "questTarget", "Enable quest-mob targeting key (experimental)" },
-		{ "note", "Works like Tab, but only through the mobs your highlighted quest needs: each press goes to the next one. Needs enemy nameplates on (a kill objective can still be reached by name without). After ticking this, bind the key: Esc, Options, Keybindings, AddOns, QuietHUD, \"Target highlighted quest mob\"." },
+		{ "heading", "Quest-mob key (experimental)" },
+		{ "check", "questTarget", "Enable quest-mob targeting key" },
+		{ "note","Works like Tab, but only through the mobs your highlighted quest needs: each press goes to the next one. Needs enemy nameplates on (a kill objective can still be reached by name without). After ticking this, bind the key: Esc, Options, Keybindings, AddOns, QuietHUD, \"Target highlighted quest mob\"." },
 	} },
 	{ title = "About", items = {
 		{ "about" },
@@ -3639,6 +3659,7 @@ do
 		addHelp(parent, text, label, help)
 		controls[#controls + 1] = function() check:SetChecked(DB[key] and true or false) end
 		controls[#controls]()
+		return check, text
 	end
 
 	-- A slider that stands for more than one stored setting. The chat opacity is "Global" (the old "Chat uses the HUD opacity"
@@ -3732,7 +3753,7 @@ do
 		controls[#controls]()
 	end
 
-	local CELL = 24 -- the size of a tick box in the grids (the Bars page and the Elements page look the same)
+	local CELL = 24 -- the size of a tick box in the grids (the Action bars page and the Elements page look the same)
 
 	local function makeMaskCheck(parent, x, y, key, index)
 		local check = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
@@ -4070,15 +4091,26 @@ do
 		-- (pageBottom from the bottom); the notes are only measured here, with the game's own font.
 		local pageTop, pageBottom = framed and 62 or 68, framed and 30 or 44
 		local tabX, tallest = 12, 0
+		-- An item for another addon is left out while that addon is not loaded (when the game cannot say, it is shown).
+		local isLoaded = (C_AddOns and C_AddOns.IsAddOnLoaded) or IsAddOnLoaded
+		local function wanted(item)
+			if not (item.addon and isLoaded) then return true end
+			local ok, loaded = pcall(isLoaded, item.addon)
+			return not ok or loaded and true or false
+		end
 		for i, page in ipairs(PAGES) do
 			local frame = CreateFrame("Frame", nil, config)
 			frame:SetPoint("TOPLEFT", 0, -pageTop)
 			frame:SetPoint("BOTTOMRIGHT", 0, pageBottom)
 			local y = -4
-			for idx, item in ipairs(page.items) do
+			local items = {}
+			for _, item in ipairs(page.items) do
+				if wanted(item) then items[#items + 1] = item end
+			end
+			for idx, item in ipairs(items) do
 				-- The item before this one; a button sits on the row before it, so for spacing the item before the button counts.
-				local before = page.items[idx - 1]
-				if before and before[1] == "button" then before = page.items[idx - 2] end
+				local before = items[idx - 1]
+				if before and before[1] == "button" then before = items[idx - 2] end
 				local prevKind = before and before[1]
 				if item[1] == "check" then
 					-- A box right under a slider gets some room, so a click meant for the slider does not land on the box.
@@ -4092,6 +4124,7 @@ do
 					makeBarGrid(frame, y)
 					y = y - 220
 				elseif item[1] == "grid" then
+					if prevKind == "columns" then y = y - 8 end -- (room between the last slider row and the column headings)
 					y = y - makeTriggerGrid(frame, y, GRIDS[item[2]])
 				elseif item[1] == "note" then
 					if prevKind == "check" then y = y - 4 end
@@ -4100,7 +4133,9 @@ do
 					if idx > 1 then y = y - 10 end
 					y = y - makeHeading(frame, y, item[2])
 				elseif item[1] == "columns" then
-					-- Two columns of sliders under group headings (the Opacity page); the page goes on under the longer one.
+					-- Two columns of sliders under group headings (the Opacity page, RestedXP's opacity); the page goes on under
+					-- the longer one. Under a row of boxes they get some room, like a slider does.
+					if prevKind == "check" then y = y - 10 end
 					local lowest = y
 					for c, list in ipairs({ item.left, item.right }) do
 						local x, cy = c == 1 and 0 or WIN.col2 - 16, y
@@ -4192,6 +4227,14 @@ do
 				if GetTime() >= armedUntil then self:SetText("Reset to defaults") end
 			end)
 		end)
+		-- The master switch sits between the two buttons, so it can be reached from every page (it was on the first page up
+		-- to 1.5.0-beta2). The box and its name are centered together.
+		local enable, enableText = makeCheck(config, 0, "Enable QuietHUD", "enabled",
+			"Unticked, QuietHUD stops fading and hiding things, and the whole HUD shows as the game draws it.")
+		enable:SetSize(26, 26)
+		enable:ClearAllPoints()
+		local enableW = 26 + 4 + math.ceil(enableText:GetStringWidth() or 100)
+		enable:SetPoint("BOTTOMLEFT", config, "BOTTOM", -math.floor(enableW / 2), buttonY - 2)
 
 		config:SetScript("OnShow", function()
 			fitConfig()
