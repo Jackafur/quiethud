@@ -80,6 +80,11 @@ local FIELDS = {
 	{ key = "awakeSplit", code = "as", kind = "bool", def = false },
 	-- Settings written since every row got the same defaults (after 1.5.0-beta2); see restoreFromStore.
 	{ key = "sameDefaults", code = "ud", kind = "bool", def = false },
+	-- The Dominos row (since 1.5.0-beta5, see SPLIT): no default, so until it has a value of its own it follows the Action
+	-- bars row. Here and not in the groups macro, which is full; stored only once set.
+	{ key = "fadeDominos", code = "df", kind = "bool" },
+	{ key = "trigDominos", code = "dt", kind = "num" },
+	{ key = "ovDominos", code = "dv", kind = "num" },
 }
 local DEFAULTS, BY_CODE = {}, {}
 for _, f in ipairs(FIELDS) do
@@ -121,13 +126,19 @@ local SPLIT = {
 		"ShardTransferImminentMinimizeButton" } },
 	{ g = "cast", label = "Cast bar", frames = { "PlayerCastingBarFrame", "CastingBarFrame" }, cols = { 5 }, trig = 0, own = true, noGrid = true },
 	{ g = "breath", label = "Breath bar", frames = { "MirrorTimerContainer", "MirrorTimer1", "MirrorTimer2", "MirrorTimer3" }, cols = {}, trig = 0, own = true, noGrid = true },
+	-- All of Dominos in one row (since 1.5.0-beta5; a player's ask: "just one global row"), on the Elements and Opacity pages
+	-- only while Dominos is loaded (addon). Its frames are in the Dominos block below. Until the row has a setting of its own
+	-- it follows the Action bars row (follows: Fade, triggers, Shown) and its frames stay in the Action bars, Bags bar and
+	-- Menu bar lists, so nothing changes on anyone's screen; its first own setting takes the rest from what it followed and
+	-- moves them all here (woc.claimDominos). Its three settings are in FIELDS, not in the groups macro (full).
+	{ g = "dominos", label = "Dominos", frames = {}, addon = "Dominos", follows = { "fadeBars", "trigBars", "ovBars" } },
 }
 local SPLIT_BY = {}
 for _, s in ipairs(SPLIT) do
 	local cap = s.g:sub(1, 1):upper() .. s.g:sub(2)
 	s.fadeKey, s.trigKey, s.ovKey = "fade" .. cap, "trig" .. cap, "ov" .. cap
 	s.cols = s.cols or { 7, 8, 9, 10, 2, 4, 6, 5 }
-	DEFAULTS[s.ovKey] = 0
+	if not s.follows then DEFAULTS[s.ovKey] = 0 end
 	SPLIT_BY[s.g] = s
 end
 -- The trigger rows that are settings of their own (the split groups above have theirs in s.trigKey).
@@ -137,7 +148,7 @@ SPLIT.mainTrig = { "trigBars", "trigPlayer", "trigUnits", "trigTracker", "trigCh
 -- column. (The cast bar and the breath bar have no grid row: they only appear when they are needed, so they are only on the
 -- Opacity page.)
 SPLIT.groups = {
-	{ "Bars", { "Action bars", "Bags bar", "Menu bar", "Cast bar", "Breath bar" } },
+	{ "Bars", { "Action bars", "Bags bar", "Menu bar", "Dominos", "Cast bar", "Breath bar" } },
 	{ "Unit frames", { "Player frame", "Target and focus", "Pet frame", "Party and raid", "Party panel" } },
 	{ "Auras and alerts", { "Buffs", "Debuffs", "Cooldown trackers", "Alerts" } },
 	{ "Info", { "Objective tracker", "Chat", "Minimap" } },
@@ -155,8 +166,8 @@ local DEFAULT_LISTS = {
 	hud = {}, -- frames you add with /qhud add hud (the old big list is split into the rows below)
 	quest = { "ObjectiveTrackerFrame", "Questie_BaseFrame" }, -- Questie hides the game's tracker and shows its own
 	map = { "MinimapCluster" },
-	micro = { "MicroMenuContainer", "DominosFramemenu" }, -- (Dominos' menu bar, see the Dominos block below)
-	bags = { "BagsBar", "DominosFramebags" },
+	micro = { "MicroMenuContainer" }, -- (Dominos' menu bar and bag bar: see the Dominos block below)
+	bags = { "BagsBar" },
 	reporter = { "PTR_IssueReporter", "PTR_IssueReporterButton", "PTR_IssueReporterFrame" },
 	hidden = {},
 	chat = {},
@@ -221,20 +232,29 @@ local ACTION_BARS = {
 	"MultiCastFlyoutFrame", "MultiCastFlyoutFrameOpenButton", "SpellFlyout",
 }
 -- Dominos (since 1.5.0) puts the action buttons into bars of its own, named DominosFrame1 to DominosFrame14, with its pet,
--- stance ("class") and possess bars beside them (names from Dominos' frame.lua and bars folder). They fade with the Action
--- bars row and count for its mouse over; its bags bar and menu bar are in the Bags bar and Menu bar lists above. Dominos
--- tucks the game's own bars under a hidden frame, so those stay out of sight. The names mean nothing without Dominos.
+-- stance ("class") and possess bars beside them (names from Dominos' frame.lua and bars folder), and has a bag bar and a menu
+-- bar. Since 1.5.0-beta5 they are one Dominos row (SPLIT). Until that row has a setting of its own they are where they were
+-- in beta2 to beta4 (parts): the bars with the Action bars row (and its mouse over), the bag bar with Bags bar, the menu with
+-- Menu bar; then all in the Dominos group (all), and any of them under the mouse shows the row (hover). Dominos tucks the
+-- game's own bars under a hidden frame, so those stay out of sight. The names mean nothing without Dominos.
 do
-	local names = { "DominosFramepet", "DominosFrameclass", "DominosFramepossess" }
-	for i = 1, 14 do names[#names + 1] = "DominosFrame" .. i end
-	for _, n in ipairs(names) do
-		table.insert(DEFAULT_LISTS.bars, n)
-		ACTION_BARS[#ACTION_BARS + 1] = n
+	local d = SPLIT_BY.dominos
+	local bars = { "DominosFramepet", "DominosFrameclass", "DominosFramepossess" }
+	for i = 1, 14 do bars[#bars + 1] = "DominosFrame" .. i end
+	d.parts, d.barHover = { bars = {}, bags = { "DominosFramebags" }, micro = { "DominosFramemenu" } }, bars
+	d.hoverAll = { "DominosFramebags", "DominosFramemenu" } -- (d.hover while the row has its own settings, see rebuildLists)
+	for _, n in ipairs(bars) do
+		table.insert(d.parts.bars, n)
+		table.insert(d.hoverAll, n)
 	end
-	-- Its XP bar (Dominos_Progress, ids "exp" and "artifact" in its main.lua): with the Action bars row, like the game's
-	-- own XP bar (StatusTrackingBarManager), and like that one not counted for the row's mouse over.
-	table.insert(DEFAULT_LISTS.bars, "DominosFrameexp")
-	table.insert(DEFAULT_LISTS.bars, "DominosFrameartifact")
+	-- Its XP bar (Dominos_Progress, ids "exp" and "artifact" in its main.lua): like the game's own XP bar
+	-- (StatusTrackingBarManager), not counted for mouse over.
+	table.insert(d.parts.bars, "DominosFrameexp")
+	table.insert(d.parts.bars, "DominosFrameartifact")
+	d.all = {}
+	for _, g in ipairs({ "bars", "bags", "micro" }) do
+		for _, n in ipairs(d.parts[g]) do d.all[#d.all + 1] = n end
+	end
 end
 local CHAT_EXTRAS = {
 	"GeneralDockManager", "ChatFrameMenuButton", "ChatFrameChannelButton",
@@ -266,17 +286,19 @@ local DB = { extra = {} }
 for k, v in pairs(DEFAULTS) do DB[k] = v end
 
 -- Whether a split group fades, and what brings it up. Until a group has its own saved value it follows the group named in its
--- follow field, or else the old row.
+-- follow field, or the settings in its follows field (Dominos: the Action bars row), or else the old row.
 local function gFade(s)
 	local v = DB[s.fadeKey]
 	if v ~= nil then return v end
 	if s.follow then return gFade(SPLIT_BY[s.follow]) end
+	if s.follows then return DB[s.follows[1]] end
 	return s.own or DB.fadeUnits
 end
 local function gTrig(s)
 	local v = DB[s.trigKey]
 	if v ~= nil then return v end
 	if s.follow then return gTrig(SPLIT_BY[s.follow]) end
+	if s.follows then return DB[s.follows[2]] end
 	return s.trig or DB.trigUnits
 end
 local LISTS = {}
@@ -409,10 +431,14 @@ local function wakeLoop() loop.wake = true end
 -- wide frame around its buttons, over the middle of the screen, and no talking to NPCs or turning the camera behind it
 -- (a player's report, 2026-10-20; `/qhud mouse` named DominosFrame10, mouse=true). The frame's mouse goes back to what
 -- it was, so only frames that already took the mouse fire these. A protected frame cannot change its mouse in a fight:
--- it is hooked after (the next list rebuild).
+-- it is hooked when the fight ends (loop.pending, woc.hookAll; up to beta4 only at the next list rebuild, which after a
+-- /reload in a fight could be the next loading screen: the beta4 audit, Oct 20).
 local function hookHover(f)
 	if type(f) ~= "table" or not f.HookScript or loop.hovered[f] then return end
-	if InCombatLockdown and InCombatLockdown() and f.IsProtected and f:IsProtected() then return end
+	if InCombatLockdown and InCombatLockdown() and f.IsProtected and f:IsProtected() then
+		loop.pending = true
+		return
+	end
 	local okC, click = pcall(function() return f:IsMouseClickEnabled() end)
 	local okM, motion = pcall(function() return f:IsMouseMotionEnabled() end)
 	local okE, any = pcall(function() return f:IsMouseEnabled() end)
@@ -481,12 +507,37 @@ woc.splitAwake = function(m)
 	add(DB.mouseShows, 10)
 	return m
 end
+-- Whether the Dominos row has a setting of its own (see SPLIT): until then Dominos' frames stay in the rows they were in.
+woc.dominosOwn = function()
+	local d = SPLIT_BY.dominos
+	return DB[d.fadeKey] ~= nil or DB[d.trigKey] ~= nil or DB[d.ovKey] ~= nil
+end
+-- Every listed frame and every frame that counts for the action bars' mouse over gets its hover hook (see hookHover).
+woc.hookAll = function()
+	loop.pending = false
+	for n in pairs(woc.names) do hookHover(_G[n]) end
+	for _, n in ipairs(barHover) do hookHover(_G[n]) end
+end
 local function rebuildLists()
 	for _, k in ipairs(SPLIT.mainTrig) do DB[k] = woc.splitAwake(DB[k]) end
 	for _, s in ipairs(SPLIT) do
 		if DB[s.trigKey] ~= nil then DB[s.trigKey] = woc.splitAwake(DB[s.trigKey]) end
 	end
 	DB.awakeSplit, DB.sameDefaults = true, true
+	local dominos = SPLIT_BY.dominos
+	local dominosOwn = woc.dominosOwn()
+	-- An addon's row (Dominos) counts for nothing while that addon is not loaded: the row is not on the Elements page then,
+	-- so a Weapon or Mouse move box ticked on it could not be unticked (woc.anyRow). Its mouse over is only looked at once
+	-- it has its frames (the beta5 audit).
+	woc.off = {}
+	local isLoaded = (C_AddOns and C_AddOns.IsAddOnLoaded) or IsAddOnLoaded
+	for _, s in ipairs(SPLIT) do
+		if s.addon and isLoaded then
+			local ok, yes = pcall(isLoaded, s.addon)
+			if ok and not yes then woc.off[s.g] = true end
+		end
+	end
+	dominos.hover = (dominosOwn and not woc.off.dominos) and dominos.hoverAll or nil
 	local before = {}
 	for g, list in pairs(LISTS) do
 		if g ~= "nav" and g ~= "shift" then
@@ -509,6 +560,9 @@ local function rebuildLists()
 		else
 			for _, n in ipairs(DEFAULT_LISTS[g]) do add(n) end
 		end
+		-- Dominos' frames: in the Action bars, Bags bar and Menu bar lists until the Dominos row has a setting of its own,
+		-- then all in its list (see the Dominos block).
+		for _, n in ipairs((g == "dominos" and dominosOwn and dominos.all) or (not dominosOwn and dominos.parts[g]) or {}) do add(n) end
 		if g == "micro" and not DB.hideReporter then
 			for _, n in ipairs(DEFAULT_LISTS.reporter) do add(n) end
 		end
@@ -553,7 +607,7 @@ local function rebuildLists()
 	end
 	barHover = {}
 	local seen = {}
-	for _, list in ipairs({ ACTION_BARS, discovered }) do
+	for _, list in ipairs({ ACTION_BARS, discovered, not dominosOwn and dominos.barHover or {} }) do
 		for _, n in ipairs(list) do
 			if not seen[n] then
 				seen[n] = true
@@ -584,10 +638,25 @@ local function rebuildLists()
 		for _, n in ipairs(LISTS[list] or {}) do woc.owner[n] = list end
 	end
 	woc.forget()
-	for n in pairs(woc.names) do hookHover(_G[n]) end
-	for _, n in ipairs(barHover) do hookHover(_G[n]) end
+	woc.hookAll()
 end
 rebuildLists()
+-- The Dominos row gets its settings once, copied from the Action bars row (Fade, triggers, Shown), and is a row of its own
+-- from then on: changing Action bars never changes it, or the other way round (the owner, Oct 20 night: a row that
+-- followed Action bars and then stopped the moment one of its boxes was clicked was confusing). The copy is made the first
+-- time the settings window opens with Dominos loaded (all: inheritGroups) and after Reset to defaults; a setting missing
+-- from a lost overflow macro is filled the same way on the next change (persistSoon). Then Dominos' frames move into its
+-- group: its bag bar and menu go by this row, not by Bags bar and Menu bar. Before that copy nothing can change Action
+-- bars, so Dominos stays where beta4 had it (see the Dominos block) and nothing changes on screen at the update.
+woc.claimDominos = function(all)
+	local d = SPLIT_BY.dominos
+	if not (all or woc.dominosOwn()) or (DB[d.fadeKey] ~= nil and DB[d.trigKey] ~= nil and DB[d.ovKey] ~= nil) then return end
+	for i, key in ipairs({ d.fadeKey, d.trigKey, d.ovKey }) do
+		if DB[key] == nil then DB[key] = DB[d.follows[i]] end
+	end
+	rebuildLists()
+	return true
+end
 
 -- Adds a frame to the added frames of a group unless it is there already. Returns whether it was new.
 local function mergeExtra(g, name)
@@ -634,12 +703,15 @@ local function encodeSettings()
 	for _, f in ipairs(FIELDS) do
 		local v = DB[f.key]
 		local text, default
-		if f.kind == "bool" then
+		if f.def == nil then
+			-- (a setting without a default, the Dominos row's: stored once it has a value, whatever the value)
+			if v ~= nil then text = (f.kind == "bool") and (v and "1" or "0") or num(v) end
+		elseif f.kind == "bool" then
 			text, default = (v and "1" or "0"), (f.def and "1" or "0")
 		else
 			text, default = num(v or f.def), num(f.def)
 		end
-		if text ~= default then parts[#parts + 1] = f.code .. "=" .. text end
+		if text and text ~= default then parts[#parts + 1] = f.code .. "=" .. text end
 	end
 	return table.concat(parts, ";")
 end
@@ -736,6 +808,7 @@ local hiddenMmButtons -- names of the minimap buttons of other addons that are h
 
 local function persistSoon()
 	userChanged = true
+	woc.claimDominos()
 	woc.forget()
 	wakeLoop()
 	if applyMouseWatch then applyMouseWatch() end
@@ -834,6 +907,16 @@ local function restoreFromStore()
 		end
 	elseif legacyMapInstance then
 		addInstanceBit("trigMap")
+	end
+	-- (the Dominos row's copy, when the window was opened before these settings could be read: made again from them,
+	-- unless they hold one of their own; see inheritGroups)
+	if woc.copyLater then
+		woc.copyLater = nil
+		if not (";" .. s .. ";"):find(";dt=", 1, true) then
+			local d = SPLIT_BY.dominos
+			DB[d.fadeKey], DB[d.trigKey], DB[d.ovKey] = nil, nil, nil
+			if woc.claimDominos(true) then persist() end
+		end
 	end
 	rebuildLists()
 	if onRestored then onRestored() end
@@ -1001,7 +1084,7 @@ end
 -- ClassicUI Forever hangs every action button under a holder of its own on UIParent, and copies the bar's opacity into the
 -- holder only when it lays the bar out again, so the buttons stayed solid while the bar faded, and after a target change
 -- they came up faded while everything else woke.
--- A bar of another addon that QuietHUD fades itself (Dominos' bars, in the bars list) counts as the button's bar: the
+-- A bar of another addon that QuietHUD fades itself (Dominos' bars, in the bars or the dominos list) counts as the button's bar: the
 -- button just follows it. Without that, Dominos' reused game buttons were faded by name and told to ignore their bar, and
 -- stayed visible when Dominos hid the bar with its own fade (audit job 43, F1).
 local function outsideBar(button, frames)
@@ -1012,8 +1095,10 @@ local function outsideBar(button, frames)
 		for _, name in ipairs(frames) do
 			if _G[name] == p then return false end
 		end
-		for _, name in ipairs(LISTS.bars or {}) do
-			if _G[name] == p then return false end
+		for _, list in ipairs({ LISTS.bars or {}, LISTS.dominos or {} }) do
+			for _, name in ipairs(list) do
+				if _G[name] == p then return false end
+			end
 		end
 		f = p
 	end
@@ -1129,7 +1214,7 @@ woc.anyRow = function(bit)
 		if barBit(DB[k], bit) then return true end
 	end
 	for _, s in ipairs(SPLIT) do
-		if barBit(gTrig(s), bit) then return true end
+		if not (woc.off and woc.off[s.g]) and barBit(gTrig(s), bit) then return true end
 	end
 	return false
 end
@@ -2594,7 +2679,7 @@ local function update(dt)
 	end
 	vis.hud = triggered(DB.trigUnits, wake, moved, false, combat, inside, LISTS.hud)
 	for _, s in ipairs(SPLIT) do
-		vis[s.g] = triggered(gTrig(s), wake, moved, false, combat, inside, LISTS[s.g])
+		vis[s.g] = triggered(gTrig(s), wake, moved, false, combat, inside, s.hover or LISTS[s.g])
 	end
 	-- Casting shows the cast bar (not when it is set to hide in combat and you are in combat). A running breath, fatigue or feign
 	-- death timer shows the breath bar whatever its settings: with the HUD idle the breath bar would be invisible while you drown.
@@ -2813,9 +2898,10 @@ local HELP = {
 		[6] = "Shown while you are inside a dungeon or a raid.",
 	},
 	rows = {
-		["Action bars"] = "Action Bars 1 to 8, plus the stance, pet, totem and XP bars. Which of the eight fade is picked on the Action bars page. With Dominos, this row is all of Dominos' bars (its bag bar and menu go with the Bags bar and Menu bar rows).",
-		["Bags bar"] = "The row of bag buttons.",
-		["Menu bar"] = "The row of small menu buttons (character, spellbook, talents and so on).",
+		["Action bars"] = "Action Bars 1 to 8, plus the stance, pet, totem and XP bars. Which of the eight fade is picked on the Action bars page. With Dominos loaded, Dominos hides the game's bars and its own are on the Dominos row: this row then only has what Dominos leaves, like the totem bar.",
+		["Dominos"] = "Dominos' bars in one row: its action bars, pet, stance and possess bars, XP bar, bag bar and menu. It starts as a copy of the Action bars row; after that the two are separate. Best with Dominos' own fade off, so the two don't fight.",
+		["Bags bar"] = "The row of bag buttons. With Dominos loaded, Dominos hides it and its own bag bar is on the Dominos row.",
+		["Menu bar"] = "The row of small menu buttons (character, spellbook, talents and so on). With Dominos loaded, Dominos hides it and its own menu is on the Dominos row: this row then only has the beta Issue Reporter button.",
 		["Cast bar"] = "Your cast bar. It shows by itself while you cast, so it only has an opacity.",
 		["Breath bar"] = "The breath, fatigue and feign death timer. It shows by itself while it runs, so it only has an opacity.",
 		["Player frame"] = "Your own frame: portrait, health and power.",
@@ -2939,14 +3025,17 @@ local PAGES = {
 do
 	local keyOf = { ["Objective tracker"] = "ovQuest", ["Chat"] = "chatOwn", ["Minimap"] = "mapOwn", ["Action bars"] = "ovBars",
 		["Player frame"] = "ovPlayer", ["Bags bar"] = "ovBagsBar", ["Menu bar"] = "ovMicro", ["Added frames"] = "ovHud" }
-	for _, s in ipairs(SPLIT) do keyOf[s.label] = s.ovKey end
+	local addonOf = {}
+	for _, s in ipairs(SPLIT) do keyOf[s.label], addonOf[s.label] = s.ovKey, s.addon end
 	local total, count, left, right = 0, 0, {}, {}
 	for _, group in ipairs(SPLIT.groups) do total = total + #group[2] end
 	for _, group in ipairs(SPLIT.groups) do
 		local column = count < total / 2 and left or right
 		column[#column + 1] = { "group", group[1] }
 		for _, label in ipairs(group[2]) do
-			column[#column + 1] = { "slider", keyOf[label], label, 0, 1, 0.05, "%.2f", "Global", "column", HELP.rows[label] }
+			-- (an addon's slider, Dominos', is left out while it is not loaded, as the page items are)
+			column[#column + 1] = { "slider", keyOf[label], label, 0, 1, 0.05, "%.2f", "Global", "column", HELP.rows[label],
+				addon = addonOf[label] }
 			count = count + 1
 		end
 	end
@@ -3476,10 +3565,22 @@ do
 
 	-- Gives every split group its own value, taken from what it follows now. Done when the settings window is first built and
 	-- when the groups are written, so a group keeps following the old "Enemy, party, buffs" row until then.
+	-- (not the Dominos row, which is not in this macro and follows the Action bars row until it is changed: woc.claimDominos)
 	inheritGroups = function()
 		for _, s in ipairs(SPLIT) do
-			if DB[s.fadeKey] == nil then DB[s.fadeKey] = gFade(s) end
-			if DB[s.trigKey] == nil then DB[s.trigKey] = gTrig(s) end
+			if not s.follows then
+				if DB[s.fadeKey] == nil then DB[s.fadeKey] = gFade(s) end
+				if DB[s.trigKey] == nil then DB[s.trigKey] = gTrig(s) end
+			end
+		end
+		-- (the Dominos row's one-time copy of Action bars, only while Dominos is loaded: see woc.claimDominos. Saved at once
+		-- only once the player's settings are read: with the window opened before the macros could be read (no saved file,
+		-- the first moments after login), saving would have written the defaults over them (the beta5 audit). Then the copy
+		-- stays in memory, and is made again from the player's own settings when restoreFromStore reads them (copyLater).)
+		if not (woc.off and woc.off.dominos) then
+			if not restored then restoreFromStore() end
+			if woc.claimDominos(true) and restored then persist() end
+			if not restored then woc.copyLater = true end
 		end
 	end
 
@@ -3488,7 +3589,7 @@ do
 		if InCombatLockdown() or not (CreateMacro and EditMacro and GetMacroIndexByName) then return end
 		local any = false
 		for _, s in ipairs(SPLIT) do
-			if DB[s.fadeKey] ~= nil or DB[s.trigKey] ~= nil or (DB[s.ovKey] or 0) > 0 then any = true end
+			if not s.follows and (DB[s.fadeKey] ~= nil or DB[s.trigKey] ~= nil or (DB[s.ovKey] or 0) > 0) then any = true end
 		end
 		if DB.hideMmButtons or DB.hidePanel then any = true end
 		local ok, index = pcall(GetMacroIndexByName, G_MACRO)
@@ -3496,7 +3597,7 @@ do
 		if not (any or exists) then return end
 		local parts = {}
 		for _, s in ipairs(SPLIT) do
-			parts[#parts + 1] = string.format("%s=%d,%d,%.2f", s.g, gFade(s) and 1 or 0, gTrig(s), DB[s.ovKey] or 0)
+			if not s.follows then parts[#parts + 1] = string.format("%s=%d,%d,%.2f", s.g, gFade(s) and 1 or 0, gTrig(s), DB[s.ovKey] or 0) end
 		end
 		if DB.hideMmButtons then parts[#parts + 1] = "mmbuttons=1" end
 		if DB.hidePanel then parts[#parts + 1] = "hidepanel=1" end
@@ -3516,7 +3617,7 @@ do
 		local saved = {}
 		for g, f, t, o in body:gmatch("(%a+)=(%d),(%d+),([%d%.]+)") do
 			local s = SPLIT_BY[g]
-			if s then
+			if s and not s.follows then
 				DB[s.fadeKey], DB[s.trigKey], DB[s.ovKey] = f == "1", woc.splitAwake(tonumber(t) or 0), tonumber(o) or 0
 				saved[g] = true
 			end
@@ -3730,6 +3831,19 @@ do
 			end,
 		},
 	}
+	-- A row that follows another until it has a setting of its own (Dominos): its Shown slider shows the followed one's.
+	for _, s in ipairs(SPLIT) do
+		if s.follows then
+			VIRTUAL[s.ovKey] = {
+				get = function()
+					local v = DB[s.ovKey]
+					if v == nil then v = DB[s.follows[3]] end
+					return v or 0
+				end,
+				set = function(v) DB[s.ovKey] = v end,
+			}
+		end
+	end
 
 	-- compact puts the label to the left of the slider on one short row (the Opacity page), instead of above it. compact "column" is
 	-- a narrower row in one of the two columns of the Opacity page (x is where the column starts): the name is white and indented
@@ -3918,7 +4032,7 @@ do
 		local byLabel, used, rows = {}, {}, {}
 		for _, r in ipairs(GRIDS.elements.rows) do byLabel[r[1]] = r end
 		for _, s in ipairs(SPLIT) do
-			if not s.noGrid then byLabel[s.label] = { s.label, s.fadeKey, s.trigKey, s.cols } end
+			if not s.noGrid then byLabel[s.label] = { s.label, s.fadeKey, s.trigKey, s.cols, addon = s.addon } end
 		end
 		for _, group in ipairs(SPLIT.groups) do
 			local first = true
@@ -3998,17 +4112,21 @@ do
 		end
 		-- An addon's own rows (grid.extra) go at the end under its name, only while it is loaded. (A client that cannot say
 		-- gets them, as the pages' addon items do.)
-		local rows = grid.rows
+		-- A row of its own for an addon (row.addon, Dominos in the Bars group) is left out the same way.
+		local isLoaded = (C_AddOns and C_AddOns.IsAddOnLoaded) or IsAddOnLoaded
+		local function loaded(addon)
+			if not (addon and isLoaded) then return true end
+			local ok, yes = pcall(isLoaded, addon)
+			return not ok or yes and true or false
+		end
+		local rows = {}
+		for _, row in ipairs(grid.rows) do
+			if loaded(row.addon) then rows[#rows + 1] = row end
+		end
 		local extra = grid.extra
-		if extra then
-			local isLoaded = (C_AddOns and C_AddOns.IsAddOnLoaded) or IsAddOnLoaded
-			local ok, loaded = true, true
-			if isLoaded then ok, loaded = pcall(isLoaded, extra.addon) end
-			if not ok or loaded then
-				rows = { unpack(grid.rows) }
-				rows[#rows + 1] = { heading = extra.heading }
-				for _, row in ipairs(extra.rows) do rows[#rows + 1] = row end
-			end
+		if extra and loaded(extra.addon) then
+			rows[#rows + 1] = { heading = extra.heading }
+			for _, row in ipairs(extra.rows) do rows[#rows + 1] = row end
 		end
 		local labelX = (rows[1] and rows[1].heading) and 24 or 16
 		local rowY, band = y - 30, 0
@@ -4192,7 +4310,9 @@ do
 		for _, f in ipairs(FIELDS) do DB[f.key] = f.def end
 		DB.awakeSplit, DB.sameDefaults = true, true -- (today's defaults are already in the shape since the Awake split; see rebuildLists)
 		for _, k in ipairs({ "ovBars", "ovPlayer", "ovHud", "ovQuest", "ovMap", "ovBagsBar", "ovMicro" }) do DB[k] = 0 end
-		for _, s in ipairs(SPLIT) do DB[s.fadeKey], DB[s.trigKey], DB[s.ovKey] = nil, nil, 0 end
+		for _, s in ipairs(SPLIT) do DB[s.fadeKey], DB[s.trigKey], DB[s.ovKey] = nil, nil, DEFAULTS[s.ovKey] end
+		-- (the Dominos row copies the reset Action bars row again, while Dominos is loaded)
+		if not woc.off.dominos then woc.claimDominos(true) end
 		DB.moveBags = false -- (the spot they were moved to stays saved, as before)
 		DB.hideMmButtons, DB.hidePanel = false, false -- (not in FIELDS: kept in the groups macro)
 		persistSoon()
@@ -4303,7 +4423,7 @@ do
 								if n > 1 then cy = cy - 6 end
 								makeGroupHeading(frame, 16 + x, cy, entry[2])
 								cy = cy - 18
-							else
+							elseif wanted(entry) then
 								makeSlider(frame, cy, entry[3], entry[2], entry[4], entry[5], entry[6], entry[7], entry[8], entry[9], x, entry[10])
 								cy = cy - 22
 							end
@@ -5066,6 +5186,7 @@ ev:SetScript("OnEvent", function(_, event, arg1, _, _, arg4)
 		run.combatWarned = false
 		releaseNav()
 		armEntry()
+		if loop.pending then woc.hookAll() end -- (protected frames first seen in the fight, see hookHover)
 	elseif event == "PLAYER_STARTED_MOVING" then
 		moveUntil = GetTime() + MOVE_LINGER
 	elseif event == "SUPER_TRACKING_CHANGED" then

@@ -1,14 +1,14 @@
 # Changelog
 
-## 1.5.0-beta4 (test build)
+## 1.5.0-beta5 (test build)
 
 **This is a test build.** If something breaks badly, go back to 1.4.0 (CurseForge Files tab, or set QuietHUD back to Release in the CurseForge app) and let me know in the comments what happened. One catch if you do: 1.4.0 doesn't know the new Show in combat, Weapon drawn, Target and Mouse move columns, so stuff won't come up for those there until you tick Awake again on the Elements page.
 
-Your settings carry over. New since beta3: one fix, for clicks that got caught by faded bars (see Fixed, first line). Beta3 brought Show in combat and Hide in combat side by side, Hide in combat really hiding, RestedXP on the Elements and Opacity pages, the same defaults on every row and the "world will refresh" notice fading with Alerts.
+Your settings carry over. New since beta4: Dominos gets one row of its own on the Elements page (see Added, first line). Beta4 fixed clicks that got caught by faded bars (see Fixed, first line). Beta3 brought Show in combat and Hide in combat side by side, Hide in combat really hiding, RestedXP on the Elements and Opacity pages, the same defaults on every row and the "world will refresh" notice fading with Alerts.
 
 ### Added
 
-- **Dominos.** Its action bars fade with the Action bars row now, and so do its pet, stance and possess bars and its XP bar. Its bag bar goes with Bags bar and its menu with Menu bar. The per-bar boxes on the Action bars page only cover the game's own bars, so with Dominos the Action bars row does all of it. I'd leave Dominos' own fade off so the two don't fight.
+- **Dominos gets one row for all of it.** With Dominos loaded there's a Dominos row under Menu bar on the Elements page, and a Dominos slider on the Opacity page. It covers Dominos' action bars, its pet, stance and possess bars, its XP bar, its bag bar and its menu. The first time you open the settings with Dominos loaded, that row starts as a copy of your Action bars row, so your bars look the same as before. After that the two rows are separate: changing Action bars doesn't touch Dominos, and the other way round. Dominos' bag bar and menu go by the Dominos row too from then on, so if you had Bags bar or Menu bar set differently from Action bars, set the Dominos row the way you want it. Without Dominos you won't see the row at all. I'd leave Dominos' own fade off so the two don't fight.
 - **Keep my weapon drawn after spells, chests and crafting** (off by default, on the Show when page, goes with the Weapon column). Out of combat the game puts your weapon away on its own when you buff, loot, open a chest or craft, and the HUD went with it. Tick this and QuietHUD pulls the weapon back out once the cast is done. The sheath key still puts both away. It leaves you alone while you're mounted, swimming, dead, on a taxi or in a fight.
 
 ### Changed
@@ -26,7 +26,7 @@ Your settings carry over. New since beta3: one fix, for clicks that got caught b
 
 ### Fixed
 
-- **Clicking the world through a faded bar works again.** Since beta1 QuietHUD could make the empty space of a bar catch your clicks. With Dominos bars in the middle of the screen you couldn't click an NPC or turn the camera behind them, even with the bar faded out. That space lets clicks through again, like it should.
+- **Clicking the world through a faded bar works again.** Since beta1 QuietHUD could make the empty space of a bar catch your clicks. With Dominos bars in the middle of the screen you couldn't click an NPC or turn the camera behind them, even with the bar faded out. That space lets clicks through again, like it should. (Beta5: a bar QuietHUD first sees in the middle of a fight, say after a /reload in combat, gets its mouse-over wake-up once the fight ends, instead of at the next loading screen.)
 - **The Elements page shows the right boxes after a reset.** Target and focus, Pet frame, the party rows, Buffs, Debuffs, Cooldown trackers, Alerts and Damage meter showed empty boxes on a fresh install or after Reset to defaults, even though they worked like the Added frames row. They show what they really do now.
 - **Bars another addon hid could come back.** Some addons hide the game's action bar by making it invisible instead of actually hiding it (EllesmereUI does this), and QuietHUD was making it visible again. So you'd get the old bar art showing up behind your bars. QuietHUD leaves that stuff alone now.
 - **Leatrix Plus Square minimap:** the border and buttons faded but the map itself stayed solid. QuietHUD now notices Leatrix putting its own mask back and fades the map with a dark layer instead, like "Darken the minimap" does. You'll see one chat line about it at login.
