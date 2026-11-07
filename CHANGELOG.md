@@ -27,7 +27,6 @@ Your settings carry over from 1.5.0. Nothing should look different right after y
 - **Pixel shift could get the action bars blocked.** It moves frames the same way Edit Mode does now.
 - A chat button you hid with `/qhud add hidden` keeps its icons and blink hidden too.
 - `/qhud add` only takes frames now. Adding something that wasn't a frame could break the fading.
-- If you log in during a fight the sheath key and quest key wait until the fight ends.
 - QuietHUD does a lot less work when nothing's happening.
 
 ## 1.5.0
