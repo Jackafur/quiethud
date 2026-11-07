@@ -11,13 +11,14 @@ optional, and nothing is hidden unless you turn it on.
 Open the settings with `/qhud`, or from the game's options: Esc, Options, AddOns, QuietHUD, "Open QuietHUD settings". It opens on the Elements page, and there are seven pages. Hover a column heading or an element's name to see what it means.
 
 **Elements** (what fades, and what shows each one)
-- A grid with a row for each element, in groups. Bars: the action bars (with the stance, pet, totem and XP bars), bags bar and menu bar, plus Dominos while it's loaded. Unit frames: player frame, target and focus, pet frame, party and raid, and the party panel (the side panel that pops out of the arrow tab, with the party markers and Leave Party). Auras and alerts: buffs, debuffs, cooldown trackers and alerts (the durability icon, the loss of control alert, external defensives and the "world will refresh" notice). Info: objective tracker, chat and minimap. Other: damage meter and frames you added. While RestedXP is loaded, its windows get a group at the end.
+- A grid with a row for each element, in groups. Bars: the action bars (with the stance, pet, totem and XP bars), bags bar and menu bar, plus Dominos while it's loaded. Unit frames: player frame, target and focus, pet frame, party and raid, and the party panel (the side panel that pops out of the arrow tab, with the party markers and Leave Party). Auras and alerts: buffs, debuffs, cooldown trackers and alerts (the durability icon, the loss of control alert, external defensives and the "world will refresh" notice). Info: objective tracker, chat and minimap. Other: damage meter and frames you added, plus Naowh, Naowh alerts and Flight timer while Naowh Forever is loaded. While RestedXP is loaded, its windows get a group at the end.
 - Each row has a Fade box, then one box per thing that can show that element: Show in combat, Hide in combat, Moving, Target, Mouse move (while you move the mouse or turn the camera with it), Mouse over, Dungeon or raid (while you're inside one), Weapon drawn, and New info (quest progress for the tracker, new messages for chat, a zone change for the minimap).
 - Show in combat and Hide in combat sit together. Ticking one unticks the other. Hide in combat takes the element away completely in a fight, whatever else is ticked and whatever the Faded opacity is. With both empty, the fight doesn't matter.
 - Mouse over is optional for every element. For "only on mouse over", leave just that one box ticked in the row. An element with only Fade ticked sits at the Faded opacity all the time, so with Faded at 0 it stays hidden, which is a way to keep the bags bar or the menu bar off.
 - On a fresh install everything fades, and comes up in combat, while you move and on mouse over (the tracker, chat and minimap also for New info).
 - The cast bar and the breath bar (the underwater timer, which also shows fatigue and feign death) aren't in the grid. They appear by themselves when needed: casting shows the cast bar and a running timer shows the breath bar, even when everything else is faded, so they only have an opacity.
-- The minimap's row works like the others. Moving shows it only while you move, an unticked Fade never fades it, and its own Faded slider above 0 keeps it faintly visible.
+- The minimap's row works like the others. Moving shows it only while you move and an unticked Fade never fades it. Everything fades to the one Faded on the Opacity page.
+- A flight path doesn't count as moving. The HUD fades during the flight like you're standing still and comes back when you land and walk.
 - An element with Fade unticked is never faded. It stays at its own opacity from the Opacity page, or fully solid when that is Global. So to keep something at 0.5 all the time, untick its Fade and set its own opacity to 0.5.
 
 **Show when** (the settings that go with the Elements columns, under headings named like them)
@@ -31,11 +32,13 @@ Open the settings with `/qhud`, or from the game's options: Esc, Options, AddOns
 
 **Opacity** (how solid each thing is)
 - Global: one value for Shown and one for Faded (0 hides it completely and reads Hidden). Every element follows Global unless it has its own: under "Shown per element" there's a slider for each element, in two columns and the same groups as the Elements page, where Global (the far left of the slider) follows the global value and any number uses that instead.
-- The open bag windows and tooltips, the minimap's own Faded value with a box to darken it instead of making it see-through (see Minimap below), and while RestedXP is loaded, a Shown and Faded pair for its windows and one for its arrow.
+- The open bag windows and tooltips, and a box to darken the minimap instead of making it see-through (see Minimap below).
 - Chat, the minimap, the open bag windows and tooltips are solid until you change them.
 
 **Action bars** (per action bar, Action Bars 1 to 8)
 - Whether each bar fades (while Fade is ticked for Action bars on the Elements page, the master switch), and whether to hide its hotkey text or its macro names.
+- Mouse over: the bar fades by itself and only comes up when your mouse is on it. Fights and targets don't bring it up.
+- Low health and Low mana: the bar comes up while your health or mana is low. Low health goes by Naowh Forever's "Show Below" for its health potion icon when you have Naowh, 35% without it. Low mana is 35%. One or the other per bar.
 - Optionally shorten the hotkey text on all bars, and on the pet, stance, possess and totem bars: Num Pad 1 shows N1, Mouse Button 4 shows M4, Ctrl plus Num Pad 1 shows cN1, Shift plus 1 shows s1, and so on, so long key names no longer show as "NUM...". Turning it off puts the original text back.
 
 **Chat**
@@ -92,7 +95,7 @@ work, run `/qhud instance` inside the instance and report what it prints.
 **Minimap.** Its row in the Elements grid works like any other. Moving fades it
 out when you stand still and brings it back when you move, which suits a minimap that's only really useful while
 travelling, and New info brings it back for a few seconds after a zone change. Untick Fade to never fade it (it then
-stays at its own opacity), and set its Faded slider (Minimap, on the Opacity page) above 0 to keep it faintly visible. By default it's solid while
+stays at its own opacity). It fades to the same Faded as everything else. By default it's solid while
 shown; on the Opacity page, Global makes it follow the global Shown value and any number gives it its own. Below full
 opacity the minimap is see-through everywhere. The game draws a blank map in buildings and cities when the minimap
 frame is partly transparent, and when it's hidden and shown again, so QuietHUD keeps the frame solid and makes the
@@ -173,7 +176,7 @@ the nameplates to show. The message "quest targeting is off" means the Extras ch
 | `/qhud hotkeys` | Show the hotkey text of a few action buttons: what the game gives, what's shown, and what the shortening rules make of it |
 | `/qhud methods <frame> [text]` | List the functions a frame offers, optionally only those whose name contains some text. For finding out what can be changed on a frame |
 | `/qhud find <text>` | Find which frame is showing some text, e.g. a notice you want to hide. If it isn't on screen it keeps watching for 30 minutes |
-| `/qhud add bars\|player\|hud\|quest\|map\|chat\|nav\|shift\|hidden [frame name]` | Put a frame into a group (saved). Without a name it uses the frame under the mouse |
+| `/qhud add bars\|player\|hud\|quest\|map\|chat\|nav\|shift\|mouseover\|hidden [frame name]` | Put a frame into a group (saved). Without a name it uses the frame under the mouse. `mouseover` makes it fade by itself and come up only under the mouse |
 | `/qhud remove <name>`, `/qhud list` | Take a frame you added back out, or list them |
 | `/qhud bags [reset]` | Show how far the open bags were moved, or put them back where the game puts them at full opacity |
 | `/qhud minimapbuttons [on\|off\|list]` | Hide or show the minimap buttons other addons add (the Extras checkbox), or list the ones it's hiding |
@@ -201,7 +204,9 @@ you hold Alt, Ctrl or Shift.
 QuietHUD only changes opacity, and hides what you ask it to hide, so it sits next to unit frame and nameplate addons such as BetterBlizzFrames, BetterBlizzPlates and HealthBarColor. It fades frames by name. A frame from another addon that doesn't fade with the rest (one that ignores its parent's opacity, or one the addon keeps on the screen by itself) can be put into a group with `/qhud add`.
 
 - **Dominos:** while it's loaded there's a Dominos row on the Elements page and a Dominos slider on the Opacity page. It covers Dominos' action bars, its pet, stance and possess bars, its XP bar, its bag bar and its menu. It starts as a copy of your Action bars row the first time you open the settings, and after that the two are separate. I'd leave Dominos' own fade off so the two don't fight.
-- **RestedXP:** while it's loaded its guide window, targets and items windows and waypoint arrow are rows on the Elements page (each with its own Fade box), with their own Shown and Faded sliders on the Opacity page. Mouse over counts the whole guide window, not only its bottom bar.
+- **RestedXP:** while it's loaded its guide window, targets and items windows and waypoint arrow are rows on the Elements page (each with its own Fade box), with their own Shown sliders on the Opacity page. Mouse over counts the whole guide window, not only its bottom bar. Its flight timer bars fade with the guide window.
+- **Naowh Forever:** while it's loaded there are three rows on the Elements page. Naowh has its XP bar and ticker, the campfire, the bag counter, the top bar with its FPS readout, the Journey card and the consumable and food bars (mouse over only on a fresh install). Naowh alerts has low health, +Combat, buff reminders and the alert stack at one see-through opacity (0.50 on a fresh install). Flight timer is its "In flight" card. Its threat meter fades with the Damage meter row, and while its HUD Editor is open everything is shown like in Edit Mode.
+- **Warlock HUD:** fades with the Added frames row, its Multi-Target window too.
 - **ClassicUI Forever:** with its classic bar on, its gryphon band (with the micro menu and bags it draws on the band) fades with Action Bar 1, the action buttons it moves onto the band fade with their bars and come up when you point at them, and its chat scroll arrows and the blinking "to the bottom" arrow fade with the chat. The Bags bar and Menu bar rows have nothing left to do then.
 - **Questie:** its quest tracker (Questie hides the game's tracker and shows its own) fades with the Objective tracker row, and its minimap icons fade with the minimap.
 - **Chattynator:** its chat window fades with the chat and comes back when you point at it, nothing to add by hand.
@@ -217,22 +222,18 @@ In general, buttons that another addon moves out of their bar are faded by name,
 - Hidden frames still work with their keybinds.
 - Quest-mob targeting is experimental. When other enemies are mixed in with the quest mobs it steps between kinds of quest mob but not between identical ones, and in combat it can only use what it prepared before the fight.
 
-## Settings on the Forever beta
+## Settings
 
-Until build 1.60.1.70338 the Forever beta wrote saved variables at logout but never read them back, so
-an addon's settings reset every launch. QuietHUD therefore also stores its settings in small
-account-wide macros, `QuietHUD data` (and `QuietHUD data 2` when there are many), `QuietHUD bags`,
-`QuietHUD opacity`, `QuietHUD groups` and `QuietHUD frames` (the frames you added with `/qhud add`).
-Since build 70338 the game reads the saved variables again, and QuietHUD goes by them. The macros are
-still written as a backup, out of combat, a moment after a change and at logout, and they're what
-QuietHUD falls back on if the saved variables don't load. Please leave them alone. Both
-`QuietHUD.toc` and `QuietHUD_Camelot.toc` are shipped, because the client looks for the `_Camelot`
-manifest.
+QuietHUD keeps its settings in the game's saved variables only. Up to 1.5.0 it also kept a copy in account macros
+(`QuietHUD data`, `QuietHUD bags`, `QuietHUD opacity`, `QuietHUD groups` and `QuietHUD frames`) because the Forever beta
+didn't read saved variables back for a while. 1.6.0 doesn't use them anymore, so you can delete them. Your settings from
+1.5.0 carry over when you update. Both `QuietHUD.toc` and `QuietHUD_Camelot.toc` are shipped, because the client looks
+for the `_Camelot` manifest.
 
 ## Install
 
 Run `.\install.ps1`, or copy the `QuietHUD` folder into
-`World of Warcraft\_classic_beta_\Interface\AddOns\` yourself, including the `masks` folder inside it, then fully
+`World of Warcraft\_forever_\Interface\AddOns\` yourself, including the `masks` folder inside it, then fully
 restart the client (it only reads addon manifests and new image files at startup).
 
 ## About this addon

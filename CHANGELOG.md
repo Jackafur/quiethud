@@ -1,5 +1,37 @@
 # Changelog
 
+## 1.6.0
+
+Your settings carry over from 1.5.0. Everything should look the same right after you update.
+
+### Added
+
+- **Low health and Low mana columns on the Action bars page.** Tick one for a bar and that bar comes up while your health or mana is low. Low health goes by Naowh Forever's "Show Below" for its health potion icon when you have Naowh. Without it it's 35%. Low mana is 35%. It's one or the other per bar because the game won't let an addon put the two together. With nothing ticked QuietHUD doesn't even listen for it.
+- **A Mouse over column on the Action bars page.** A bar ticked here fades by itself and only comes up when your mouse is on it. Fights and targets and moving don't bring it up. Good for a bar you only click now and then.
+- **`/qhud add mouseover`** does the same for any frame. Point at it and type the command.
+- **Naowh Forever rows.** With Naowh loaded the Elements page gets three more rows. Naowh has its XP bar and ticker, the campfire, the bag counter, the top bar with its FPS readout, the Journey card and the consumable and food bars. Naowh alerts has low health, +Combat, buff reminders and the alert stack at one see-through opacity. Flight timer is the "In flight" card with its own Fade box and slider. Naowh's threat meter fades with the Damage meter row and Naowh's HUD Editor shows everything like Edit Mode does. On a fresh install the Naowh row only comes up on mouse over and the alerts sit at 0.50. If you're updating they start unfaded so nothing changes until you tick something.
+- **Warlock HUD** fades with the Added frames row. Its Multi-Target window too. It follows that row's boxes so if you set Added frames to always hidden it's hidden too. Same for Naowh's threat meter and the Damage meter row.
+- **RestedXP's flight timer** fades with its guide window. It used to stay solid while the window faded. Since a flight doesn't count as moving it fades during the flight too. Point at it to see it.
+
+### Changed
+
+- **A flight path doesn't count as moving anymore.** The HUD fades during the flight like you're standing still and comes back when you land and walk. Flying works the same if the game ever has it.
+- **One opacity slider per element.** The minimap's own Faded slider is gone and so are RestedXP's and the arrow's. Everything fades to the one Faded on the Opacity page. If yours kept something on the screen then it stays on the screen and doesn't fade anymore. A chat line tells you once. Tick its Fade on the Elements page to fade it again.
+- **Settings only live in the game's saved file now.** The QuietHUD macros aren't used anymore (QuietHUD data, bags, opacity, groups and frames). You can delete them from your macro list.
+- **Whisper windows fade with the chat.**
+- **Reset to defaults gives every row its own defaults.** Debuffs doesn't follow Buffs after a reset anymore.
+- **A fresh install starts with Shown at 0.75.** Open bags and tooltips stay solid. This doesn't touch your settings if you're updating.
+
+### Fixed
+
+- **The minimap in a fight.** Getting into combat with the minimap faded out could give an "action blocked" error and leave the minimap gone until a `/reload`. QuietHUD never resizes it in a fight now and puts it back right as the fight starts.
+- **The cast bar blinking while you craft.** When another addon hides the cast bar during a cast (Naowh's craft timer does) QuietHUD leaves it hidden instead of fighting over it.
+- **Pixel shift could get the action bars blocked by the game.** It moves frames the way Edit Mode does now.
+- A chat button hidden with `/qhud add hidden` keeps its pictures and its blink hidden too.
+- `/qhud add` only takes frames. A name that wasn't a frame could stop the fading before.
+- If you load in during a fight the sheath key and the quest key wait for the fight to end.
+- QuietHUD makes a lot less garbage while nothing is going on.
+
 ## 1.5.0
 
 Big thanks to Sage_on_twitch for the long list of suggestions. Splitting Awake into columns, the new defaults, the cleaned up settings window and Dominos support all came out of it.

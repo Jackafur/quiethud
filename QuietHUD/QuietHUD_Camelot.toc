@@ -2,9 +2,29 @@
 ## Title: QuietHUD
 ## Notes: Fades the HUD out when idle to protect OLED panels. Every element and trigger is optional.
 ## Author: jackafur
-## Version: 1.5.0
+## Version: 1.6.0
 ## X-License: MIT
 ## IconTexture: Interface\AddOns\QuietHUD\icon.tga
 ## SavedVariables: QuietHUDDB
 
-QuietHUD.lua
+Settings.lua
+Frames.lua
+Core.lua
+Fade.lua
+ActionBars.lua
+Triggers.lua
+Chat.lua
+Weapon.lua
+Guides.lua
+Minimap.lua
+Shift.lua
+Tooltips.lua
+Models.lua
+Loop.lua
+Bags.lua
+MinimapButtons.lua
+Config.lua
+QuestKey.lua
+Tools.lua
+Events.lua
+Commands.lua

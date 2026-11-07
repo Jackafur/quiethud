@@ -1,5 +1,5 @@
 param(
-    [string]$Game = 'C:\Program Files (x86)\World of Warcraft\_classic_beta_'
+    [string]$Game = 'C:\Program Files (x86)\World of Warcraft\_forever_'
 )
 
 # Copies the addon into the game's AddOns folder. Pass -Game if WoW is installed somewhere else.
