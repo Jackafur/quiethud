@@ -119,8 +119,11 @@ local SPLIT = {
 	-- fading it: both would set the bar's opacity. Its Opacity slider is not counted when the columns are split (uncounted).
 	{ g = "naowh", label = "Naowh", frames = { "NaowhForeverXPBar", "NaowhForeverXPTicker", "NaowhForeverCampfire",
 		"NaowhForeverBagSpace", "NaowhForeverTopBar", "QuietHUDNaowhSystem",
-		"QuietHUDNaowhJourney", "NaowhForeverConsumableBar", "NaowhForeverFoodBar" }, addon = "NaowhForever",
+		"QuietHUDNaowhJourney", "NaowhForeverConsumableBar", "NaowhForeverFoodBar",
+		"NaowhForeverBlessingBar", "NaowhForeverGearBar" }, addon = "NaowhForever",
 		deep = true, uncounted = true, trig = 8 }, -- (the consumable bar and the food and drink buttons: his ask, Nov 6, "attatched to the other naowh stuff") -- (trig 8: Mouse over only by default, his ask)
+	-- (the Blessings bar, NaowhForever_Combat/Blessings, and the Gear Sets bar, NaowhForever_Combat/GearSets: his ask, Nov 7;
+	-- both are named holders on UIParent with their buttons as children, and Naowh only shows and hides them, never sets their opacity)
 	-- Naowh Forever's alerts, at one see-through opacity by default (Fade unticked, Shown 0.50; the owner, 2026-11-05): Low
 	-- Health, the +Combat alert, Buff Reminders, and the alert stack (Camp Nearby, Pet Missing, Restock, Talent Points,
 	-- Durability, Flight Point; NaowhForeverAlerts is the stack's own holder). These show and hide themselves with their own
@@ -129,7 +132,10 @@ local SPLIT = {
 	-- them when first needed: the CreateFrame hook (Core.lua) writes the row again then.
 	{ g = "naowhAlerts", label = "Naowh alerts", frames = { "NaowhForeverLowHealth", "NaowhForeverCombatAlert",
 		"NaowhForeverBuffReminders", "NaowhForeverAlerts", "NaowhForeverCampNearby", "NaowhForeverPetTracker",
-		"NaowhForeverRestock", "NaowhForeverTalentPoints", "NaowhForeverDurability", "NaowhForeverFlightPoint" },
+		"NaowhForeverRestock", "NaowhForeverTalentPoints", "NaowhForeverDurability", "NaowhForeverFlightPoint",
+		-- (Naowh's swing timer, NaowhForever_Combat/SwingTimer: it shows itself in a fight and hides after; here it gets the
+		-- row's see-through opacity, the owner, 2026-11-07: "i want it to have the transparency")
+		"NaowhForeverSwingTimer" },
 		addon = "NaowhForever", host = true, uncounted = true, fade = false, ov = 0.5 },
 	-- Naowh Forever's Flight Timer (the "In flight" card, NaowhForever_QoL/Travel/Flight.lua): its own row so it has its own
 	-- Fade box and Shown slider (the owner, 2026-11-06: "can we add this to qhud as well. opacity settings", "its called flight

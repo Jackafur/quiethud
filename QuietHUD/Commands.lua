@@ -5,7 +5,7 @@ local DB, LISTS, woc, wakeLoop, settingChanged = ns.DB, ns.LISTS, ns.woc, ns.wak
 local shortHotkey, shortened = ns.shortHotkey, ns.shortened
 local T, inDungeonOrRaid, mouseActive, playerChanging = ns.T, ns.inDungeonOrRaid, ns.mouseActive, ns.playerChanging
 local bumpChat = ns.bumpChat
-local weaponDrawn, toggleDrawn = ns.weaponDrawn, ns.toggleDrawn
+local weaponDrawn, toggleDrawn, inAnimalForm = ns.weaponDrawn, ns.toggleDrawn, ns.inAnimalForm
 local navHosts = ns.navHosts
 local mouseInMapRect = ns.mouseInMapRect
 local shiftNow, shiftReport = ns.shiftNow, ns.shiftReport
@@ -38,7 +38,7 @@ SlashCmdList["QUIETHUD"] = function(msg)
 		if ns.debugOn then DB.trace = {} end
 		local isDrawn, state = weaponDrawn()
 		print("QuietHUD debug " .. (ns.debugOn and "on" or "off") .. ", weapon drawn: " .. tostring(isDrawn) .. " (the game says "
-			.. (state and tostring(state) or "nothing, so QuietHUD guesses from the sheath key") .. "; 1 sheathed, 2 melee, 3 ranged)"
+			.. (inAnimalForm() and "nothing: an animal form counts as put away" or state and tostring(state) or "nothing, so QuietHUD guesses from the sheath key") .. "; 1 sheathed, 2 melee, 3 ranged)"
 			.. ", sheath key: " .. tostring((GetBindingKey("TOGGLESHEATH"))) .. ", ToggleSheath hooked: " .. tostring(ns.sheathHooked))
 	elseif cmd == "state" then
 		local ok, err = pcall(function()
@@ -58,7 +58,7 @@ SlashCmdList["QUIETHUD"] = function(msg)
 				tostring((woc.wake or {}).weapon or false), tostring((woc.wake or {}).target or false), tostring((woc.wake or {}).mouse or false)))
 			print(string.format("QuietHUD triggers: in combat=%s, after-combat linger=%s, weapon drawn=%s, has target=%s, mouse moving=%s",
 				tostring(UnitAffectingCombat("player") and true or false), tostring(GetTime() < ns.combatEnd),
-				tostring((weaponDrawn())), tostring(UnitExists("target") and true or false),
+				tostring((weaponDrawn())) .. (inAnimalForm() and " (an animal form counts as put away)" or ""), tostring(UnitExists("target") and true or false),
 				woc.anyRow(T.MOUSE) and tostring(mouseActive(GetTime())) or "no row has Mouse move"))
 			do
 				local function shown(fn, ...)

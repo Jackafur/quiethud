@@ -70,7 +70,7 @@ end
 woc.anyRow = function(bit)
 	local off = woc.off
 	for _, k in ipairs(SPLIT.mainTrig) do
-		if not (off and off.rxp and (k == "trigRxp" or k == "trigNav")) and barBit(DB[k], bit) then return true end
+		if not (off and ((off.rxp and k == "trigRxp") or (off.nav and k == "trigNav"))) and barBit(DB[k], bit) then return true end
 	end
 	for _, s in ipairs(SPLIT) do
 		if not (off and off[s.g]) and barBit(gTrig(s), bit) then return true end

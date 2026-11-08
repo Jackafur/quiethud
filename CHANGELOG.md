@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.6.1-beta1
+
+A test build. Your settings carry over.
+
+### Fixed
+
+- **Ghost Wolf and druid forms kept the HUD up.** The game says your weapon is out the whole time you're in a form, so with Weapon drawn ticked the HUD never faded. A shaman's Ghost Wolf and every druid form count as weapon put away now. Warriors, rogues and everyone else work like before.
+
 ## 1.6.0
 
 Your settings carry over from 1.5.0. Nothing should look different right after you update.

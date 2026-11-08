@@ -74,6 +74,7 @@ brighter than Shown, so if you drag one slider past the other, the other one mov
 
 **Weapon drawn.** Draw your weapon (or your wand) to bring things up, sheathe it to send them
 away. QuietHUD asks the game whether a weapon is out, so it stays right through fights and the wand.
+Ghost Wolf and druid forms count as put away, since there's no weapon to see.
 
 **Keep my weapon drawn after spells, chests and crafting** (off by default). Out of combat the game puts
 your weapon away by itself when you buff, open a chest, pick a lock, craft or loot, and the HUD drops with
@@ -162,7 +163,7 @@ the nameplates to show. The message "quest targeting is off" means the Extras ch
 | Command | What it does |
 | --- | --- |
 | `/qhud` | Open the settings menu |
-| `/qhud toggle` | Flip the "weapon drawn" state by hand, until you next draw or sheathe |
+| `/qhud toggle` | Flip the "weapon drawn" state by hand, until you next draw or sheathe (not in Ghost Wolf or a druid form) |
 | `/qhud peek` | Show the whole HUD for two minutes, or until you use it again. The "Hold to show the whole HUD" key uses `peek down` and `peek up` |
 | `/qhud shift [on\|off\|now]` | Pixel shift (experimental): show what it's doing, turn it on or off, or move to its next position now. Off puts every frame back where it was |
 | `/qhud reset` | Reset all settings to defaults |

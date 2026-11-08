@@ -301,6 +301,40 @@ woc.nameRxpTimers = function()
 	end
 	if changed then woc.forget() end
 end
+-- Naowh's Waypoint Pin (NaowhForever_QoL/Interface/Waypoints.lua): the navigator card at the top, the pin with its card in
+-- the world and the "behind you" cue at the bottom. None has a name, and Naowh builds all three at once, the first time
+-- the pin is needed: the pin, then the navigator (which gets its HUD Editor plate, "Waypoint Navigator"), then the cue.
+-- So the navigator is found by its plate, and the other two beside it among UIParent's children, each checked by its
+-- parts. They go in the nav group, with a quest guide's arrow (the owner, 2026-11-07: "naowh taking over rxp's arrow",
+-- "transparent. and hide when im not moving"); the pin sets its own opacity when you get close, so it is hosted there.
+local function isWaypointPin(f)
+	return type(f) == "table" and type(f.card) == "table" and f.beam ~= nil and f.ground ~= nil and f.ring ~= nil
+end
+local function isWaypointCue(f)
+	return type(f) == "table" and f.arrow ~= nil and f.text ~= nil and f.card == nil and f.ring == nil
+end
+function woc.nameNaowhWaypoint(nav)
+	if type(nav) ~= "table" then return end
+	local changed = false
+	if _G.QuietHUDNaowhWaypointNav ~= nav then _G.QuietHUDNaowhWaypointNav, changed = nav, true end
+	if not (_G.QuietHUDNaowhWaypointPin and _G.QuietHUDNaowhWaypointCue) then
+		local kids = { UIParent:GetChildren() }
+		for i = 1, #kids do
+			if kids[i] == nav then
+				for j = i - 1, math.max(1, i - 3), -1 do -- (the pin is made just before the navigator)
+					if not _G.QuietHUDNaowhWaypointPin and isWaypointPin(kids[j]) then
+						_G.QuietHUDNaowhWaypointPin, changed = kids[j], true
+					end
+				end
+				if not _G.QuietHUDNaowhWaypointCue and isWaypointCue(kids[i + 1]) then -- (the cue just after it)
+					_G.QuietHUDNaowhWaypointCue, changed = kids[i + 1], true
+				end
+				break
+			end
+		end
+	end
+	if changed then woc.forget() end
+end
 local function rebuildLists()
 	local rxpTimers = _G.RXPFrameBarContainer
 	if not woc.rxpTimersHooked and type(rxpTimers) == "table" and type(rxpTimers.ClearAllPoints) == "function" then
@@ -324,6 +358,9 @@ local function rebuildLists()
 				-- (a Top Bar switched on after login: its readout exists by now; second audit, F2)
 				_G.QuietHUDNaowhSystem = frame.sys
 				woc.forget()
+			elseif label == "Waypoint Navigator" and type(frame) == "table" then
+				-- (the cue is made right after this call returns: looked for once the build is done)
+				C_Timer.After(0, function() woc.nameNaowhWaypoint(frame) end)
 			end
 		end)
 	end
@@ -342,6 +379,13 @@ local function rebuildLists()
 			and editor.placement.byLabel["Journey Card"]
 		if type(item) == "table" and type(item.frame) == "table" then _G.QuietHUDNaowhJourney = item.frame end
 	end
+	-- (the Waypoint Pin built before the hook above: found from the HUD Editor's list the same way)
+	if not (_G.QuietHUDNaowhWaypointPin and _G.QuietHUDNaowhWaypointCue) then
+		local editor = type(_G.NaowhForever) == "table" and _G.NaowhForever.HudEditor
+		local item = type(editor) == "table" and type(editor.placement) == "table" and type(editor.placement.byLabel) == "table"
+			and editor.placement.byLabel["Waypoint Navigator"]
+		if type(item) == "table" and type(item.frame) == "table" then woc.nameNaowhWaypoint(item.frame) end
+	end
 	local dominos = SPLIT_BY.dominos
 	local dominosOwn = woc.dominosOwn()
 	-- An addon's row (Dominos) counts for nothing while that addon is not loaded: the row is not on the Elements page then,
@@ -356,10 +400,15 @@ local function rebuildLists()
 		end
 	end
 	-- The same for RestedXP's rows (Guide window, Arrow): without RestedXP, and with no frame added to their groups by hand,
-	-- their boxes count for nothing.
+	-- their boxes count for nothing. The Arrow row's boxes still count while Naowh Forever is loaded: its waypoint is in the
+	-- nav list without RestedXP too (ChatGPT's audit, 2026-11-08 F1: a Weapon tick there was never looked at).
 	if isLoaded then
 		local ok, yes = pcall(isLoaded, "RXPGuides")
-		if ok and not yes and #(DB.extra.rxp or {}) == 0 and #(DB.extra.nav or {}) == 0 then woc.off.rxp = true end
+		if ok and not yes and #(DB.extra.rxp or {}) == 0 and #(DB.extra.nav or {}) == 0 then
+			woc.off.rxp = true
+			local okN, naowhOn = pcall(isLoaded, "NaowhForever")
+			if not (okN and naowhOn) then woc.off.nav = true end
+		end
 	end
 	dominos.hover = (dominosOwn and not woc.off.dominos) and dominos.hoverAll or nil
 	local before = {}
@@ -404,13 +453,20 @@ local function rebuildLists()
 			if DB.rxpGuide then
 				add("RXPFrame")
 				for i = 1, 4 do add("QuietHUDRXPTimer" .. i) end -- (its timer bars, named above)
+			-- Naowh Forever's own window for RestedXP's guide (NaowhForever/Core/Integrations/RestedXP/Window.lua), shown in
+			-- place of RestedXP's while Naowh's RestedXP window is on (the owner, 2026-11-07: "add naowhs guide thing for rxp")
+			add("NaowhRXPWindow")
 			end
 			if DB.rxpTargets then
 				add("RXPTargetFrame")
 				add("RXPItemFrame")
 			end
-		elseif g == "nav" and DB.rxpArrow then
-			add("RXPG_ARROW")
+		elseif g == "nav" then
+			if DB.rxpArrow then add("RXPG_ARROW") end
+			-- Naowh's Waypoint Pin, named above (nothing while Naowh is not there or the pin was never built)
+			add("QuietHUDNaowhWaypointNav")
+			add("QuietHUDNaowhWaypointPin")
+			add("QuietHUDNaowhWaypointCue")
 		elseif g == "chat" then
 			-- Chattynator's chat window hangs off this frame (it has no size of its own, its windows are its children).
 			-- Skipped when that addon is not there.

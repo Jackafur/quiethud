@@ -7,10 +7,31 @@ local wakeLoop, trace = ns.wakeLoop, ns.trace
 -- A guess that flips on every press of the Toggle Sheath key goes wrong with a wand (three states, not two) and after a
 -- fight, so that guess (ns.drawn) is only the fallback, for a client without GetSheathState. With flip, /qhud toggle turns what counts
 -- the other way until the weapon state next changes. Returns the drawn state and the game's number (nil if unknown).
+-- In an animal form (a shaman's Ghost Wolf, every druid form) there is no weapon, but the game still says it is drawn, so the
+-- HUD stayed up the whole time (a CurseForge report, 2026-11-07). There the weapon counts as put away. Druids and shamans only:
+-- a warrior's stance or a rogue's stealth is a form to the game too, and they still hold a weapon. Asked only when the weapon
+-- is (while a row has Weapon ticked); the game's form message already wakes the loop (Loop.lua).
+local inAnimalForm
+do
+	local class
+	inAnimalForm = function()
+		if not class then
+			local ok, _, file = pcall(UnitClass, "player")
+			if not ok or type(file) ~= "string" or (issecretvalue and issecretvalue(file)) then return false end
+			class = file
+		end
+		if (class ~= "DRUID" and class ~= "SHAMAN") or not GetShapeshiftForm then return false end
+		local ok, form = pcall(GetShapeshiftForm)
+		return ok and not (issecretvalue and issecretvalue(form)) and type(form) == "number" and form > 0 or false
+	end
+end
+
 local weaponDrawn
 do
 	local seen, byHand
 	weaponDrawn = function(flip)
+		-- (no state either, so Keep my weapon drawn leaves the weapon alone in the form and after it)
+		if inAnimalForm() then return false, nil end
 		local ok, state = false, nil
 		if GetSheathState then ok, state = pcall(GetSheathState) end
 		-- (a value the game hides from addons is checked for first: comparing one is an error)
@@ -185,3 +206,4 @@ end
 
 -- For the files after this one (QuietHUD.toc).
 ns.weaponDrawn, ns.toggleDrawn, ns.sheathToggled, ns.keepDrawn = weaponDrawn, toggleDrawn, sheathToggled, keepDrawn
+ns.inAnimalForm = inAnimalForm
