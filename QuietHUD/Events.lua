@@ -172,4 +172,5 @@ end)
 BINDING_HEADER_QUIETHUD = "QuietHUD"
 BINDING_NAME_QUIETHUD_TOGGLE = "Toggle Weapon drawn"
 BINDING_NAME_QUIETHUD_PEEK = "Hold to show the whole HUD"
+BINDING_NAME_QUIETHUD_PEEKTOGGLE = "Toggle the whole HUD"
 _G["BINDING_NAME_CLICK QuietHUDTargetButton:LeftButton"] = "Target highlighted quest mob"

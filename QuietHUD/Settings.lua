@@ -65,6 +65,9 @@ local DEFAULTS = {
 	peekAlt = false,
 	peekCtrl = false,
 	peekShift = false,
+	peekTapAlt = false, -- a tap of Alt on its own toggles the whole HUD (the Tap boxes and the hold boxes untick each other)
+	peekTapCtrl = false,
+	peekTapShift = false,
 	bagAlpha = 1, -- (0 = Global; solid by default, as the tooltips)
 	fadeOutSeconds = 0.35,
 	mouseSeconds = 3,

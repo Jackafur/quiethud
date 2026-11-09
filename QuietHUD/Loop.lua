@@ -375,3 +375,77 @@ do
 		pcall(EditModeManagerFrame.HookScript, EditModeManagerFrame, "OnHide", wakeLoop)
 	end
 end
+-- The tap watcher (the Tap boxes on the Show when page): a ticked Alt, Ctrl or Shift pressed and let go within
+-- TAP_SECONDS, with no other key or mouse button going down meanwhile, flips the whole HUD on or off (ns.peekUntil, as the
+-- Toggle the whole HUD key). The game says when a modifier goes down or up (MODIFIER_STATE_CHANGED) but not which other
+-- keys are pressed with it, so while a ticked key is held, and only then, it asks the game every frame whether any key
+-- that has a binding (its base key: "1" for ALT-1, so a [mod:alt] macro on 1 counts too) or a mouse button is down.
+-- Per frame only while the key is held and its Tap box is ticked; nothing otherwise. A key already down when the modifier went
+-- down (running with W held, the camera turned with the mouse) does not spoil the tap.
+do
+	local TAP_SECONDS = 0.4
+	local MODS = { ALT = { "peekTapAlt", IsAltKeyDown }, CTRL = { "peekTapCtrl", IsControlKeyDown },
+		SHIFT = { "peekTapShift", IsShiftKeyDown } }
+	local BUTTONS = { "LeftButton", "RightButton", "MiddleButton", "Button4", "Button5" }
+	local keys -- the base keys of every binding, built on first use and again when the bindings change
+	local function buildKeys()
+		keys = {}
+		local seen = {}
+		for i = 1, (GetNumBindings and GetNumBindings() or 0) do
+			local b = { select(3, GetBinding(i)) }
+			for _, k in ipairs(b) do
+				if type(k) == "string" then
+					local base = k:match("([^%-]+)$") or k
+					if base ~= "" and not base:find("^MOUSEWHEEL") and not seen[base] then
+						seen[base] = true
+						keys[#keys + 1] = base
+					end
+				end
+			end
+		end
+	end
+	local tapMod, tapStart, spoiled, before = nil, 0, false, {}
+	local function anyNewDown()
+		for _, k in ipairs(keys) do
+			if not before[k] and IsKeyDown(k) then return true end
+		end
+		for _, b in ipairs(BUTTONS) do
+			if not before[b] and IsMouseButtonDown(b) then return true end
+		end
+		return false
+	end
+	local watcher = CreateFrame("Frame")
+	local function onUpdate()
+		if not spoiled and anyNewDown() then spoiled = true end
+		if spoiled then watcher:SetScript("OnUpdate", nil) end -- (nothing left to learn until the key is let go)
+	end
+	local function othersDown(mod)
+		for m, v in pairs(MODS) do
+			if m ~= mod and v[2]() then return true end
+		end
+		return false
+	end
+	watcher:RegisterEvent("MODIFIER_STATE_CHANGED")
+	watcher:RegisterEvent("UPDATE_BINDINGS")
+	watcher:SetScript("OnEvent", function(_, event, key, down)
+		if event == "UPDATE_BINDINGS" then keys = nil return end
+		local mod = type(key) == "string" and key:match("^[LR](%u+)$")
+		if not (mod and MODS[mod]) then return end
+		if down == 1 then
+			if not DB[MODS[mod][1]] then return end
+			if not keys then buildKeys() end
+			tapMod, tapStart, spoiled = mod, GetTime(), othersDown(mod)
+			before = {}
+			for _, k in ipairs(keys) do if IsKeyDown(k) then before[k] = true end end
+			for _, b in ipairs(BUTTONS) do if IsMouseButtonDown(b) then before[b] = true end end
+			if not spoiled then watcher:SetScript("OnUpdate", onUpdate) end
+		elseif mod == tapMod then
+			watcher:SetScript("OnUpdate", nil)
+			tapMod = nil
+			if spoiled or anyNewDown() or othersDown(mod) or GetTime() - tapStart > TAP_SECONDS then return end
+			local now = GetTime()
+			ns.peekUntil = now < ns.peekUntil and 0 or math.huge
+			wakeLoop()
+		end
+	end)
+end

@@ -5,5 +5,8 @@
 	<Binding name="QUIETHUD_PEEK" runOnUp="true" category="ADDONS">
 		SlashCmdList["QUIETHUD"]("peek " .. keystate)
 	</Binding>
+	<Binding name="QUIETHUD_PEEKTOGGLE" category="ADDONS">
+		SlashCmdList["QUIETHUD"]("peek toggle")
+	</Binding>
 	<Binding name="CLICK QuietHUDTargetButton:LeftButton" category="ADDONS"></Binding>
 </Bindings>

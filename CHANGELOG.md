@@ -1,8 +1,13 @@
 # Changelog
 
-## 1.6.1-beta1
+## 1.6.1
 
-A test build. Your settings carry over.
+Your settings carry over.
+
+### Added
+
+- **Tap Alt to toggle the whole HUD.** On the Show when page, next to "While I hold Alt", tick "Tap Alt to toggle". A quick tap of Alt on its own shows the whole HUD until you tap it again. Alt+1, Alt+click and your other Alt keybinds don't count. Ctrl and Shift have one too. Hold or tap, one at a time: ticking one side unticks the other.
+- **A "Toggle the whole HUD" key.** Press it once and the whole HUD shows, press it again and it fades back. Set it in Keybindings, AddOns, QuietHUD, right under "Hold to show the whole HUD".
 
 ### Fixed
 

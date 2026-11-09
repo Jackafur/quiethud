@@ -28,7 +28,7 @@ Open the settings with `/qhud`, or from the game's options: Esc, Options, AddOns
 - New info: how long quest progress or a new zone keeps the tracker, the minimap and RestedXP up (up to 3 minutes). The chat has its own time on the Chat page.
 - Player frame: show the player frame while health or power is changing (off by default). Only the player frame comes up, and it fades a few seconds after the last change (3, or 8 for mana), so once you're topped off.
 - Fading out: how long elements take to fade out (the chat has its own time on the Chat page).
-- Show the whole HUD on demand: while you hold Alt, Ctrl or Shift, or with a key you bind (Esc, Options, Keybindings, AddOns, QuietHUD).
+- Show the whole HUD on demand: hold Alt, Ctrl or Shift, or tap one to toggle it, or use a key you bind (Esc, Options, Keybindings, AddOns, QuietHUD), held or as a toggle.
 
 **Opacity** (how solid each thing is)
 - Global: one value for Shown and one for Faded (0 hides it completely and reads Hidden). Every element follows Global unless it has its own: under "Shown per element" there's a slider for each element, in two columns and the same groups as the Elements page, where Global (the far left of the slider) follows the global value and any number uses that instead.
@@ -164,7 +164,7 @@ the nameplates to show. The message "quest targeting is off" means the Extras ch
 | --- | --- |
 | `/qhud` | Open the settings menu |
 | `/qhud toggle` | Flip the "weapon drawn" state by hand, until you next draw or sheathe (not in Ghost Wolf or a druid form) |
-| `/qhud peek` | Show the whole HUD for two minutes, or until you use it again. The "Hold to show the whole HUD" key uses `peek down` and `peek up` |
+| `/qhud peek` | Show the whole HUD for two minutes, or until you use it again. The "Hold to show the whole HUD" key uses `peek down` and `peek up`; `peek toggle` (the "Toggle the whole HUD" key) stays on until you use it again |
 | `/qhud shift [on\|off\|now]` | Pixel shift (experimental): show what it's doing, turn it on or off, or move to its next position now. Off puts every frame back where it was |
 | `/qhud reset` | Reset all settings to defaults |
 | `/qhud quest`, `/qhud map`, `/qhud chat` | Show that element for a few seconds |
@@ -196,9 +196,11 @@ over it and run the command with the group you want it to fade with (or `hidden`
 puts it on the Added frames row.
 
 Keybinds: Esc, Options, Keybindings, AddOns, QuietHUD. You can bind "Toggle Weapon drawn" (the same as `/qhud toggle`), "Hold to show the whole
-HUD" (hold it to see everything at once, let go and it fades again), and, if you turn the feature on, "Target highlighted
-quest mob". If you'd rather not use a key binding, the Show when page has three checkboxes that show the whole HUD while
-you hold Alt, Ctrl or Shift.
+HUD" (hold it to see everything at once, let go and it fades again), "Toggle the whole HUD" (press it once to see
+everything, press it again to go back), and, if you turn the feature on, "Target highlighted
+quest mob". If you'd rather not use a key binding, the Show when page has boxes that show the whole HUD while you hold Alt, Ctrl
+or Shift, or toggle it when you tap one on its own (Alt+1 and Alt+click don't count, so your keybinds still work). Hold
+or tap, one at a time: ticking a box on one side unticks the other side.
 
 ## Works with other addons
 

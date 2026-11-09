@@ -60,6 +60,13 @@ local HELP = {
 
 -- The settings window's pages, in tab order (Elements first; Show when holds what goes with the Elements columns, under
 -- headings named like them). An item with addon is only shown while that addon is loaded (RestedXP's section on Opacity).
+-- The Show the whole HUD boxes on the Show when page: hold (left) or tap (right), one way at a time.
+local PEEK = {
+	holdKeys = { "peekAlt", "peekCtrl", "peekShift" },
+	tapKeys = { "peekTapAlt", "peekTapCtrl", "peekTapShift" },
+	holdHelp = "The whole HUD shows while you hold the key, and fades when you let go. Ticking it unticks the Tap boxes.",
+	tapHelp = "Tap the key on its own and the whole HUD shows until you tap it again. Using it with another key or a click (Alt+1, Alt+click) does nothing to the HUD, so your keybinds work as normal. Ticking it unticks the While I hold boxes.",
+}
 local PAGES = {
 	{ title = "Elements", items = {
 		{ "grid", "elements" },
@@ -80,9 +87,14 @@ local PAGES = {
 		{ "heading", "Fading out" },
 		{ "slider", "fadeOutSeconds", "Fade out animation (seconds)", 0.1, 5, 0.05, "%.2f", nil, nil, "How long an element takes to fade out, whatever showed it. The chat has its own on the Chat page.", 420 },
 		{ "heading", "Show the whole HUD on demand" },
-		{ "check", "peekAlt", "While I hold Alt" },
-		{ "check", "peekCtrl", "While I hold Ctrl" },
-		{ "check", "peekShift", "While I hold Shift" },
+		-- Hold on the left, Tap on the right: one way at a time, so ticking a box on one side unticks the other side's three.
+		{ "check", "peekAlt", "While I hold Alt", PEEK.holdHelp, untick = PEEK.tapKeys,
+			right = { "peekTapAlt", "Tap Alt to toggle", PEEK.tapHelp, untick = PEEK.holdKeys } },
+		{ "check", "peekCtrl", "While I hold Ctrl", PEEK.holdHelp, untick = PEEK.tapKeys,
+			right = { "peekTapCtrl", "Tap Ctrl to toggle", PEEK.tapHelp, untick = PEEK.holdKeys } },
+		{ "check", "peekShift", "While I hold Shift", PEEK.holdHelp, untick = PEEK.tapKeys,
+			right = { "peekTapShift", "Tap Shift to toggle", PEEK.tapHelp, untick = PEEK.holdKeys } },
+		{ "note", "Or bind a key: Esc, Options, Keybindings, AddOns, QuietHUD (one to hold, one to toggle)." },
 	} },
 	{ title = "Opacity", items = {
 		{ "heading", "Global" },
@@ -217,12 +229,18 @@ do
 		target:HookScript("OnLeave", function() GameTooltip:Hide() end)
 	end
 
-	local function makeCheck(parent, y, label, key, help)
+	-- x: from the left (12 when not given); untick: setting keys that go off when this box is ticked (a pair that says
+	-- opposite things, as the hold and tap boxes).
+	local function makeCheck(parent, y, label, key, help, x, untick)
 		local check = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
-		check:SetPoint("TOPLEFT", 12, y)
+		check:SetPoint("TOPLEFT", x or 12, y)
 		check:SetScript("OnClick", function(self)
 			DB[key] = not DB[key]
 			self:SetChecked(DB[key] and true or false)
+			if DB[key] and untick then
+				for _, k in ipairs(untick) do DB[k] = false end
+				for _, refresh in ipairs(controls) do refresh() end
+			end
 			settingChanged()
 			rebuildLists()
 			if ns.armEntry then ns.armEntry() end
@@ -858,7 +876,9 @@ do
 				if item[1] == "check" then
 					-- A box right under a slider gets some room, so a click meant for the slider does not land on the box.
 					if prevKind == "slider" and not before[9] then y = y - 10 end
-					makeCheck(frame, y, item[3], item[2], item[4])
+					makeCheck(frame, y, item[3], item[2], item[4], nil, item.untick)
+					local r = item.right -- (a second box on the same row, in the right column)
+					if r then makeCheck(frame, y, r[2], r[1], r[3], WIN.col2, r.untick) end
 					y = y - 26
 				elseif item[1] == "kinds" then
 					makeChatKinds(frame, y)

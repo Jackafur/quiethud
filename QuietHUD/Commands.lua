@@ -170,11 +170,14 @@ SlashCmdList["QUIETHUD"] = function(msg)
 	elseif cmd == "peek" then
 		-- The "hold to show" key sends "down" when it is pressed and "up" when it is released. Typed without either, it toggles.
 		-- It runs out after two minutes, so a key release the game never saw (focus lost) cannot leave the HUD stuck on.
+		-- The "Toggle the whole HUD" key sends "toggle": it stays on until pressed again (no key release to miss, so no time limit).
 		local peekNow = GetTime()
 		if rest == "down" then
 			ns.peekUntil = peekNow + 120
 		elseif rest == "up" then
 			ns.peekUntil = 0
+		elseif rest == "toggle" then
+			ns.peekUntil = peekNow < ns.peekUntil and 0 or math.huge
 		else
 			ns.peekUntil = peekNow < ns.peekUntil and 0 or peekNow + 120
 		end
