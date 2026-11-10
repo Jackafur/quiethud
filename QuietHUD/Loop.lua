@@ -9,7 +9,7 @@ local OVERRIDE_KEYS = ns.OVERRIDE_KEYS
 local mirrorTimerActive, setAlpha, applyList, barBit = ns.mirrorTimerActive, ns.setAlpha, ns.applyList, ns.barBit
 local step = ns.step
 local applyBars, checkElsewhere, shortened, shortenOne = ns.applyBars, ns.checkElsewhere, ns.shortened, ns.shortenOne
-local TEXT_SPECS = ns.TEXT_SPECS
+local TEXT_SPECS, WB_HOLDERS = ns.TEXT_SPECS, ns.WB_HOLDERS
 local anyHovered, T, triggered, isMoving = ns.anyHovered, ns.T, ns.triggered, ns.isMoving
 local inDungeonOrRaid, mouseActive, playerChanging = ns.inDungeonOrRaid, ns.mouseActive, ns.playerChanging
 local applyChat, chatTyping, chatHovered = ns.applyChat, ns.chatTyping, ns.chatHovered
@@ -24,8 +24,14 @@ local fadeModels = ns.fadeModels
 -- Per group, how far it is shown: 0 faded to 1 shown.
 local cur = { bars = 0, player = 0, hud = 0, quest = 0, map = 0, chat = 0, nav = 0, rxp = 0, bags = 0, micro = 0 }
 for _, s in ipairs(SPLIT) do cur[s.g] = 0 end
--- The groups QuietHUD holds below full (fading), the hidden lists it holds (hiddenOn), the bar texts it hid (textHidden).
-local fading, hiddenOn, textHidden = {}, {}, {}
+-- The groups QuietHUD holds below full (fading), the hidden lists it holds (hiddenOn).
+local fading, hiddenOn = {}, {}
+-- The hotkey and name labels QuietHUD holds at 0 (Hide hotkeys, Hide names), each with the number of the half-second pass
+-- that last wanted it hidden (textPass). A label no pass wants any more gets 1 back, wherever its button went (a WackyBars
+-- button moved from one bar's holder to another's). Weak keys: a label that is gone is forgotten.
+local textHeld, textPass = setmetatable({}, { __mode = "k" }), 0
+-- Switched off: how long QuietHUD has been off with nothing left to put back (see the end of update).
+local OFF_SETTLE = 2
 local minimapShown = true -- (false while the faded-out minimap is shrunk, see setMinimapVisible)
 local hotkeyClock = 0 -- (the half-second pass at the end of update)
 local lastLoggedMoving -- (the moving state the map log last wrote)
@@ -107,6 +113,13 @@ end
 local CAST_LINGER = 0.75
 local castUntil = 0
 
+-- One label of a bar with Hide hotkeys or Hide names ticked: held at 0, written only when it is not at 0 already.
+local function holdText(fs)
+	if not (fs and fs.SetAlpha) then return end
+	if not textHeld[fs] or fs:GetAlpha() > 0.001 then fs:SetAlpha(0) end
+	textHeld[fs] = textPass
+end
+
 local function update(dt)
 	local now = GetTime()
 	-- Edit Mode, or Naowh's HUD Editor (its mover plates sit inside the frames, so a faded frame would hide its plate; see
@@ -115,68 +128,100 @@ local function update(dt)
 	local combat = UnitAffectingCombat("player") and true or false
 	local enabled = DB.enabled
 
-	local inside = inDungeonOrRaid()
-	woc.mouseMembership(enabled and not edit) -- (before any group is written)
-	-- The four wake columns. The weapon is only asked about while a row has Weapon ticked, and the mouse only while a row has
-	-- Mouse move ticked (nothing is asked every frame that nothing uses).
-	local weaponOut = false
-	if woc.anyRow(T.WEAPON) then
-		local state
-		weaponOut, state = weaponDrawn()
-		-- (the weapon the game put away counts as out while QuietHUD draws it again; see keepDrawn)
-		if keepDrawn((enabled and DB.keepDrawn) and true or false, now, state, combat) then weaponOut = true end
-	else
-		keepDrawn(false) -- (forgets the weapon state, so nothing is drawn on old news when a Weapon box is ticked again)
-	end
-	wake.fight = combat or now < ns.combatEnd
-	wake.weapon = weaponOut
-	wake.target = UnitExists("target") and true or false
-	wake.mouse = woc.anyRow(T.MOUSE) and mouseActive(now) and true or false
-	local okMove, moving = pcall(isMoving)
-	if okMove and moving then ns.moveUntil = now + MOVE_LINGER end
-	if (okMove and moving and true or false) ~= lastLoggedMoving then
-		lastLoggedMoving = okMove and moving and true or false
-		mapLog(string.format("moving=%s by %s (speed %s, fade=%s, triggers=%s, idle opacity=%s)", tostring(lastLoggedMoving),
-			ns.lastMoveReason, ns.lastSpeedText, tostring(DB.fadeMinimap), tostring(DB.trigMap), tostring(DB.idle)))
+	-- Switched off: what shows an element (moving, the instance, the weapon, a target, the mouse, the trigger rows) is not
+	-- asked at all, also in a fight or while things are still being put back; with QuietHUD off none of it is used. At the
+	-- moment it is switched off, the weapon state and the health and power listening are let go once (loop.triggersOn).
+	-- Cost while off: none of the trigger work; settled, the driver does not even run update on its tick (end of update).
+	if not enabled then
+		if loop.triggersOn then
+			loop.triggersOn = false
+			keepDrawn(false)
+			playerChanging(false, now)
+		end
+	elseif not loop.triggersOn then
+		loop.triggersOn = true
 	end
 
-	local moved = now < ns.moveUntil
-	-- (frames added with /qhud add bars count for mouse over with their children: a Naowh bag counter is an empty holder with its card as a child)
-	local barNames = woc.groupHover() -- (without the bars that have Mouse over of their own, woc.mouseBars)
-	vis.bars = triggered(DB.trigBars, wake, moved, false, combat, inside, barNames, false,
-		barBit(DB.trigBars, T.HOVER) and (anyHovered(barNames) or (woc.groupExtras() and ns.anyHoveredDeep(woc.groupExtras())) or false) or nil)
-	vis.player = triggered(DB.trigPlayer, wake, moved, false, combat, inside, LISTS.player)
-	-- Health or power changing brings the player frame up too (its own box on the Show when page); Hide in combat still wins.
-	if playerChanging((enabled and DB.notFullShows) and true or false, now) and not (combat and barBit(DB.trigPlayer, T.COMBAT)) then
-		vis.player = true
+	woc.mouseMembership(enabled and not edit) -- (before any group is written)
+	if enabled then
+		-- Dungeon or raid and Moving are asked only while a row has that column ticked, like the weapon and the mouse below.
+		-- Cost: a walk of the trigger rows (a bit test each) per column per update, instead of the game's instance, speed
+		-- and position questions every update.
+		local inside = woc.anyRow(T.INST) and inDungeonOrRaid() or false
+		-- The four wake columns. The weapon is only asked about while a row has Weapon ticked, and the mouse only while a row has
+		-- Mouse move ticked (nothing is asked every frame that nothing uses).
+		local weaponOut = false
+		if woc.anyRow(T.WEAPON) then
+			local state
+			weaponOut, state = weaponDrawn()
+			-- (the weapon the game put away counts as out while QuietHUD draws it again; see keepDrawn)
+			if keepDrawn((enabled and DB.keepDrawn) and true or false, now, state, combat) then weaponOut = true end
+		else
+			keepDrawn(false) -- (forgets the weapon state, so nothing is drawn on old news when a Weapon box is ticked again)
+		end
+		wake.fight = combat or now < ns.combatEnd
+		wake.weapon = weaponOut
+		wake.target = UnitExists("target") and true or false
+		wake.mouse = woc.anyRow(T.MOUSE) and mouseActive(now) and true or false
+		-- (no row with Moving: not moving, and the map log and /qhud state say why; the game's own "started moving" message
+		-- still sets ns.moveUntil, Events.lua. isMoving(true) forgets the last position once, so ticking Moving again later
+		-- does not read the walk in between as one step.)
+		local okMove, moving = false, false
+		if woc.anyRow(T.MOVING) then
+			okMove, moving = pcall(isMoving)
+			if loop.moveUnasked then loop.moveUnasked = nil end
+		elseif not loop.moveUnasked then -- (once, when the last row with Moving is unticked, or at the first update)
+			loop.moveUnasked = true
+			pcall(isMoving, true)
+			ns.lastMoveReason, ns.lastSpeedText = "no row has Moving", "?"
+		end
+		if okMove and moving then ns.moveUntil = now + MOVE_LINGER end
+		if (okMove and moving and true or false) ~= lastLoggedMoving then
+			lastLoggedMoving = okMove and moving and true or false
+			mapLog(string.format("moving=%s by %s (speed %s, fade=%s, triggers=%s, idle opacity=%s)", tostring(lastLoggedMoving),
+				ns.lastMoveReason, ns.lastSpeedText, tostring(DB.fadeMinimap), tostring(DB.trigMap), tostring(DB.idle)))
+		end
+
+		local moved = now < ns.moveUntil
+		-- (frames added with /qhud add bars count for mouse over with their children: a Naowh bag counter is an empty holder with its card as a child)
+		local barNames = woc.groupHover() -- (without the bars that have Mouse over of their own, woc.mouseBars)
+		vis.bars = triggered(DB.trigBars, wake, moved, false, combat, inside, barNames, false,
+			barBit(DB.trigBars, T.HOVER) and (anyHovered(barNames) or (woc.groupExtras() and ns.anyHoveredDeep(woc.groupExtras())) or false) or nil)
+		vis.player = triggered(DB.trigPlayer, wake, moved, false, combat, inside, LISTS.player)
+		-- Health or power changing brings the player frame up too (its own box on the Show when page); Hide in combat still wins.
+		if playerChanging((enabled and DB.notFullShows) and true or false, now) and not (combat and barBit(DB.trigPlayer, T.COMBAT)) then
+			vis.player = true
+		end
+		vis.hud = triggered(DB.trigUnits, wake, moved, false, combat, inside, LISTS.hud)
+		for _, s in ipairs(SPLIT) do
+			vis[s.g] = triggered(gTrig(s), wake, moved, false, combat, inside, s.hover or woc.ownedNames(s.g, LISTS[s.g]), s.deep)
+		end
+		-- Casting shows the cast bar (not when it is set to hide in combat and you are in combat). A running breath, fatigue or feign
+		-- death timer shows the breath bar whatever its settings: with the HUD idle the breath bar would be invisible while you drown.
+		local castBar = PlayerCastingBarFrame or CastingBarFrame
+		if castBar and (castBar.casting or castBar.channeling) then castUntil = now + CAST_LINGER end
+		if now < castUntil and not (combat and barBit(gTrig(SPLIT_BY.cast), T.COMBAT)) then vis.cast = true end
+		if mirrorTimerActive() then vis.breath = true end
+		vis.bags = triggered(DB.trigBagsBar, wake, moved, false, combat, inside, LISTS.bags)
+		vis.micro = triggered(DB.trigMicro, wake, moved, false, combat, inside, LISTS.micro)
+		vis.quest = triggered(DB.trigTracker, wake, moved, now < ns.questUntil, combat, inside, LISTS.quest)
+		vis.map = triggered(DB.trigMap, wake, moved, now < ns.mapUntil, combat, inside, LISTS.map, false,
+			barBit(DB.trigMap, T.HOVER) and (mouseInMapRect() or anyHovered(LISTS.map)) or false)
+		-- Chat is the one element whose hover is a list of frames, and typing always brings it up, even in combat.
+		local chatMask = DB.trigChat
+		-- (through triggered, with the chat's own hover answer)
+		local chatWanted = triggered(chatMask, wake, moved, now < ns.chatUntil, combat, inside, nil, false,
+			barBit(chatMask, T.HOVER) and chatHovered() or false)
+		-- (the one-time update note brings the chat up for a moment by itself, whatever its boxes say: audit 2026-11-06 update
+		-- path F3)
+		vis.chat = (chatWanted or chatTyping() or now < (ns.noticeUntil or 0)) and true or false
+		vis.nav = ns.navForce or triggered(DB.trigNav, wake, moved, false, combat, inside, LISTS.nav)
+		vis.rxp = triggered(DB.trigRxp, wake, moved, now < ns.questUntil, combat, inside, LISTS.rxp, true)
 	end
-	vis.hud = triggered(DB.trigUnits, wake, moved, false, combat, inside, LISTS.hud)
-	for _, s in ipairs(SPLIT) do
-		vis[s.g] = triggered(gTrig(s), wake, moved, false, combat, inside, s.hover or woc.ownedNames(s.g, LISTS[s.g]), s.deep)
-	end
-	-- Casting shows the cast bar (not when it is set to hide in combat and you are in combat). A running breath, fatigue or feign
-	-- death timer shows the breath bar whatever its settings: with the HUD idle the breath bar would be invisible while you drown.
-	local castBar = PlayerCastingBarFrame or CastingBarFrame
-	if castBar and (castBar.casting or castBar.channeling) then castUntil = now + CAST_LINGER end
-	if now < castUntil and not (combat and barBit(gTrig(SPLIT_BY.cast), T.COMBAT)) then vis.cast = true end
-	if mirrorTimerActive() then vis.breath = true end
-	vis.bags = triggered(DB.trigBagsBar, wake, moved, false, combat, inside, LISTS.bags)
-	vis.micro = triggered(DB.trigMicro, wake, moved, false, combat, inside, LISTS.micro)
-	vis.quest = triggered(DB.trigTracker, wake, moved, now < ns.questUntil, combat, inside, LISTS.quest)
-	vis.map = triggered(DB.trigMap, wake, moved, now < ns.mapUntil, combat, inside, LISTS.map, false,
-		barBit(DB.trigMap, T.HOVER) and (mouseInMapRect() or anyHovered(LISTS.map)) or false)
-	-- Chat is the one element whose hover is a list of frames, and typing always brings it up, even in combat.
-	local chatMask = DB.trigChat
-	-- (through triggered, with the chat's own hover answer)
-	local chatWanted = triggered(chatMask, wake, moved, now < ns.chatUntil, combat, inside, nil, false,
-		barBit(chatMask, T.HOVER) and chatHovered() or false)
-	-- (the one-time update note brings the chat up for a moment by itself, whatever its boxes say: audit 2026-11-06 update
-	-- path F3)
-	vis.chat = (chatWanted or chatTyping() or now < (ns.noticeUntil or 0)) and true or false
-	vis.nav = ns.navForce or triggered(DB.trigNav, wake, moved, false, combat, inside, LISTS.nav)
-	vis.rxp = triggered(DB.trigRxp, wake, moved, now < ns.questUntil, combat, inside, LISTS.rxp, true)
 	local showAll = edit or now < ns.peekUntil or (DB.peekAlt and IsAltKeyDown()) or (DB.peekCtrl and IsControlKeyDown())
 		or (DB.peekShift and IsShiftKeyDown())
+	-- (the bars as if the whole HUD were not shown, for a bar with Show with unticked: woc.barsCurOwn below)
+	local barsOwnWanted = vis.bars and true or false
 	if showAll then
 		for g in pairs(vis) do vis[g] = true end
 	end
@@ -236,16 +281,31 @@ local function update(dt)
 			local floor = idle
 			if goneNow and goneNow[g] then floor = 0 end
 			local low = math.min(floor, peak)
+			if g == "bars" then
+				-- (the bars' fade for a bar of its own, ActionBars.lua applyBars: the pet bar's Shown, and Show with Alt unticked,
+				-- which goes on as if the whole HUD were not shown; the bars are written again while the two differ)
+				local own = edit and cur[g] or step(woc.barsCurOwn or cur[g], barsOwnWanted and 1 or 0,
+					loop.moving and dt or math.min(dt, 1 / 60), DB.fadeOutSeconds)
+				-- (only while a bar has Show with unticked, and only while its own fade still moves: a settled difference, the
+				-- whole HUD held up, needs no rewrite; audit 2026-11-10 evening, it kept the loop running every frame)
+				local anyOwn = woc.peekSet() and DB.barPeek ~= nil and DB.barPeek ~= 511
+				if anyOwn and own ~= (woc.barsCurOwn or own) then anyFade = true; woc.applied.bars = nil end
+				woc.barsFloor, woc.barsCur, woc.barsCurOwn = floor, (not edit) and cur[g] or nil, own
+			end
 			local a = low + (peak - low) * cur[g]
 			if g == "panel" and DB.hidePanel and not edit then a = 0 end
 			woc.group(g, a, false)
 			if g == "map" then mapAlpha = a end
 			fading[g] = true
 		elseif fixedA then
+			if g == "bars" then woc.barsCur, woc.barsCurOwn = nil, nil end
 			woc.group(g, fixedA, true)
 			fading[g] = true
 			cur[g] = 1
 		elseif fading[g] then
+			-- (the bars' per-bar fade state goes too, or the pet bar and a Show with bar stayed faded when QuietHUD or Fade was
+			-- switched off; audit 2026-11-10 evening)
+			if g == "bars" then woc.barsCur, woc.barsCurOwn = nil, nil end
 			woc.group(g, 1, true)
 			fading[g] = false
 			cur[g] = 1
@@ -298,19 +358,35 @@ local function update(dt)
 		if MinimapCluster and ns.mapSavedScale and MinimapCluster:GetScale() > 0.01 and ns.canScaleMap() then ns.setMapScale(0.001) end
 		local wantShort = enabled and DB.shortHotkeys
 		for i = 1, #BAR_DEFS do
-			for j = 1, 12 do
+			for j = 1, BAR_DEFS[i].count or 12 do
 				local fs = _G[BAR_DEFS[i].buttons .. j .. "HotKey"]
 				if fs and (wantShort or shortened[fs]) then shortenOne(fs, wantShort) end
 			end
-			for _, spec in ipairs(TEXT_SPECS) do
-				local on = enabled and barBit(DB[spec[2]], i)
-				local tag = spec[1] .. i
-				if on or textHidden[tag] then
-					for j = 1, 12 do
-						local fs = _G[BAR_DEFS[i].buttons .. j .. spec[1]]
-						if fs then fs:SetAlpha(on and 0 or 1) end
+		end
+		-- Hide hotkeys and Hide names: the labels of every ticked bar (its game buttons and WackyBars' buttons in its holders,
+		-- Frames.lua WB_HOLDERS) are held at 0, then every label held before that no ticked bar wanted this time gets 1 back.
+		-- Written on change: a label is written only when it is not at 0 yet (new, or something else set it back). Cost: while a
+		-- box is ticked, one opacity read per label of the ticked bars every half second; nothing at all while no box is ticked
+		-- and no label is held.
+		if enabled and ((DB.barHotkeys or 0) ~= 0 or (DB.barNames or 0) ~= 0) or next(textHeld) then
+			textPass = textPass + 1
+			for i = 1, #BAR_DEFS do
+				for _, spec in ipairs(TEXT_SPECS) do
+					if enabled and barBit(DB[spec[2]], i) then
+						for j = 1, BAR_DEFS[i].count or 12 do holdText(_G[BAR_DEFS[i].buttons .. j .. spec[1]]) end
+						for _, hn in ipairs(WB_HOLDERS[i]) do
+							local kids = _G[hn] and _G[hn].qhudButtons
+							if kids then
+								for _, b in ipairs(kids) do holdText(b[spec[1]]) end
+							end
+						end
 					end
-					textHidden[tag] = on and true or false
+				end
+			end
+			for fs, pass in pairs(textHeld) do
+				if pass ~= textPass then
+					fs:SetAlpha(1)
+					textHeld[fs] = nil
 				end
 			end
 		end
@@ -321,6 +397,17 @@ local function update(dt)
 			end
 		end
 	end
+	-- Switched off: once everything is put back (nothing fading, the minimap at full size, no label held at 0 or shortened)
+	-- and that has held for OFF_SETTLE seconds out of a fight (time for the half-second and one-second passes to run, and
+	-- for what waits for a fight's end), the loop is settled (loop.off): the driver stops its tick (the trigger work is
+	-- skipped whenever QuietHUD is off, see the start of update). Ticking the box again, or any game message, wakes it.
+	if enabled or anyFade or combat or (InCombatLockdown and InCombatLockdown()) or not minimapShown or next(textHeld)
+		or next(shortened) then
+		loop.offSince = nil
+	elseif not loop.offSince then
+		loop.offSince = now
+	end
+	loop.off = (loop.offSince and now - loop.offSince >= OFF_SETTLE) and true or false
 	loop.moving = anyFade
 end
 
@@ -328,7 +415,11 @@ local lastError
 local driver = CreateFrame("Frame")
 driver:SetScript("OnUpdate", function(_, dt)
 	loop.clock = loop.clock + dt
-	if not (loop.wake or loop.moving or loop.clock >= 0.1) then
+	-- Switched off and settled (see the end of update): no tick, only a wake runs it. DB.enabled is read here, so ticking
+	-- Enable QuietHUD again brings the tick back on the next frame even without a wake. Cost: one field read per frame.
+	local off = loop.off and not DB.enabled
+	if off and loop.clock > 0.1 then loop.clock = 0.1 end -- (so a wake's step is no longer than a tick's)
+	if not (loop.wake or loop.moving or (loop.clock >= 0.1 and not off)) then
 		-- Asleep, one thing is still looked at every frame, and only while a tooltip is on screen with the tooltip opacity
 		-- below full: the game puts a tooltip back to full when something sets new content on it, and a frame that does so
 		-- in its own update after the tooltip's (an action button refreshing its tooltip) would flash it until the next tick.
@@ -380,14 +471,17 @@ end
 -- Toggle the whole HUD key). The game says when a modifier goes down or up (MODIFIER_STATE_CHANGED) but not which other
 -- keys are pressed with it, so while a ticked key is held, and only then, it asks the game every frame whether any key
 -- that has a binding (its base key: "1" for ALT-1, so a [mod:alt] macro on 1 counts too) or a mouse button is down.
--- Per frame only while the key is held and its Tap box is ticked; nothing otherwise. A key already down when the modifier went
+-- Per frame only while the key is held (at most TAP_SECONDS) and its Tap box is ticked; nothing otherwise. A key already down when the modifier went
 -- down (running with W held, the camera turned with the mouse) does not spoil the tap.
 do
 	local TAP_SECONDS = 0.4
 	local MODS = { ALT = { "peekTapAlt", IsAltKeyDown }, CTRL = { "peekTapCtrl", IsControlKeyDown },
 		SHIFT = { "peekTapShift", IsShiftKeyDown } }
 	local BUTTONS = { "LeftButton", "RightButton", "MiddleButton", "Button4", "Button5" }
-	local keys -- the base keys of every binding, built on first use and again when the bindings change
+	-- The base keys of every binding, built on first use and again when the bindings change. A change while a tap is being
+	-- watched (keysStale) keeps the old list until that tap is over, so the watcher never meets a missing list (it erred
+	-- when the bindings changed between a modifier going down and up); anyNewDown skips the keys if the list is missing.
+	local keys, keysStale
 	local function buildKeys()
 		keys = {}
 		local seen = {}
@@ -406,8 +500,10 @@ do
 	end
 	local tapMod, tapStart, spoiled, before = nil, 0, false, {}
 	local function anyNewDown()
-		for _, k in ipairs(keys) do
-			if not before[k] and IsKeyDown(k) then return true end
+		if keys then
+			for _, k in ipairs(keys) do
+				if not before[k] and IsKeyDown(k) then return true end
+			end
 		end
 		for _, b in ipairs(BUTTONS) do
 			if not before[b] and IsMouseButtonDown(b) then return true end
@@ -416,6 +512,12 @@ do
 	end
 	local watcher = CreateFrame("Frame")
 	local function onUpdate()
+		-- Past TAP_SECONDS the let-go can no longer count as a tap, so the watching stops there (the let-go itself still
+		-- checks the time). Cost: per frame for at most TAP_SECONDS after a ticked key goes down.
+		if GetTime() - tapStart > TAP_SECONDS then
+			watcher:SetScript("OnUpdate", nil)
+			return
+		end
 		if not spoiled and anyNewDown() then spoiled = true end
 		if spoiled then watcher:SetScript("OnUpdate", nil) end -- (nothing left to learn until the key is let go)
 	end
@@ -428,12 +530,20 @@ do
 	watcher:RegisterEvent("MODIFIER_STATE_CHANGED")
 	watcher:RegisterEvent("UPDATE_BINDINGS")
 	watcher:SetScript("OnEvent", function(_, event, key, down)
-		if event == "UPDATE_BINDINGS" then keys = nil return end
+		if event == "UPDATE_BINDINGS" then
+			keysStale = true
+			woc.peekSetCache = nil -- (the Show with column follows a new key)
+			if ns.refreshConfig then ns.refreshConfig() end
+			return
+		end
 		local mod = type(key) == "string" and key:match("^[LR](%u+)$")
 		if not (mod and MODS[mod]) then return end
 		if down == 1 then
 			if not DB[MODS[mod][1]] then return end
-			if not keys then buildKeys() end
+			if not keys or keysStale then
+				keysStale = nil
+				buildKeys()
+			end
 			tapMod, tapStart, spoiled = mod, GetTime(), othersDown(mod)
 			before = {}
 			for _, k in ipairs(keys) do if IsKeyDown(k) then before[k] = true end end

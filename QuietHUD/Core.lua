@@ -169,7 +169,13 @@ woc.noHover = setmetatable({}, { __mode = "k" })
 -- it is hooked when the fight ends (loop.pending, woc.hookAll), not at the next list rebuild, which after a /reload in a
 -- fight could be the next loading screen.
 local function hookHover(f)
-	if type(f) ~= "table" or not f.HookScript or loop.hovered[f] or woc.noHover[f] then return end
+	if type(f) ~= "table" or not f.HookScript or woc.noHover[f] then return end
+	-- (WackyBars' holders: their buttons take the mouse, not they; each button is hooked once, whichever holder it is in)
+	if type(f.qhudButtons) == "table" then
+		for _, b in ipairs(f.qhudButtons) do hookHover(b) end
+		return
+	end
+	if loop.hovered[f] then return end
 	if InCombatLockdown and InCombatLockdown() and f.IsProtected and f:IsProtected() then
 		loop.pending = true
 		return
@@ -187,6 +193,7 @@ local function hookHover(f)
 		pcall(f.EnableMouse, f, any and true or false)
 	end
 end
+woc.hookHover = hookHover -- (WackyBars' buttons, after it sorts them: QuietHUD_RefreshBarClicks, ActionBars.lua)
 
 -- Debug output: printed, and also kept in DB.trace (saved to the addon's saved-variables file on /reload).
 local function trace(msg)
@@ -214,7 +221,9 @@ local SHIFT_FRAMES = {
 	bars = {
 		"MainActionBar", "MultiBarBottomLeft", "MultiBarBottomRight", "MultiBarRight", "MultiBarLeft", "MultiBar5", "MultiBar6",
 		"MultiBar7", "MultiBar8", "StanceBar", "PetActionBar", "PossessActionBar", "StatusTrackingBarManager", "MicroMenuContainer",
-		"BagsBar", "MultiCastActionBarFrame",
+		"BagsBar", "MultiCastActionBarFrame", "GamepadMainActionBarFrame",
+		"WackyBarsPlain", "WackyBarsShift", "WackyBarsCtrl", "WackyBarsAlt", "WackyBarsMousePlain", "WackyBarsMouseShift",
+		"WackyBarsMouseCtrl", "WackyBarsMouseAlt", "WackyBarsMouseHyper",
 	},
 	units ={ "PlayerFrame", "PlayerCastingBarFrame", "TargetFrame", "FocusFrame", "PetFrame", "PartyFrame" },
 }
@@ -232,6 +241,31 @@ end
 -- Warlock HUD draws its rows inside one frame with no name, as big as the screen, and makes a new one at each rebuild. It sets
 -- the opacity of the frames under it, never of this one. So this one gets a name, which is in the Added frames list (Frames.lua),
 -- and the function Warlock HUD calls while it builds tells us about a new one: no cost between rebuilds. Skipped without it.
+-- Its rows (the aura icons, procs, buffs, consumables, cooldowns, shards) each sit on a small anchor frame with no name, a
+-- child of a row mask, placed against the screen itself (not against the big frame), so moving the big frame moved none of
+-- them (the owner, Nov 10, a screenshot). The pixel shift moves those anchors: each child of a mask placed against
+-- UIParent gets a name, QuietHUDWarlockRow<n>. Done when Warlock HUD builds and before each shift move; a few masks, a
+-- few children each.
+local WARLOCK_ROWS = 12
+woc.nameWarlockRows = function()
+	local rows = _G.WarlockHudRowVisibility
+	local masks = rows and rows.masks
+	if type(masks) ~= "table" then return end
+	local n = 0
+	for _, key in ipairs({ "main", "utility", "consumes", "buffs", "procs", "shards" }) do
+		local mask = masks[key]
+		if mask and mask.GetChildren then
+			for _, child in ipairs({ mask:GetChildren() }) do
+				local ok, _, rel = pcall(child.GetPoint, child, 1)
+				if ok and rel == UIParent and n < WARLOCK_ROWS then
+					n = n + 1
+					_G["QuietHUDWarlockRow" .. n] = child
+				end
+			end
+		end
+	end
+	for i = n + 1, WARLOCK_ROWS do _G["QuietHUDWarlockRow" .. i] = nil end
+end
 local function findWarlockHud()
 	local rows = _G.WarlockHudRowVisibility
 	local main = rows and rows.masks and rows.masks.main
@@ -239,6 +273,7 @@ local function findWarlockHud()
 	if not root or root == UIParent or root == _G.QuietHUDWarlockHud then return end
 	woc.noHover[root] = true
 	_G.QuietHUDWarlockHud = root
+	woc.nameWarlockRows()
 	woc.forget()
 	wakeLoop()
 end
@@ -335,6 +370,30 @@ function woc.nameNaowhWaypoint(nav)
 	end
 	if changed then woc.forget() end
 end
+-- Chattynator's chat windows have no names (a frame pool under ChattynatorHyperlinkHandler, placed against UIParent), so the
+-- pixel shift could not list them. Named here by their window number (QuietHUDChattynator1, 2, ...), looked for only when
+-- the lists are built and only while Chattynator is loaded (the owner, 2026-11-10: "will it move chattynator to?"). A window
+-- made later in the session gets its name at the next rebuild (a setting changed, a /reload).
+woc.chattyWindows = {} -- number: the window named QuietHUDChattynator<number>
+woc.nameChattynator = function()
+	local host = _G.ChattynatorHyperlinkHandler
+	if type(host) ~= "table" or not host.GetChildren then return end
+	local found = {}
+	for _, f in ipairs({ host:GetChildren() }) do
+		local okS, shown = pcall(f.IsShown, f)
+		local okI, id = pcall(f.GetID, f)
+		if type(f.TabsBar) == "table" and type(f.SavePosition) == "function" and okS and shown and okI and type(id) == "number"
+			and id >= 1 and id <= 10 then
+			found[id] = f
+		end
+	end
+	for i = 1, 10 do
+		if woc.chattyWindows[i] ~= found[i] then
+			woc.chattyWindows[i] = found[i]
+			_G["QuietHUDChattynator" .. i] = found[i]
+		end
+	end
+end
 local function rebuildLists()
 	local rxpTimers = _G.RXPFrameBarContainer
 	if not woc.rxpTimersHooked and type(rxpTimers) == "table" and type(rxpTimers.ClearAllPoints) == "function" then
@@ -411,6 +470,16 @@ local function rebuildLists()
 		end
 	end
 	dominos.hover = (dominosOwn and not woc.off.dominos) and dominos.hoverAll or nil
+	-- WackyBars' names (its holders in the action bar lists and the mouse over list, its bars in the pixel shift list) only
+	-- while it is loaded: without it they are 72 names looked up for nothing on every mouse over check, and 9 "no frame"
+	-- lines in /qhud shift. Cost: one name test per listed name at a rebuild; nothing in the loop. (Can the game not be
+	-- asked, they stay.)
+	local wbOff = false
+	if isLoaded then
+		local ok, yes = pcall(isLoaded, "WackyBars")
+		wbOff = ok and not yes
+	end
+	local function wbSkip(n) return wbOff and n:find("^WackyBars") ~= nil end
 	local before = {}
 	for g, list in pairs(LISTS) do
 		if not HOSTED[g] and g ~= "shift" then
@@ -430,7 +499,7 @@ local function rebuildLists()
 		if g == "reporter" then
 			if DB.hideReporter then for _, n in ipairs(DEFAULT_LISTS.reporter) do add(n) end end
 		else
-			for _, n in ipairs(DEFAULT_LISTS[g]) do add(n) end
+			for _, n in ipairs(DEFAULT_LISTS[g]) do if not wbSkip(n) then add(n) end end
 		end
 		-- Dominos' frames: in the Action bars, Bags bar and Menu bar lists until the Dominos row has a setting of its own,
 		-- then all in its list (see the Dominos block in Frames.lua).
@@ -444,7 +513,39 @@ local function rebuildLists()
 			end
 		end
 		if g == "shift" then
-			if DB.shiftBars then for _, n in ipairs(SHIFT_FRAMES.bars) do add(n) end end
+			-- The waypoint arrows sit in one spot on the screen while you travel (the owner, 2026-11-09: "can we have naowhs
+			-- rxp arrow move 4 pixels every 4 mins as well"): Naowh's navigator card and its "behind you" cue (placed once,
+			-- not every frame), and RestedXP's arrow. Not Naowh's pin, which follows the world. Only while that addon is loaded.
+			local function loaded(a) local ok, yes = pcall(isLoaded or function() end, a) return ok and yes end
+			if loaded("NaowhForever") then
+				add("QuietHUDNaowhWaypointNav")
+				add("QuietHUDNaowhWaypointCue")
+				-- Naowh's HUD pieces and alerts, the frames of its two rows, and its flight card (the owner, Nov 10: "the naowh
+				-- stuff on my screen doesnt shift either")
+				for _, g in ipairs({ "naowh", "naowhAlerts", "flightTimer" }) do
+					for _, n in ipairs(SPLIT_BY[g] and SPLIT_BY[g].frames or {}) do add(n) end
+				end
+			end
+			-- RestedXP's guide window and Naowh's own window for it (the owner, Nov 10: "naowhs RXP stuff doesnt shift"); its
+			-- timer bars sit on the window's footer and RestedXP places them again as they run, so they are not listed
+			if loaded("RXPGuides") then
+				add("RXPG_ARROW")
+				add("RXPFrame")
+				add("NaowhRXPWindow")
+			end
+			-- Warlock HUD's rows (one full-screen frame, named in findWarlockHud) and its Multi-Target window sit in one spot
+			-- in the middle of the screen (the owner, Nov 10: "the warlock hud rows thats like weak auras doesnt move").
+			if loaded("Warlock_Hud") then
+				for i = 1, WARLOCK_ROWS do add("QuietHUDWarlockRow" .. i) end
+				add("QuietHUDWarlockMulti")
+				add("WarlockHudMultiTargetWindow")
+			end
+			-- Chattynator's windows, with the game's chat windows (named just above)
+			if loaded("Chattynator") then
+				woc.nameChattynator()
+				for i = 1, 10 do add("QuietHUDChattynator" .. i) end
+			end
+			if DB.shiftBars then for _, n in ipairs(SHIFT_FRAMES.bars) do if not wbSkip(n) then add(n) end end end
 			if DB.shiftUnits then for _, n in ipairs(SHIFT_FRAMES.units) do add(n) end end
 		end
 		-- The RestedXP windows are added by their checkboxes. The frames do not have to exist yet: they are looked up
@@ -496,7 +597,7 @@ local function rebuildLists()
 	local seen = {}
 	for _, list in ipairs({ ACTION_BARS, ns.discovered, not dominosOwn and dominos.barHover or {}, DB.extra.bars or {} }) do
 		for _, n in ipairs(list) do
-			if not seen[n] then
+			if not seen[n] and not wbSkip(n) then
 				seen[n] = true
 				ns.barHover[#ns.barHover + 1] = n
 			end
@@ -505,7 +606,7 @@ local function rebuildLists()
 	-- Buttons moved out of their bar by another addon count for mouse over themselves (see checkElsewhere).
 	for i, def in ipairs(BAR_DEFS) do
 		if elsewhere.bars[i] then
-			for j = 1, 12 do ns.barHover[#ns.barHover + 1] = def.buttons .. j end
+			for j = 1, def.count or 12 do ns.barHover[#ns.barHover + 1] = def.buttons .. j end
 		end
 	end
 	for k, set in ipairs(EXTRA_BUTTONS) do
@@ -526,6 +627,7 @@ local function rebuildLists()
 	end
 	woc.forget()
 	woc.hookAll()
+	if woc.applyBarClicks then woc.applyBarClicks() end -- (the Click through column, ActionBars.lua)
 	-- (the mouse watcher follows woc.off: an addon's row that counts for nothing no longer needs it)
 	if ns.applyMouseWatch then ns.applyMouseWatch() end
 end
@@ -556,8 +658,10 @@ end
 
 -- After any settings change: every group is written again at once, and the open bags and the minimap buttons follow.
 local function settingChanged()
+	woc.peekSetCache = nil -- (the Show with column follows the Show when page)
 	woc.forget()
 	wakeLoop()
+	if woc.applyBarClicks then woc.applyBarClicks() end -- (a Click through box takes effect at once; audit 2026-11-10)
 	if ns.applyMouseWatch then ns.applyMouseWatch() end
 	if ns.applyExtras then ns.applyExtras() end
 end
@@ -634,6 +738,17 @@ MIGRATIONS[1] = function(saved)
 		saved[k] = nil
 	end
 end
+-- 1.6.1 to the next. The pet bar got a row of its own on the Action bars page (bit 9 of each column, the owner, Nov 10). It
+-- faded with the bars and went with Action Bar 8's Click through, so it starts that way: nothing changes on the screen.
+MIGRATIONS[2] = function(saved)
+	local function bit(m, i) return (math.floor((m or 0) / 2 ^ (i - 1)) % 2) == 1 end
+	if type(saved.barFade) == "number" and not bit(saved.barFade, 9) then saved.barFade = saved.barFade + 256 end
+	-- (its Shown slider's 0 is Global; an Action bars Shown of its own, which the pet bar followed, is copied to it)
+	if saved.ovPetBar == nil and type(saved.ovBars) == "number" and saved.ovBars > 0 then saved.ovPetBar = saved.ovBars end
+	if type(saved.barClicks) == "number" and bit(saved.barClicks, 8) and not bit(saved.barClicks, 9) then
+		saved.barClicks = saved.barClicks + 256
+	end
+end
 local dbLoaded = false
 local function initDB()
 	if dbLoaded then return end
@@ -692,6 +807,7 @@ woc.fadeFlags = function()
 end
 woc.groupOfKey = { chatOwn = "chat", mapOwn = "map", rxpShown = "rxp", navShown = "nav" }
 for g, key in pairs(OVERRIDE_KEYS) do woc.groupOfKey[key] = g end
+woc.groupOfKey.ovPetBar = "bars" -- (the pet bar's Shown stops at the Global Faded like the bars'; audit 2026-11-10 evening)
 
 -- For the files after this one (QuietHUD.toc).
 ns.DB, ns.gFade, ns.gTrig, ns.LISTS, ns.elsewhere, ns.woc, ns.loop = DB, gFade, gTrig, LISTS, elsewhere, woc, loop

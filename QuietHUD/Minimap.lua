@@ -113,9 +113,13 @@ do
 			pcall(hooksecurefunc, part, "SetAlpha", keepMapPart)
 			if part.SetParent then pcall(hooksecurefunc, part, "SetParent", leftMapPart) end
 		end
-		mapBusy = true
-		part:SetAlpha(want)
-		mapBusy = false
+		-- Written on change: a part already at its opacity (every part on every half-second pass while the map holds a faded
+		-- opacity) is not written again. Cost: the one opacity read above, per part per pass.
+		if math.abs(now - want) > 0.001 then
+			mapBusy = true
+			part:SetAlpha(want)
+			mapBusy = false
+		end
 		mapPartSet[part] = want
 	end
 
@@ -142,8 +146,16 @@ do
 	end
 
 	-- Everything around the map at opacity a: the cluster stays at 1, its parts and the frames added to the map group fade.
+	-- The cluster is written to 1 once (that releases the hold the opacity mode put on it, or the hook would dim it again),
+	-- then only when the map group wrote it since (clusterFree) or its opacity is not 1 any more. Cost: one opacity read per
+	-- half-second scan of the parts while the map is faded; it was a write each scan.
+	local clusterFree = false
 	local function fadeMapAround(a)
-		woc.write(MinimapCluster, 1) -- (releases the hold the opacity mode put on it, or the hook would dim it again)
+		local okA, ca = pcall(MinimapCluster.GetAlpha, MinimapCluster)
+		if not clusterFree or not (okA and type(ca) == "number" and not (issecretvalue and issecretvalue(ca)) and ca >= 0.999) then
+			woc.write(MinimapCluster, 1)
+			clusterFree = true
+		end
 		mapFactor = a
 		local ok, err = pcall(function()
 			fadeMapParts(MinimapCluster, a)
@@ -162,6 +174,7 @@ do
 		if woc.applied.map == a then return end
 		woc.applied.map = a
 		applyList("map", a)
+		clusterFree = false -- (the cluster is in the map group: written here)
 	end
 
 	-- Building interiors and cities (the game's rest areas: Stormwind's streets count as outdoors, but are rest areas). The map is

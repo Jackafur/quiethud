@@ -8,8 +8,25 @@ local barBit = ns.barBit
 -- Visible, not just shown: a frame whose parent is hidden is not on the screen. ClassicUI Forever puts the buttons of a bar
 -- that is turned off in the game's options into a hidden holder, and those buttons still say they are shown, so bars 6 to 8
 -- (in the middle of the screen by default) woke the action bars while switched off.
+-- A frame with qhudButtons (WackyBars' holders, Frames.lua) has no size of its own: its buttons count instead. Its parent
+-- (the WackyBars bar) has a real size, so it is asked first: hidden or not under the mouse, no button of it can be, and its
+-- buttons are not walked. Cost: one or two calls per holder per look instead of two per button.
 local function hovered(f)
-	return type(f) == "table" and f.IsMouseOver and not woc.noHover[f] and f:IsVisible() and f:IsMouseOver()
+	if type(f) ~= "table" or not f.IsMouseOver or woc.noHover[f] then return false end
+	local kids = f.qhudButtons
+	if type(kids) == "table" then
+		if #kids == 0 then return false end -- (most holders are empty: no call at all)
+		local bar = f.GetParent and f:GetParent()
+		if type(bar) == "table" and bar.IsMouseOver and bar.IsVisible and not (bar:IsVisible() and bar:IsMouseOver()) then
+			return false
+		end
+		for i = 1, #kids do
+			local b = kids[i]
+			if b.IsVisible and b:IsVisible() and b:IsMouseOver() then return true end
+		end
+		return false
+	end
+	return f:IsVisible() and f:IsMouseOver()
 end
 
 local function anyHovered(names)
@@ -108,7 +125,12 @@ local function flightIgnored()
 	return yes(UnitOnTaxi, "player") or yes(IsFlying)
 end
 
-local function isMoving()
+-- forget: only forget the last position (the loop stopped asking, no row has Moving), so the next ask starts fresh.
+local function isMoving(forget)
+	if forget then
+		lastPosX, lastPosY = nil, nil
+		return false
+	end
 	local reason = "none"
 	if flightIgnored() then
 		lastPosX, lastPosY = nil, nil -- (so landing is not read as one long step)
@@ -143,18 +165,44 @@ local function inDungeonOrRaid()
 	return inside and kind ~= "pvp" and kind ~= "arena" and true or false
 end
 
--- The Mouse move column (off by default): true while the cursor moves or a mouse button is held (the cursor stands still
+-- The Mouse move column (off by default): true while the cursor moves, a controller stick is pushed (see below) or a mouse button is held (the cursor stands still
 -- while the camera is turned with a button down), and for "Stay shown after the mouse stops" seconds after. Only looked at while a row has it ticked: one cursor position read per update,
 -- compared with the one before.
 local mouseActive
 do
 	local lastX, lastY, activeUntil = nil, nil, 0
+	-- The stick read makes a table, so it has its own clock: at most ten reads a second, also while a fade runs the loop
+	-- every frame; in between the last answer stands (padAt, padPushed).
+	local padAt, padPushed = -1, false
 	mouseActive = function(now)
 		local stay = math.max(1, DB.mouseSeconds or 3)
 		local ok, x, y = pcall(GetCursorPosition)
 		if ok and type(x) == "number" and type(y) == "number" and not (issecretvalue and (issecretvalue(x) or issecretvalue(y))) then
 			if lastX and (x ~= lastX or y ~= lastY) then activeUntil = now + stay end
 			lastX, lastY = x, y
+		end
+		-- A controller's sticks count too, but only while the game says a controller is what you are playing with
+		-- (ns.padActive, from the GAME_PAD_ACTIVE_CHANGED message in Events.lua): no stick is ever read for someone on
+		-- mouse and keyboard. The Movement stick is left out (walking is the Moving column), under either of its names: the
+		-- game treats "Left" and "Movement" as the same stick (Blizzard_RadialWheel.lua). The camera stick and any other
+		-- count. len is 0 inside the game's dead zone.
+		if ns.padActive and C_GamePad and C_GamePad.GetDeviceMappedState then
+			if now - padAt >= 0.1 or now < padAt then
+				padAt, padPushed = now, false
+				local okS, state = pcall(C_GamePad.GetDeviceMappedState)
+				if okS and type(state) == "table" and type(state.sticks) == "table" then
+					for i, stick in ipairs(state.sticks) do
+						if type(stick) == "table" and type(stick.len) == "number" and stick.len > 0 then
+							local okN, name = pcall(C_GamePad.StickIndexToConfigName, i - 1) -- (0 based)
+							if not (okN and (name == "Movement" or name == "Left")) then
+								padPushed = true
+								break
+							end
+						end
+					end
+				end
+			end
+			if padPushed then activeUntil = now + stay end
 		end
 		if IsMouseButtonDown then
 			local okL, left = pcall(IsMouseButtonDown, "LeftButton")

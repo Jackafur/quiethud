@@ -46,14 +46,18 @@ local DEFAULTS = {
 	fadeMicro = true,
 	trigBagsBar = 74,
 	trigMicro = 74,
-	barFade = 255,
+	barFade = 511, -- (Action bars page, Fade column: bits 1 to 8 the action bars, 9 the pet bar)
 	barMana = 0, -- Action bars page, Low mana column (one of Low health and Low mana per bar; ActionBars.lua)
 	barLow = 0, -- Action bars page, Low health column: such a bar comes up while health is low (ActionBars.lua)
+	ovPetBar = 0, -- Opacity page, Pet bar: its Shown; 0 = Global (it fades with the Action bars; ActionBars.lua applyBars)
+	barPeek = 511, -- Action bars page, Show with Alt column: that bar comes up when you show the whole HUD (ActionBars.lua woc.peekBar)
 	barMouse = 0, -- Action bars page, Mouse over column: such a bar fades by itself, up only under the mouse (woc.mouseBars)
+	mouseTogether = false, -- Action bars page: the mouse on one Mouse over only bar brings them all up (woc.mouseBars)
 	barHotkeys = 0,
 	barNames = 0,
 	hideReporter = false,
 	shortHotkeys = false,
+	barClicks = 0, -- Action bars page, Click through column: that bar's buttons never take mouse clicks (ActionBars.lua)
 	questTarget = false,
 	watchMouse = false,
 	pixelShift = false,
@@ -83,7 +87,7 @@ local DEFAULTS = {
 -- The saved file's version. A file from before the launch build has none and is not read: everyone starts on these
 -- defaults. A later change that renames or removes a setting, or changes what one means, adds a step to MIGRATIONS and
 -- raises this number (see initDB in Core.lua).
-local SETTINGS_VERSION = 1
+local SETTINGS_VERSION = 2
 
 -- The unit frame, aura and alert rows, the cast bar and the breath bar, and Dominos. Each has its own frames, its own row in
 -- the trigger grid (Fade and triggers) and its own opacity; their settings are named after the group (fadeTarget,

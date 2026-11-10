@@ -233,7 +233,7 @@ SlashCmdList["QUIETHUD"] = function(msg)
 		end
 		local found = {}
 		for i = 1, #BAR_DEFS do
-			for j = 1, 12 do
+			for j = 1, BAR_DEFS[i].count or 12 do
 				local name = BAR_DEFS[i].buttons .. j .. "HotKey"
 				local fs = _G[name]
 				if fs then

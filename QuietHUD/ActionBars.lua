@@ -1,7 +1,7 @@
 -- The action bars: which bars fade (the Action bars page), buttons another addon moved out of their bar, and the shorter or
 -- hidden hotkey text.
 local _, ns = ...
-local BAR_DEFS, EXTRA_BUTTONS = ns.BAR_DEFS, ns.EXTRA_BUTTONS
+local BAR_DEFS, EXTRA_BUTTONS, PET = ns.BAR_DEFS, ns.EXTRA_BUTTONS, ns.PET_BAR
 local DB, LISTS, elsewhere, woc, rebuildLists = ns.DB, ns.LISTS, ns.elsewhere, ns.woc, ns.rebuildLists
 local applyList, barBit = ns.applyList, ns.barBit
 
@@ -18,6 +18,70 @@ local function applyButtons(prefix, count, a)
 	end
 end
 
+-- Click through (Action bars page, a column: a box per bar, DB.barClicks; the owner, 2026-11-10): that bar's buttons never
+-- take mouse clicks, shown or faded, in a fight too; clicks go to whatever is behind them. Their keys still work, and the
+-- mouse still counts for tooltips and Mouse over. (First it was only while faded, but a Mouse over bar comes up under the
+-- mouse, so it never let a click through.) The game's buttons of that
+-- bar, WackyBars' ones in its holders (the pet bar has its own row since Nov 10). Set out of combat (the buttons are protected; once
+-- set it holds through a fight): at each list rebuild (a setting changed, a loading screen), after a fight if one was in the
+-- way, and when WackyBars has sorted its bars (QuietHUD_RefreshBarClicks). Written only for a button whose state changes,
+-- read from the button itself (IsMouseClickEnabled), not from what QuietHUD last set: a button whose clicks something else
+-- switched back on is fixed at the next apply. Cost per apply: one read per button of the eight bars (and their WackyBars
+-- buttons), a write only where it differs; applies come from rebuilds, setting changes and WackyBars' sorting, never a timer.
+local clickSet = setmetatable({}, { __mode = "k" }) -- [button] = false while QuietHUD has its clicks off
+-- The button's own answer: true or false, or nil when it cannot be asked (then what QuietHUD last set stands in).
+local function clicksOn(b)
+    if not b.IsMouseClickEnabled then return nil end
+    local ok, v = pcall(b.IsMouseClickEnabled, b)
+    if ok and type(v) == "boolean" then return v end
+    return nil
+end
+local function eachBarButton(i, fn)
+    for j = 1, BAR_DEFS[i].count or 12 do
+        local b = _G[BAR_DEFS[i].buttons .. j]
+        if b then fn(b) end
+    end
+    for _, hn in ipairs(ns.WB_HOLDERS[i]) do
+        local kids = _G[hn] and _G[hn].qhudButtons
+        if kids then
+            for _, b in ipairs(kids) do fn(b) end
+        end
+    end
+end
+woc.applyBarClicks = function()
+    if InCombatLockdown() then
+        woc.clicksPending = true
+        return
+    end
+    woc.clicksPending = nil
+    local mask = type(DB.barClicks) == "number" and DB.barClicks or 0
+    for i = 1, #BAR_DEFS do
+        local off = (DB.enabled and barBit(mask, i)) and true or false
+        eachBarButton(i, function(b)
+            if not b.SetMouseClickEnabled then return end
+            local on = clicksOn(b)
+            if off then
+                if on == nil then on = clickSet[b] ~= false end
+                if on and pcall(b.SetMouseClickEnabled, b, false) then clickSet[b] = false end
+            elseif clickSet[b] == false then
+                -- (only a button QuietHUD switched off gets its clicks back; already on again: just forgotten)
+                if on == true or pcall(b.SetMouseClickEnabled, b, true) then clickSet[b] = nil end
+            end
+        end)
+    end
+end
+-- WackyBars calls this after it sorts its bars into the holders (nothing without WackyBars). Its buttons are new to the
+-- holders then, after QuietHUD's last rebuild, so they get their hover hook here too (hookHover skips a hooked one, and puts
+-- off a protected one in a fight until the fight ends).
+QuietHUD_RefreshBarClicks = function()
+    woc.applyBarClicks()
+    for i = 1, #BAR_DEFS do
+        for _, hn in ipairs(ns.WB_HOLDERS[i]) do
+            if _G[hn] then woc.hookHover(_G[hn]) end
+        end
+    end
+end
+
 -- A bar's opacity reaches its buttons through the frame tree, unless another addon has moved them out of the bar (see
 -- checkElsewhere): those are faded by name, along with the bar.
 local function applyBars(a, respectMask)
@@ -29,17 +93,31 @@ local function applyBars(a, respectMask)
 		if respectMask and woc.mouseBar(i) then
 			barExcluded[i] = false -- (fades by itself, woc.mouseBars)
 		elseif (not respectMask) or barBit(DB.barFade, i) then
-			-- (Low health or Low mana column: the game's opacity from them goes over this bar's writes, see below)
-			local kind = woc.lowGroupA == a and respectMask and woc.lowKind(i)
-			local low = kind and woc.lowAlphaFor(kind, a, woc.barsPeak)
-			if low then woc.lowAlpha, woc.lowFor = low, a end
-			applyList("bar" .. i, a)
-			if elsewhere.bars[i] then applyButtons(BAR_DEFS[i].buttons, 12, a) end
+			-- Its own fade where it differs from the group's: Show with Alt unticked follows the bars as if the whole HUD were not
+			-- shown (woc.barsCurOwn, Loop.lua: Alt neither brings it up nor stops it mid fade), and the pet bar fades to its own
+			-- Shown (Opacity page, Pet bar; 0, the default, is Global). Not while the bars' Fade is off (barsCur nil).
+			local ai, peak = a, woc.barsPeak
+			local cur = woc.barsCur
+			if cur and not woc.peekBar(i) then cur = woc.barsCurOwn or cur end
+			local pp = DB.ovPetBar
+			if i == PET then peak = (pp and pp > 0) and math.max(pp, 0.1) or (DB.base or 0.75) end -- (0 is Global)
+			if cur and peak and (cur ~= woc.barsCur or peak ~= woc.barsPeak) then
+				local floor = math.min(woc.barsFloor or 0, peak)
+				ai = floor + (peak - floor) * cur
+			end
+			-- (Low health or Low mana column: the game's opacity from them goes over this bar's writes, see below; also while
+			-- the bar is below its own Shown when the group is not, as a Show with bar is while the whole HUD shows)
+			local below = woc.lowGroupA == a or (woc.lowOn and ai ~= a and peak and ai < peak - 0.001)
+			local kind = below and respectMask and woc.lowKind(i)
+			local low = kind and woc.lowAlphaFor(kind, ai, peak)
+			if low then woc.lowAlpha, woc.lowFor = low, ai end
+			applyList("bar" .. i, ai)
+			if elsewhere.bars[i] then applyButtons(BAR_DEFS[i].buttons, BAR_DEFS[i].count or 12, ai) end
 			if low then woc.lowAlpha, woc.lowFor = nil, nil end
 			barExcluded[i] = false
 		elseif not barExcluded[i] then
 			applyList("bar" .. i, 1)
-			if elsewhere.bars[i] then applyButtons(BAR_DEFS[i].buttons, 12, 1) end
+			if elsewhere.bars[i] then applyButtons(BAR_DEFS[i].buttons, BAR_DEFS[i].count or 12, 1) end
 			barExcluded[i] = true
 		end
 	end
@@ -64,33 +142,65 @@ woc.mouseMembership = function(on)
 		woc.forget()
 	end
 end
+-- The Show with Alt column (the owner, Nov 10; it was WackyBars' "Don't show when Alt held" tab before, per WackyBars bar): ticked
+-- (default) the bar comes up when you show the whole HUD (Alt, Ctrl or Shift held as set, the key, the button); unticked it
+-- goes on as if the whole HUD were not shown. Edit Mode shows everything anyway.
+-- While no way to show the whole HUD is set (no box on the Show when page, no key bound) the column is hidden, so an old
+-- untick counts for nothing: the window's button and /qhud peek show every bar (audit 2026-11-10 evening). A slider drag
+-- on the Opacity page shows every bar too, so the bar being set can be seen (ns.previewUntil).
+woc.peekSet = function()
+	if DB.peekAlt or DB.peekCtrl or DB.peekShift or DB.peekTapAlt or DB.peekTapCtrl or DB.peekTapShift then return true end
+	if woc.peekSetCache == nil then -- (the two keys: asked again only after a binding or setting change)
+		woc.peekSetCache = GetBindingKey and (GetBindingKey("QUIETHUD_PEEK") or GetBindingKey("QUIETHUD_PEEKTOGGLE")) ~= nil
+			or false
+	end
+	return woc.peekSetCache
+end
+woc.peekBar = function(i)
+	if not woc.peekSet() or GetTime() < (ns.previewUntil or 0) then return true end
+	return barBit(DB.barPeek == nil and 511 or DB.barPeek, i)
+end
 woc.mouseBar = function(i)
 	return barBit(woc.mbMask or 0, i)
 end
 -- gone: Hide in combat is ticked on Action bars and you are in a fight. Then a Mouse over bar is gone too, hovered or not, at
 -- 0 whatever the Faded opacity (audit 2026-11-06 pre-1.6.0 F1); showing the whole HUD on demand (all) still wins.
+-- "Mouse over only bars come up together" (the owner, 2026-11-10: "when mouse over only keys are mouse overed, it shows all
+-- the other mouse over only bars"): the mouse on one of them brings them all up. Off by default. Costs nothing more: every
+-- Mouse over bar's hover is looked at each update anyway.
+local mbHov = {}
+local function barHovered(i)
+	local names = LISTS["bar" .. i] or {}
+	for j = 1, #names do
+		if ns.hovered(_G[names[j]]) then return true end
+	end
+	if elsewhere.bars[i] then
+		for j = 1, BAR_DEFS[i].count or 12 do
+			if ns.hovered(_G[BAR_DEFS[i].buttons .. j]) then return true end
+		end
+	end
+	return false
+end
 woc.mouseBars = function(dt, all, gone)
 	local busy = false
+	local anyHov = false
+	for i = 1, #BAR_DEFS do
+		mbHov[i] = (not gone) and woc.mouseBar(i) and barHovered(i) or false
+		if mbHov[i] then anyHov = true end
+	end
+	local together = anyHov and DB.mouseTogether
 	for i = 1, #BAR_DEFS do
 		if woc.mouseBar(i) then
-			local over = all
-			if not over then
-				local names = LISTS["bar" .. i] or {}
-				for j = 1, #names do
-					if ns.hovered(_G[names[j]]) then over = true break end
-				end
-			end
-			if not over and elsewhere.bars[i] then
-				for j = 1, 12 do
-					if ns.hovered(_G[BAR_DEFS[i].buttons .. j]) then over = true break end
-				end
-			end
-			if gone and not all then over = false end
+			local hov = mbHov[i] or together or false
+			-- (Show with Alt unticked: showing the whole HUD leaves it to the mouse alone, so Alt neither brings it up nor stops
+			-- its fade; the owner, Nov 10)
+			local over = (all and woc.peekBar(i)) or hov
 			local target = over and 1 or 0
 			local c = woc.moStep(woc.mbCur[i] or 0, target, dt)
 			if c ~= target then busy = true end
 			woc.mbCur[i] = c
 			local ov = DB.ovBars
+			if i == PET then ov = DB.ovPetBar end -- (the pet bar's own Shown; 0 is Global)
 			local peak = (ov and ov > 0) and math.max(ov, 0.1) or (DB.base or 0.6)
 			local low = math.min(gone and 0 or DB.idle or 0, peak)
 			local a = low + (peak - low) * c
@@ -101,7 +211,7 @@ woc.mouseBars = function(dt, all, gone)
 				local lowA = kind and woc.lowAlphaFor(kind, a, peak) or nil
 				if lowA then woc.lowAlpha, woc.lowFor = lowA, a end
 				applyList("bar" .. i, a)
-				if elsewhere.bars[i] then applyButtons(BAR_DEFS[i].buttons, 12, a) end
+				if elsewhere.bars[i] then applyButtons(BAR_DEFS[i].buttons, BAR_DEFS[i].count or 12, a) end
 				if lowA then woc.lowAlpha, woc.lowFor = nil, nil end
 			end
 		else
@@ -121,7 +231,7 @@ woc.groupHover = function()
 	for i = 1, #BAR_DEFS do
 		if barBit(mask, i) then
 			for _, n in ipairs(LISTS["bar" .. i] or {}) do skip[n] = true end
-			for j = 1, 12 do skip[BAR_DEFS[i].buttons .. j] = true end
+			for j = 1, BAR_DEFS[i].count or 12 do skip[BAR_DEFS[i].buttons .. j] = true end
 		end
 	end
 	local out = {}
@@ -198,7 +308,7 @@ local function checkElsewhere()
 			end
 		end
 	end
-	for i, def in ipairs(BAR_DEFS) do look(elsewhere.bars, i, def.buttons, 12, def.frames, barBit(DB.barFade, i)) end
+	for i, def in ipairs(BAR_DEFS) do look(elsewhere.bars, i, def.buttons, def.count or 12, def.frames, barBit(DB.barFade, i)) end
 	for k, set in ipairs(EXTRA_BUTTONS) do look(elsewhere.extra, k, set[1], set[2], set[3], true) end
 	if changed then
 		rebuildLists()
@@ -264,8 +374,10 @@ local function shortenOne(fs, wantShort)
 				shortened[fs] = nil
 			end
 		end
-	elseif rec and text == rec.short then
-		fs:SetText(rec.orig)
+	elseif rec then
+		-- (the game wrote new text meanwhile: that text stays, only the width goes back; the record goes either way, or it
+		-- would be kept for good and keep the switched-off loop from settling)
+		if text == rec.short then fs:SetText(rec.orig) end
 		if rec.width then fs:SetWidth(rec.width) end
 		shortened[fs] = nil
 	end

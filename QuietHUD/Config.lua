@@ -31,7 +31,8 @@ local HELP = {
 		[6] = "Shown while you are inside a dungeon or a raid.",
 	},
 	rows = {
-		["Action bars"] = "Action Bars 1 to 8, plus the stance, pet, totem and XP bars. Which of the eight fade is picked on the Action bars page. With Dominos loaded, Dominos hides the game's bars and its own are on the Dominos row: this row then only has what Dominos leaves, like the totem bar.",
+		["Pet bar"] = "The pet bar's opacity when shown. It fades and is shown with the Action bars row; its boxes are on the Action bars page.",
+		["Action bars"] = "Action Bars 1 to 8 and the pet bar, plus the stance, totem and XP bars. Which bars fade is picked on the Action bars page. With Dominos loaded, Dominos hides the game's bars and its own are on the Dominos row: this row then only has what Dominos leaves, like the totem bar.",
 		["Dominos"] = "Dominos' bars in one row: its action bars, pet, stance and possess bars, XP bar, bag bar and menu. It starts as a copy of the Action bars row; after that the two are separate. Best with Dominos' own fade off, so the two don't fight.",
 		["Bags bar"] = "The row of bag buttons. With Dominos loaded, Dominos hides it and its own bag bar is on the Dominos row.",
 		["Menu bar"] = "The row of small menu buttons (character, spellbook, talents and so on). With Dominos loaded, Dominos hides it and its own menu is on the Dominos row: this row then only has the beta Issue Reporter button.",
@@ -70,22 +71,11 @@ local PEEK = {
 local PAGES = {
 	{ title = "Elements", items = {
 		{ "grid", "elements" },
-		{ "note", "Fade ticked: the element fades when nothing shows it. Show in combat and Hide in combat: tick one or neither. Every other ticked box shows the element while it is true. Hover a heading or a name for more. The cast bar and the breath bar show by themselves, so they are only on the Opacity page." },
+		{ "note", "Fade: it fades when nothing shows it. Any other ticked box shows it while that is true. Hover a heading or a name for more. The cast and breath bars are on the Opacity page." },
 	} },
 	{ title = "Show when", items = {
 		{ "note", "What shows each element is ticked on the Elements page. These go with its columns of the same name." },
-		{ "heading", "Show in combat" },
-		{ "slider", "linger", "Stay shown after combat (seconds)", 0, 180, 1, "%.0f", nil, nil, "How long an element stays shown after a fight ends.", 420 },
-		{ "heading", "Weapon drawn" },
-		{ "check", "keepDrawn", "Keep my weapon drawn after spells, chests and crafting", "When the game puts your weapon away by itself (a buff, a chest, a lock, crafting, looting), QuietHUD draws it again as soon as the cast is over, so the HUD stays shown. You will see your character draw the weapon again. Pressing the sheath key still puts it away, and then Weapon drawn stops showing the HUD. Not while mounted, swimming, dead, on a flight path or in a fight." },
-		{ "heading", "Mouse move" },
-		{ "slider", "mouseSeconds", "Stay shown after the mouse stops (seconds)", 1, 60, 1, "%.0f", nil, nil, "How long an element stays shown after you stop moving the cursor or turning the camera.", 420 },
-		{ "heading", "New info" },
-		{ "slider", "questSeconds", "Stay shown after quest progress or a new zone (seconds)", 3, 180, 1, "%.0f", nil, nil, "How long the tracker, the minimap and RestedXP stay shown after something new. The chat has its own on the Chat page.", 420 },
-		{ "heading", "Player frame" },
-		{ "check", "notFullShows", "Show the player frame while health or power is changing", "Shows the player frame only, while your health or your power bar goes up or down and for a few seconds after (3, or 8 for mana, which waits a moment before it comes back). In practice: until you are topped off. The game does not let addons read your health or power, so QuietHUD goes by them changing. Hide in combat on the Player frame row still wins in a fight." },
-		{ "heading", "Fading out" },
-		{ "slider", "fadeOutSeconds", "Fade out animation (seconds)", 0.1, 5, 0.05, "%.2f", nil, nil, "How long an element takes to fade out, whatever showed it. The chat has its own on the Chat page.", 420 },
+		-- (first on the page: the setting people look for most; the owner's yes, Nov 10)
 		{ "heading", "Show the whole HUD on demand" },
 		-- Hold on the left, Tap on the right: one way at a time, so ticking a box on one side unticks the other side's three.
 		{ "check", "peekAlt", "While I hold Alt", PEEK.holdHelp, untick = PEEK.tapKeys,
@@ -95,6 +85,18 @@ local PAGES = {
 		{ "check", "peekShift", "While I hold Shift", PEEK.holdHelp, untick = PEEK.tapKeys,
 			right = { "peekTapShift", "Tap Shift to toggle", PEEK.tapHelp, untick = PEEK.holdKeys } },
 		{ "note", "Or bind a key: Esc, Options, Keybindings, AddOns, QuietHUD (one to hold, one to toggle)." },
+		{ "heading", "Show in combat" },
+		{ "slider", "linger", "Stay shown after combat (seconds)", 0, 180, 1, "%.0f", nil, nil, "How long an element stays shown after a fight ends.", 420 },
+		{ "heading", "Weapon drawn" },
+		{ "check", "keepDrawn", "Keep my weapon drawn after spells, chests and crafting", "When the game puts your weapon away by itself (a buff, a chest, a lock, crafting, looting), QuietHUD draws it again as soon as the cast is over, so the HUD stays shown. You will see your character draw the weapon again. Pressing the sheath key still puts it away, and then Weapon drawn stops showing the HUD. Not while mounted, swimming, dead, on a flight path or in a fight." },
+		{ "heading", "Mouse move" },
+		{ "slider", "mouseSeconds", "Stay shown after the mouse stops (seconds)", 1, 60, 1, "%.0f", nil, nil, "How long an element stays shown after you stop moving the cursor, turning the camera or moving a controller stick.", 420 },
+		{ "heading", "New info" },
+		{ "slider", "questSeconds", "Stay shown after quest progress or a new zone (seconds)", 3, 180, 1, "%.0f", nil, nil, "How long the tracker, the minimap and RestedXP stay shown after something new. The chat has its own on the Chat page.", 420 },
+		{ "heading", "Player frame" },
+		{ "check", "notFullShows", "Show the player frame while health or power is changing", "Shows the player frame only, while your health or your power bar goes up or down and for a few seconds after (3, or 8 for mana, which waits a moment before it comes back). In practice: until you are topped off. The game does not let addons read your health or power, so QuietHUD goes by them changing. Hide in combat on the Player frame row still wins in a fight." },
+		{ "heading", "Fading out" },
+		{ "slider", "fadeOutSeconds", "Fade out animation (seconds)", 0.1, 5, 0.05, "%.2f", nil, nil, "How long an element takes to fade out, whatever showed it. The chat has its own on the Chat page.", 420 },
 	} },
 	{ title = "Opacity", items = {
 		{ "heading", "Global" },
@@ -109,21 +111,32 @@ local PAGES = {
 		-- (its Shown is the Minimap row under Shown per element)
 		{ "heading", "Minimap" },
 		{ "check", "mapDarken", "Darken the minimap instead of making it see-through", "Unticked (default): as the minimap fades it turns see-through. The little icons on it (your arrow, quest and party icons) stay bright, because the game does not let addons fade them.\nTicked: as the minimap fades it turns darker instead, and the icons darken with it." },
-		{ "note", "Every element starts on Global; open bags and tooltips start solid. Dragging a Shown bar shows the HUD for a moment, so you can see it. An element with Fade unticked on the Elements page never fades: it stays at its value here, fully solid on Global. Hover a name for more." },
+		{ "note", "Everything starts on Global. Hover a name for more." },
 	} },
 	{ title = "Action bars", items = {
-		{ "note", "Fade picks which action bars fade. It only counts while Fade is ticked for Action bars on the Elements page, which is the master switch (the stance, pet, totem and XP bars follow that switch). Mouse over: that bar fades by itself and comes up only while the mouse is on it, not with the rest. Low health: that bar comes up while your health is below Naowh's Low Health threshold (35% without Naowh); Low mana: below 35% mana. One of the two per bar, a Mouse over bar too, at once, with no fade (the game does not let addons read your health or mana, so the game shows it); not with Hide in combat in a fight." },
 		{ "bargrid" },
+		{ "check", "mouseTogether", "Show Mouse over only bars together", "Ticked: the mouse on any bar with Mouse over only ticked shows every Mouse over only bar, not just that one. They fade back together when the mouse leaves.\nUnticked (default): each one comes up by itself." },
 		{ "check", "shortHotkeys", "Shorten hotkey text (Num Pad 1 shows N1)" },
+		-- (short lines at the bottom, one thought each: the owner, Nov 10, "just one long ass paragraph. make it simple")
+		{ "note", "Hover a heading to see what it does." },
+		{ "note", "These only count while Action bars has Fade ticked on the Elements page." },
+		{ "note", "To hide a bar for good: untick it in /wbars (WackyBars), or in the game's Options, Action Bars." },
 	} },
 	{ title = "Chat", items = {
 		-- (the boxes below are the chat's New info)
-		{ "note", "The boxes below count while New info is ticked for the Chat on the Elements page. Fading the chat and its other boxes are there too; its opacity is on the Opacity page." },
+		{ "note", "These count while New info is ticked for the Chat on the Elements page." },
 		{ "slider", "chatSeconds", "Chat stays shown after a message (seconds)", 2, 30, 1, "%.0f" },
 		{ "slider", "chatFadeSeconds", "Chat fade out animation (seconds)", 0.3, 5, 0.1, "%.1f" },
 		{ "kinds" },
 	} },
 	{ title = "Extras", items = {
+		-- (first on the page: one of QuietHUD's two main jobs, the OLED panel; the owner's yes, Nov 10)
+		{ "heading", "Pixel shift (OLED, experimental)" },
+		{ "check", "pixelShift", "Move the minimap, tracker, chat and addon frames a little every few minutes", "The waypoint arrow is RestedXP's arrow or Naowh's navigator, when you use them. With a controller, the dot in the middle of the screen moves too. Distance and minutes below are for everything that moves." },
+		{ "check", "shiftBars", "Also the action bars, bags and menu bar" },
+		{ "check", "shiftUnits", "Also the player, target and party frames" },
+		{ "slider", "shiftPixels", "Distance (pixels)", 1, 15, 1, "%.0f" },
+		{ "slider", "shiftMinutes", "Minutes between moves", 1, 10, 1, "%.0f" },
 		{ "heading", "Always hidden" },
 		{ "check", "hideReporter", "Hide the beta Issue Reporter button" },
 		{ "check", "hideMmButtons", "Hide other addons' minimap buttons" },
@@ -131,13 +144,7 @@ local PAGES = {
 		{ "heading", "Open bags" },
 		{ "check", "moveBags", "Let me drag my open bags around" },
 		{ "button", "Reset position", "bagPosition", "Puts your open bags back where the game places them." },
-		{ "note", "Drag any open bag by its title bar and they all move together. They always stay on the screen. If you use BlizzMove, QuietHUD leaves your bags to it, ticked or not." },
-		{ "heading", "Pixel shift (OLED, experimental)" },
-		{ "check", "pixelShift", "Move the minimap and tracker a little every few minutes" },
-		{ "check", "shiftBars", "Also the action bars, bags and menu bar" },
-		{ "check", "shiftUnits", "Also the player, target and party frames" },
-		{ "slider", "shiftPixels", "Distance (pixels)", 1, 4, 1, "%.0f" },
-		{ "slider", "shiftMinutes", "Minutes between moves", 1, 10, 1, "%.0f" },
+		{ "note", "Drag any open bag by its title bar; they move together. With BlizzMove, BlizzMove moves them." },
 		{ "heading", "Quest-mob key (experimental)" },
 		{ "check", "questTarget", "Enable quest-mob targeting key" },
 		{ "note","Works like Tab, but only through the mobs your highlighted quest needs: each press goes to the next one. Needs enemy nameplates on (a kill objective can still be reached by name without). After ticking this, bind the key: Esc, Options, Keybindings, AddOns, QuietHUD, \"Target highlighted quest mob\"." },
@@ -156,12 +163,25 @@ local PAGES = {
 do
 	local keyOf = { ["Objective tracker"] = "ovQuest", ["Chat"] = "chatOwn", ["Minimap"] = "mapOwn", ["Action bars"] = "ovBars",
 		["Player frame"] = "ovPlayer", ["Bags bar"] = "ovBagsBar", ["Menu bar"] = "ovMicro", ["Added frames"] = "ovHud",
-		["Guide windows"] = "rxpShown", ["Arrow"] = "navShown" }
+		["Guide windows"] = "rxpShown", ["Arrow"] = "navShown", ["Pet bar"] = "ovPetBar" }
 	local addonOf = { ["Guide windows"] = "RXPGuides", ["Arrow"] = "RXPGuides" }
 	for _, s in ipairs(SPLIT) do keyOf[s.label], addonOf[s.label] = s.ovKey, s.addon end
 	-- RestedXP's two come last, as its rows do on the Elements page, and only while it is loaded.
 	local groups = {}
 	for _, group in ipairs(SPLIT.groups) do groups[#groups + 1] = group end
+	-- The pet bar's Shown (the owner, Nov 10): on this page only, under Action bars, whose row it fades with (no Elements
+	-- row: Fade and what brings it up stay the Action bars'). 0 is Global, like every slider here (its first word, "Action
+	-- bars", ran into the next column). Uncounted: the columns split as before.
+	for gi, group in ipairs(groups) do
+		if group[1] == "Bars" then
+			local labels = {}
+			for _, label in ipairs(group[2]) do
+				labels[#labels + 1] = label
+				if label == "Action bars" then labels[#labels + 1] = "Pet bar" end
+			end
+			groups[gi] = { group[1], labels, addon = group.addon }
+		end
+	end
 	groups[#groups + 1] = { "RestedXP", { "Guide windows", "Arrow" }, addon = "RXPGuides" }
 	local total, count, left, right = 0, 0, {}, {}
 	-- The Shown bars: dragging one shows the whole HUD for a few seconds (see makeSlider). Not the Global Faded, whose look is
@@ -171,6 +191,7 @@ do
 	-- (a row marked uncounted, Naowh's, does not move the split: the columns stay as they were with or without it)
 	local uncounted = {}
 	for _, s in ipairs(SPLIT) do uncounted[s.label] = s.uncounted end
+	uncounted["Pet bar"] = true
 	for _, group in ipairs(groups) do
 		for _, label in ipairs(group[2]) do
 			if not uncounted[label] then total = total + 1 end
@@ -223,10 +244,11 @@ do
 		target:HookScript("OnEnter", function(self)
 			GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
 			GameTooltip:SetText(title, 1, 1, 1)
-			GameTooltip:AddLine(text, 1, 0.82, 0, true)
+			GameTooltip:AddLine(type(text) == "function" and text() or text, 1, 0.82, 0, true) -- (a function: worked out now)
 			GameTooltip:Show()
 		end)
 		target:HookScript("OnLeave", function() GameTooltip:Hide() end)
+		return target
 	end
 
 	-- x: from the left (12 when not given); untick: setting keys that go off when this box is ticked (a pair that says
@@ -239,8 +261,9 @@ do
 			self:SetChecked(DB[key] and true or false)
 			if DB[key] and untick then
 				for _, k in ipairs(untick) do DB[k] = false end
-				for _, refresh in ipairs(controls) do refresh() end
 			end
+			-- (every box: the controls that depend on it follow, like the Action bars page's "Show with ..." column)
+			for _, refresh in ipairs(controls) do refresh() end
 			settingChanged()
 			rebuildLists()
 			if ns.armEntry then ns.armEntry() end
@@ -354,6 +377,7 @@ do
 			-- the window open, most of the HUD is faded)
 			if woc.previewKeys and woc.previewKeys[key] then
 				ns.peekUntil = math.max(ns.peekUntil, GetTime() + 3)
+				ns.previewUntil = ns.peekUntil -- (every bar, a Show with one too: the one being set is seen)
 				wakeLoop()
 			end
 			-- Idle can never be brighter than shown: dragging one past the other carries the other with it.
@@ -442,27 +466,147 @@ do
 	end
 
 	local function makeBarGrid(parent, y)
+		-- Laid out like the Elements grid (the owner, Nov 10: "the text is too close together"): Fade where Elements has it,
+		-- the rest at the same pitch, two-line headings centred over their boxes, a hover text on each. In three groups with
+		-- a small gap between them, like the Elements grid's (the owner's yes, Nov 10): when the bar is shown, what is printed
+		-- on it, clicks. "Show with ..." only shows while the Show when page has a way to show the whole HUD (a box ticked or a
+		-- key bound) and is named after it ("Show with Alt", "Show with F5"); the columns after it close up while it is gone.
+		-- (Before the grouping: wow-addon-rollback\2026-11-10_z4_quiethud-audit-fixed-before-layout\QuietHUD\Config.lua.)
+		local pitch = 64
 		local cols = {
-			{ "Fade", "barFade", 120 },
-			{ "Hide hotkeys", "barHotkeys", 190 },
-			{ "Hide names", "barNames", 290 },
-			{ "Mouse over", "barMouse", 390 },
-			{ "Low health", "barLow", 490, pair = "barMana" },
-			{ "Low mana", "barMana", 590, pair = "barLow" },
+			{ "Fade", "barFade", help = "Ticked: this bar fades with the action bars. Unticked: it stays as it is." },
+			{ "Mouse over\nonly", "barMouse", help = "This bar fades by itself and is shown only while the mouse is on it, not with the rest." },
+			{ "Low\nhealth", "barLow", pair = "barMana", help = "Shown while your health is below Naowh's Low Health threshold (35% without Naowh). One of Low health and Low mana per bar." },
+			{ "Low\nmana", "barMana", pair = "barLow", help = "Shown while your mana is below 35%. One of Low health and Low mana per bar." },
+			{ "Show with", "barPeek", peek = true, help = function()
+				return "Ticked (default): this bar is shown when you show the whole HUD. Unticked: that leaves it as it is."
+					.. (peekWaysText and ("\nYours: " .. peekWaysText .. " (Show when page, Keybindings).") or "")
+			end },
+			{ "Hide\nhotkeys", "barHotkeys", gap = true, help = "Hides the key printed in the corner of each button." },
+			{ "Hide\nnames", "barNames", help = "Hides the macro names printed on the buttons." },
+			{ "Click\nthrough", "barClicks", gap = true, help = "This bar's buttons never take mouse clicks, shown or not; clicks go to whatever is behind them. Its keys still work." },
 		}
+		-- Where each column goes, with "Show with" there or not.
+		local function place(withPeek)
+			local x
+			for n, c in ipairs(cols) do
+				if not x then
+					x = WIN.gridFade
+				elseif not (c.peek and not withPeek) then
+					x = (n == 2) and WIN.gridFirst or (x + pitch + (c.gap and WIN.gridGap or 0))
+				end
+				c.x = x
+			end
+		end
+		place(true)
+		local peekHeader, peekHover, peekBoxes, peekWaysText = nil, nil, {}, nil
 		for _, c in ipairs(cols) do
 			local header = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-			header:SetPoint("TOPLEFT", c[3], y)
+			header:SetPoint("TOP", parent, "TOPLEFT", c.x + CELL / 2, y)
+			header:SetWidth(pitch)
+			header:SetJustifyH("CENTER")
+			if header.SetMaxLines then pcall(header.SetMaxLines, header, 2) end -- (never more than two lines over the boxes)
 			header:SetText(c[1])
+			local hover = addHelp(parent, header, (c[1]:gsub("\n", " ")), c.help)
+			c.header, c.boxes = header, {}
+			if c.peek then peekHeader, peekHover = header, hover end
 		end
-		local rowY = y - 22
+		local placedWithPeek = true
+		local function movePlaced(withPeek)
+			if placedWithPeek == withPeek then return end
+			placedWithPeek = withPeek
+			place(withPeek)
+			for _, c in ipairs(cols) do
+				c.header:ClearAllPoints()
+				c.header:SetPoint("TOP", parent, "TOPLEFT", c.x + CELL / 2, y)
+				for _, b in ipairs(c.boxes) do
+					b:ClearAllPoints()
+					b:SetPoint("TOPLEFT", c.x, b.qhRowY)
+				end
+			end
+		end
+		-- The row names. With WackyBars showing (the owner's own bars; the holders in Frames.lua) the game's eight bars are
+		-- tucked away, so a row is named after the WackyBars bars on it, and a row with none keeps its game name in grey (the
+		-- owner, 2026-11-10: "it uses the wbar naming conventions if wbars is installed and vanilla actionbars ... if only
+		-- vanilla"). Worked out each time the window is shown or a setting changes.
+		local labels = {}
+		local rowY = y - 30
 		for i = 1, #BAR_DEFS do
 			local label = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 			label:SetPoint("TOPLEFT", 16, rowY - 5)
-			label:SetText("Action Bar " .. i)
-			for _, c in ipairs(cols) do makeMaskCheck(parent, c[3], rowY, c[2], i, c.pair) end
+			label:SetWidth(WIN.gridFade - 24) -- (two WackyBars names on one row use the small font, so they stay on one line)
+			label:SetJustifyH("LEFT")
+			label:SetText(BAR_DEFS[i].label or ("Action Bar " .. i))
+			labels[i] = label
+			for _, c in ipairs(cols) do
+				local box = makeMaskCheck(parent, c.x, rowY, c[2], i, c.pair)
+				box.qhRowY = rowY
+				c.boxes[#c.boxes + 1] = box
+				if c.peek then peekBoxes[#peekBoxes + 1] = box end
+			end
 			rowY = rowY - 24
 		end
+		local WB_NAMES = { Plain = "Keyboard", Shift = "Shift keyboard", Ctrl = "Ctrl keyboard", Alt = "Alt keyboard",
+			MousePlain = "Mouse", MouseShift = "Shift mouse", MouseCtrl = "Ctrl mouse", MouseAlt = "Alt mouse", MouseHyper = "Hypershift" }
+		controls[#controls + 1] = function()
+			local names, any = {}, false
+			for i = 1, #BAR_DEFS do
+				names[i] = {}
+				for _, hn in ipairs(ns.WB_HOLDERS[i]) do
+					local h = _G[hn]
+					local bar = h and h.GetParent and h:GetParent()
+					if h and type(h.qhudButtons) == "table" and #h.qhudButtons > 0 and bar and bar:IsShown() then
+						local id = hn:match("^WackyBarsHold(.-)%d+$")
+						names[i][#names[i] + 1] = WB_NAMES[id] or id
+						any = true
+					end
+				end
+			end
+			-- "Show with ...": what the Show when page has set to show the whole HUD, in plain words (his "whats with the +1
+			-- thing", Nov 10): one way by name, two as "A or B", more as "your keys"; a bound key reads "key" in the heading (its
+			-- name can be long) and by name in the hover text.
+			local mods, keys = {}, {}
+			for _, m in ipairs({ { "Alt", "peekAlt", "peekTapAlt" }, { "Ctrl", "peekCtrl", "peekTapCtrl" },
+				{ "Shift", "peekShift", "peekTapShift" } }) do
+				if DB[m[2]] then mods[#mods + 1] = "hold " .. m[1] elseif DB[m[3]] then mods[#mods + 1] = "tap " .. m[1] end
+			end
+			for _, b in ipairs({ "QUIETHUD_PEEK", "QUIETHUD_PEEKTOGGLE" }) do
+				local key = GetBindingKey and GetBindingKey(b)
+				if key and key ~= "" then keys[#keys + 1] = (GetBindingText and GetBindingText(key)) or key end
+			end
+			local items = {}
+			for _, m in ipairs(mods) do items[#items + 1] = m:match("%u%l+$") end
+			if #keys > 0 then items[#items + 1] = "key" end
+			local on = #items > 0
+			local all = {}
+			for _, m in ipairs(mods) do all[#all + 1] = m end
+			for _, k in ipairs(keys) do all[#all + 1] = k end
+			peekWaysText = on and table.concat(all, ", ") or nil
+			if peekHeader then
+				peekHeader:SetShown(on)
+				if peekHover then peekHover:SetShown(on) end -- (its hover text goes with it)
+				local word = #items == 1 and items[1] or #items == 2 and (items[1] .. " or " .. items[2]) or "your keys"
+				peekHeader:SetText("Show with\n" .. word)
+			end
+			for _, box in ipairs(peekBoxes) do box:SetShown(on) end
+			movePlaced(on) -- (the columns after it close up while it is gone)
+			for i, label in ipairs(labels) do
+				local own = BAR_DEFS[i].label or ("Action Bar " .. i)
+				if any and #names[i] > 0 then
+					label:SetFontObject(#names[i] > 1 and "GameFontHighlightSmall" or "GameFontHighlight")
+					-- (at most two names, else the first and how many more, so a row never wraps into the next one)
+					local n = names[i]
+					label:SetText(#n > 2 and (n[1] .. " and " .. (#n - 1) .. " more") or table.concat(n, ", "))
+				elseif any and not BAR_DEFS[i].label then
+					label:SetFontObject("GameFontDisable") -- (tucked away by WackyBars: its boxes change nothing you see)
+					label:SetText(own)
+				else
+					label:SetFontObject("GameFontHighlight")
+					label:SetText(own)
+				end
+			end
+		end
+		controls[#controls]()
 	end
 
 	-- The trigger grid: a row per element, a column per thing that can bring it up. Each cell is one bit of the row's
@@ -885,7 +1029,7 @@ do
 					y = y - (18 + #CHAT_KINDS * 22)
 				elseif item[1] == "bargrid" then
 					makeBarGrid(frame, y)
-					y = y - 220
+					y = y - 252 -- (two-line headings, nine rows, the pet bar the last)
 				elseif item[1] == "grid" then
 					if prevKind == "columns" then y = y - 8 end -- (room between the last slider row and the column headings)
 					y = y - makeTriggerGrid(frame, y, GRIDS[item[2]])
@@ -1008,6 +1152,11 @@ do
 		fitConfig()
 		showPage(1)
 		config:Hide()
+	end
+
+	-- A key bound or changed while the window is open: what depends on it follows (the Show with column).
+	ns.refreshConfig = function()
+		if config and config:IsShown() then syncControls() end
 	end
 
 	toggleConfig = function()

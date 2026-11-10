@@ -8,7 +8,10 @@ local MOVE_LINGER = 1.5
 local SKULL = 8
 
 local DEFAULT_LISTS = {
-	bars = { "StatusTrackingBarManager", "StanceBar", "PetActionBar", "PossessActionBar", "MultiCastActionBarFrame" },
+	-- The game's controller layout (Options, Controller): its action bar in place of Action Bar 1, and the dot in the middle
+	-- of the screen. Both are hidden while no controller is set up.
+	bars = { "StatusTrackingBarManager", "StanceBar", "PossessActionBar", "MultiCastActionBarFrame",
+		"GamepadMainActionBarFrame", "GamepadReticle" },
 	player = { "PlayerFrame" },
 	hud = { "QuietHUDWarlockHud", "QuietHUDWarlockMulti", "WarlockHudMultiTargetWindow" }, -- Warlock HUD (woc.watchWarlockHud), and frames you add with /qhud add hud
 	quest = { "ObjectiveTrackerFrame", "Questie_BaseFrame" }, -- Questie hides the game's tracker and shows its own
@@ -22,7 +25,10 @@ local DEFAULT_LISTS = {
 	chat = {},
 	nav = {},
 	rxp = {},
-	shift = { "MinimapCluster", "ObjectiveTrackerFrame" },
+	-- The chat windows: docked ones hang off ChatFrame1 and move with it (Shift.lua skips a frame anchored to a moved one).
+	-- The controller's dot in the middle of the screen never moves by itself.
+	shift = { "MinimapCluster", "ObjectiveTrackerFrame", "ChatFrame1", "ChatFrame2", "ChatFrame3", "ChatFrame4", "ChatFrame5",
+		"ChatFrame6", "ChatFrame7", "ChatFrame8", "ChatFrame9", "ChatFrame10", "GamepadReticle" },
 }
 local ALL_LISTS = { "bars", "player", "hud", "quest", "map", "micro", "bags", "reporter", "hidden", "chat", "nav", "rxp", "shift", "mouseover" }
 for _, s in ipairs(SPLIT) do DEFAULT_LISTS[s.g] = s.frames; ALL_LISTS[#ALL_LISTS + 1] = s.g end
@@ -39,9 +45,29 @@ local BAR_DEFS = {
 	{ frames = { "MultiBar6" }, buttons = "MultiBar6Button" },
 	{ frames = { "MultiBar7" }, buttons = "MultiBar7Button" },
 }
--- Buttons outside the eight action bars, with their count and their bar (a frame of the bars list): the pet bar, the stance
+-- WackyBars (the owner's own keyboard- and mouse-shaped bars; the names mean nothing without that addon): each of its bars
+-- holds one small frame per game bar, WackyBarsHold<bar><1 to 8>, and puts each button in the one of the game bar whose
+-- slot it shows. So a WackyBars button follows that bar's row on the Action bars page: Fade, Mouse over, Low health, Low
+-- mana, Hide hotkeys, Hide names (the owner, 2026-11-10: "wbars should just mirror these settings"). A holder has no size
+-- and no mouse; its qhudButtons (a list WackyBars keeps) count for mouse over and get the hotkey and name hiding.
+local WB_BARS = { "Plain", "Shift", "Ctrl", "Alt", "MousePlain", "MouseShift", "MouseCtrl", "MouseAlt", "MouseHyper" }
+local WB_HOLDERS = {}
+for i, def in ipairs(BAR_DEFS) do
+	WB_HOLDERS[i] = {}
+	for _, b in ipairs(WB_BARS) do
+		local n = "WackyBarsHold" .. b .. i
+		WB_HOLDERS[i][#WB_HOLDERS[i] + 1] = n
+		def.frames[#def.frames + 1] = n
+	end
+end
+-- The pet bar, a row of its own on the Action bars page since Nov 10 (the owner: "add petbar to the action bars tab"): all
+-- the columns, Click through its own (it went with Action Bar 8's before). Ten buttons; WackyBars has no holders for it.
+local PET = #BAR_DEFS + 1
+BAR_DEFS[PET] = { frames = { "PetActionBar" }, buttons = "PetActionButton", count = 10, label = "Pet bar" }
+WB_HOLDERS[PET] = {}
+-- Buttons outside the action bars and the pet bar, with their count and their bar (a frame of the bars list): the stance
 -- bar, the possess bar and the shaman totem bar. They show a hotkey too.
-local EXTRA_BUTTONS = { { "PetActionButton", 10, { "PetActionBar" } }, { "StanceButton", 10, { "StanceBar" } },
+local EXTRA_BUTTONS = { { "StanceButton", 10, { "StanceBar" } },
 	{ "PossessButton", 2, { "PossessActionBar" } }, { "MultiCastActionButton", 12, { "MultiCastActionBarFrame" } } }
 local KNOWN_BAR_FRAMES = {}
 for i, def in ipairs(BAR_DEFS) do
@@ -83,8 +109,12 @@ local SELF_FADING = { PlayerCastingBarFrame = "cast", CastingBarFrame = "cast", 
 local ACTION_BARS = {
 	"MainActionBar", "MainMenuBar", "ForeverClassicUIBar", "MultiBarBottomLeft", "MultiBarBottomRight", "MultiBarRight",
 	"MultiBarLeft", "MultiBar5", "MultiBar6", "MultiBar7", "MultiBar8", "StanceBar", "PetActionBar", "MultiCastActionBarFrame",
-	"MultiCastFlyoutFrame", "MultiCastFlyoutFrameOpenButton", "SpellFlyout",
+	"MultiCastFlyoutFrame", "MultiCastFlyoutFrameOpenButton", "SpellFlyout", "GamepadMainActionBarFrame",
 }
+-- (WackyBars' holders count by their buttons: see WB_HOLDERS above)
+for i = 1, #WB_HOLDERS do
+	for _, n in ipairs(WB_HOLDERS[i]) do ACTION_BARS[#ACTION_BARS + 1] = n end
+end
 -- Dominos puts the action buttons into bars of its own, named DominosFrame1 to DominosFrame14, with its pet, stance
 -- ("class") and possess bars beside them (names from Dominos' frame.lua and bars folder), and has a bag bar and a menu bar.
 -- They are one Dominos row (SPLIT). Until that row has a setting of its own they are in the other rows (parts): the bars
@@ -138,7 +168,8 @@ end
 
 -- For the files after this one (QuietHUD.toc).
 ns.FADE, ns.MOVE_LINGER, ns.SKULL, ns.DEFAULT_LISTS, ns.ALL_LISTS = FADE, MOVE_LINGER, SKULL, DEFAULT_LISTS, ALL_LISTS
-ns.BAR_DEFS, ns.EXTRA_BUTTONS, ns.KNOWN_BAR_FRAMES = BAR_DEFS, EXTRA_BUTTONS, KNOWN_BAR_FRAMES
+ns.BAR_DEFS, ns.EXTRA_BUTTONS, ns.KNOWN_BAR_FRAMES, ns.PET_BAR = BAR_DEFS, EXTRA_BUTTONS, KNOWN_BAR_FRAMES, PET
+ns.WB_HOLDERS = WB_HOLDERS
 ns.EXTRA_GROUPS, ns.FADE_ORDER, ns.HIDE_TOGGLES, ns.WRITE_ORDER = EXTRA_GROUPS, FADE_ORDER, HIDE_TOGGLES, WRITE_ORDER
 ns.HOSTED = HOSTED
 ns.SELF_FADING, ns.ACTION_BARS, ns.CHAT_EXTRAS, ns.CHAT_KINDS = SELF_FADING, ACTION_BARS, CHAT_EXTRAS, CHAT_KINDS

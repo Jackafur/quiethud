@@ -67,12 +67,24 @@ local ev = CreateFrame("Frame")
 ev:RegisterEvent("ADDON_LOADED")
 ev:RegisterEvent("PLAYER_LOGIN")
 ev:RegisterEvent("PLAYER_LOGOUT")
+ev:RegisterEvent("PLAYER_LEAVING_WORLD")
 ev:RegisterEvent("PLAYER_ENTERING_WORLD")
 ev:RegisterEvent("PLAYER_REGEN_DISABLED")
 ev:RegisterEvent("PLAYER_REGEN_ENABLED")
 pcall(ev.RegisterEvent, ev, "VARIABLES_LOADED")
 pcall(ev.RegisterEvent, ev, "PLAYER_STARTED_MOVING")
 pcall(ev.RegisterEvent, ev, "SUPER_TRACKING_CHANGED")
+-- Whether a controller is what you are playing with right now: the game says so when you switch between controller and
+-- mouse. Only while it is true does the Mouse move column read the sticks (Triggers.lua). At load: a controller that is
+-- switched on in the game's options and plugged in counts until the game says otherwise.
+pcall(ev.RegisterEvent, ev, "GAME_PAD_ACTIVE_CHANGED")
+pcall(ev.RegisterEvent, ev, "GAME_PAD_DISCONNECTED")
+do
+	local ok, on = pcall(function()
+		return C_GamePad.IsEnabled() and #C_GamePad.GetAllDeviceIDs() > 0
+	end)
+	ns.padActive = ok and on and true or false
+end
 
 local kindOf = {}
 for _, e in ipairs({ "QUEST_ACCEPTED", "QUEST_TURNED_IN", "QUEST_REMOVED", "QUEST_WATCH_UPDATE", "UI_INFO_MESSAGE" }) do
@@ -109,6 +121,11 @@ ev:SetScript("OnEvent", function(_, event, arg1, _, _, arg4)
 		initDB()
 		discoverBars()
 		rebuildLists()
+	elseif event == "PLAYER_LEAVING_WORLD" then
+		-- (shifted frames go back before a logout or a loading screen, ahead of any addon saving its frames' places there,
+		-- so a saved place never takes the shift in and creeps further each session; audit 2026-11-10 evening. The shift
+		-- picks up again after it.)
+		pcall(restoreShift)
 	elseif event == "PLAYER_LOGOUT" then
 		pcall(restoreShift)
 		QuietHUDDB = DB
@@ -142,8 +159,13 @@ ev:SetScript("OnEvent", function(_, event, arg1, _, _, arg4)
 		releaseNav()
 		ns.armEntry()
 		if loop.pending then woc.hookAll() end -- (protected frames first seen in the fight, see hookHover)
+		if woc.clicksPending then woc.applyBarClicks() end -- (Click through set during a fight: now)
 	elseif event == "PLAYER_STARTED_MOVING" then
 		if not ns.flightIgnored() then ns.moveUntil = GetTime() + MOVE_LINGER end
+	elseif event == "GAME_PAD_ACTIVE_CHANGED" then
+		ns.padActive = arg1 and true or false
+	elseif event == "GAME_PAD_DISCONNECTED" then
+		ns.padActive = false
 	elseif event == "SUPER_TRACKING_CHANGED" then
 		-- The game re-tracks quests by itself when one makes progress. That is not a choice, so the quest key stays on the
 		-- one you picked. Any other change is you clicking a quest, and the key follows it.
