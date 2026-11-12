@@ -46,10 +46,9 @@ local DEFAULTS = {
 	fadeMicro = true,
 	trigBagsBar = 74,
 	trigMicro = 74,
-	barFade = 511, -- (Action bars page, Fade column: bits 1 to 8 the action bars, 9 the pet bar)
+	barFade = 511, -- (Action bars page, Fade column: bits 1 to 8 the action bars; the pet bar's Fade is its Elements row)
 	barMana = 0, -- Action bars page, Low mana column (one of Low health and Low mana per bar; ActionBars.lua)
 	barLow = 0, -- Action bars page, Low health column: such a bar comes up while health is low (ActionBars.lua)
-	ovPetBar = 0, -- Opacity page, Pet bar: its Shown; 0 = Global (it fades with the Action bars; ActionBars.lua applyBars)
 	barPeek = 511, -- Action bars page, Show with Alt column: that bar comes up when you show the whole HUD (ActionBars.lua woc.peekBar)
 	barMouse = 0, -- Action bars page, Mouse over column: such a bar fades by itself, up only under the mouse (woc.mouseBars)
 	mouseTogether = false, -- Action bars page: the mouse on one Mouse over only bar brings them all up (woc.mouseBars)
@@ -87,13 +86,18 @@ local DEFAULTS = {
 -- The saved file's version. A file from before the launch build has none and is not read: everyone starts on these
 -- defaults. A later change that renames or removes a setting, or changes what one means, adds a step to MIGRATIONS and
 -- raises this number (see initDB in Core.lua).
-local SETTINGS_VERSION = 2
+local SETTINGS_VERSION = 3
 
 -- The unit frame, aura and alert rows, the cast bar and the breath bar, and Dominos. Each has its own frames, its own row in
 -- the trigger grid (Fade and triggers) and its own opacity; their settings are named after the group (fadeTarget,
 -- trigTarget, ovTarget). cols is which trigger columns the row offers (5 is Hide in combat). The cast bar is shown while you
 -- cast and the breath bar while a timer runs.
 local SPLIT = {
+	-- The pet bar (the owner, Nov 10: "put the pet actionbar in elements", "i need to hide it"): Fade and its triggers here, its
+	-- Shown on the Opacity page (ovPetBar). Its frames and buttons are the Action bars page's Pet bar row (ActionBars.lua
+	-- woc.applyPetBar writes them), which keeps only Hide hotkeys, Hide names and Click through for it. hover: what Mouse over
+	-- looks at (Frames.lua adds WackyBars' holders). Not counted when the Opacity columns split.
+	{ g = "petBar", label = "Pet bar", frames = {}, uncounted = true },
 	{ g = "target", label = "Target and focus", frames = { "TargetFrame", "FocusFrame" } },
 	-- PetSpellBar is BetterBlizzFrames' pet cast bar: a separate frame on the screen that would not fade with PetFrame
 	-- (the name means nothing without that addon, and is skipped then).
@@ -126,7 +130,7 @@ local SPLIT = {
 	-- fading it: both would set the bar's opacity. Its Opacity slider is not counted when the columns are split (uncounted).
 	{ g = "naowh", label = "Naowh", frames = { "NaowhForeverXPBar", "NaowhForeverXPTicker", "NaowhForeverCampfire",
 		"NaowhForeverBagSpace", "NaowhForeverTopBar", "QuietHUDNaowhSystem",
-		"QuietHUDNaowhJourney", "NaowhForeverConsumableBar", "NaowhForeverFoodBar",
+		"QuietHUDNaowhJourney", "QuietHUDNaowhCampBag", "NaowhForeverConsumableBar", "NaowhForeverFoodBar",
 		"NaowhForeverBlessingBar", "NaowhForeverGearBar" }, addon = "NaowhForever",
 		deep = true, uncounted = true, trig = 8 }, -- (the consumable bar and the food and drink buttons: his ask, Nov 6, "attatched to the other naowh stuff") -- (trig 8: Mouse over only by default, his ask)
 	-- (the Blessings bar, NaowhForever_Combat/Blessings, and the Gear Sets bar, NaowhForever_Combat/GearSets: his ask, Nov 7;
@@ -169,7 +173,7 @@ SPLIT.mainTrig = { "trigBars", "trigPlayer", "trigUnits", "trigTracker", "trigCh
 -- column. (The cast bar and the breath bar have no grid row: they only appear when they are needed, so they are only on the
 -- Opacity page.)
 SPLIT.groups = {
-	{ "Bars", { "Action bars", "Bags bar", "Menu bar", "Dominos", "Cast bar", "Breath bar" } },
+	{ "Bars", { "Action bars", "Pet bar", "Bags bar", "Menu bar", "Dominos", "Cast bar", "Breath bar" } },
 	{ "Unit frames", { "Player frame", "Target and focus", "Pet frame", "Party and raid", "Party panel" } },
 	{ "Auras and alerts", { "Buffs", "Debuffs", "Cooldown trackers", "Alerts" } },
 	{ "Info", { "Objective tracker", "Chat", "Minimap" } },

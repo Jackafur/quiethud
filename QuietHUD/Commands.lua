@@ -370,6 +370,9 @@ SlashCmdList["QUIETHUD"] = function(msg)
 			print("QuietHUD: there is no frame named " .. name)
 		elseif type(_G[name]) ~= "table" or not _G[name].SetAlpha then
 			print("QuietHUD: " .. name .. " is not a frame")
+		elseif name:find("^WackyBars") then
+			-- (they fade with their Action bars rows already: added here too, they faded twice; audit Nov 10)
+			print("QuietHUD: WackyBars' bars fade with their rows on the Action bars page (/qhud), so " .. name .. " is not added")
 		else
 			addExtra(group, name)
 			print("QuietHUD: added " .. name .. " to " .. group)

@@ -89,6 +89,8 @@ do
 	end
 	woc.write = function(f, a)
 		if yielded[f] then return end
+		-- (a WackyBars bar shown while its key is held: up to the Action bars' Shown, as under the mouse; QuietHUD_HeldBar)
+		if woc.lift[f] and type(a) == "number" then a = math.max(a, woc.liftTo()) end
 		-- The hook goes on every written frame, also one written at full, so another addon hiding it later is seen (tried
 		-- again at the next write if the game refused it once).
 		if not hooked[f] then hooked[f] = pcall(hooksecurefunc, f, "SetAlpha", keep) or nil end
@@ -159,6 +161,20 @@ end
 -- spot between two looks (accepted; a mouse press has a message and wakes it).
 local loop = { clock = 0, wake = true, moving = false, hovered = setmetatable({}, { __mode = "k" }) }
 local function wakeLoop() loop.wake = true end
+-- WackyBars' bars that show only while a key is held (Hypershift, Shift, Ctrl; its Hold.lua; the owner, Nov 12: "follows
+-- qhuds transparency", then none showed: his idle opacity is 0 and their rows Mouse over only). While one shows, its holders
+-- come up to the Action bars' Shown opacity, as a bar under the mouse does; let go, they are written as before. Cost: one
+-- table look per written frame; on each press and release every group is written again once (woc.forget).
+woc.lift = setmetatable({}, { __mode = "k" })
+woc.liftTo = function()
+	local ov = DB.ovBars
+	return (ov and ov > 0) and math.max(ov, 0.1) or (DB.base or 0.6)
+end
+QuietHUD_HeldBar = function(holders, on)
+	for _, h in ipairs(holders or {}) do woc.lift[h] = on and true or nil end
+	woc.forget()
+	wakeLoop()
+end
 -- Frames as big as the screen: always under the mouse, so they never count as mouse over and get no hover hook.
 woc.noHover = setmetatable({}, { __mode = "k" })
 -- The mouse entering or leaving a frame wakes the loop (a frame with no mouse never fires these: the tick sees it).
@@ -417,6 +433,11 @@ local function rebuildLists()
 				-- (a Top Bar switched on after login: its readout exists by now; second audit, F2)
 				_G.QuietHUDNaowhSystem = frame.sys
 				woc.forget()
+			elseif label == "Campfire Bag" and type(frame) == "table" and _G.QuietHUDNaowhCampBag ~= frame then
+				-- (the Sleeping Bag button beside Naowh's campfire, a button with no name on UIParent, built when first
+				-- needed: his "why didnt you add sleeping bag into the qhud naowh family", Nov 11, it showed by itself)
+				_G.QuietHUDNaowhCampBag = frame
+				woc.forget()
 			elseif label == "Waypoint Navigator" and type(frame) == "table" then
 				-- (the cue is made right after this call returns: looked for once the build is done)
 				C_Timer.After(0, function() woc.nameNaowhWaypoint(frame) end)
@@ -437,6 +458,13 @@ local function rebuildLists()
 		local item = type(editor) == "table" and type(editor.placement) == "table" and type(editor.placement.byLabel) == "table"
 			and editor.placement.byLabel["Journey Card"]
 		if type(item) == "table" and type(item.frame) == "table" then _G.QuietHUDNaowhJourney = item.frame end
+	end
+	-- (the Campfire Bag built before the hook above: found from the HUD Editor's list the same way)
+	if not _G.QuietHUDNaowhCampBag then
+		local editor = type(_G.NaowhForever) == "table" and _G.NaowhForever.HudEditor
+		local item = type(editor) == "table" and type(editor.placement) == "table" and type(editor.placement.byLabel) == "table"
+			and editor.placement.byLabel["Campfire Bag"]
+		if type(item) == "table" and type(item.frame) == "table" then _G.QuietHUDNaowhCampBag = item.frame end
 	end
 	-- (the Waypoint Pin built before the hook above: found from the HUD Editor's list the same way)
 	if not (_G.QuietHUDNaowhWaypointPin and _G.QuietHUDNaowhWaypointCue) then
@@ -575,9 +603,11 @@ local function rebuildLists()
 		end
 		-- (a name whose global is not a frame, a function or a number, is left out: /qhud add refuses one, a file changed by
 		-- hand can still hold one)
+		-- (WackyBars' frames are faded through its holders, with their Action bars row: one added here too faded twice,
+		-- Faded times Faded; /qhud add refuses them now, a file from before can still hold one; audit Nov 10)
 		for _, n in ipairs(DB.extra[g] or {}) do
 			local v = _G[n]
-			if v == nil or type(v) == "table" then add(n) end
+			if (v == nil or type(v) == "table") and not n:find("^WackyBars") then add(n) end
 		end
 		LISTS[g] = merged
 	end
@@ -605,7 +635,7 @@ local function rebuildLists()
 	end
 	-- Buttons moved out of their bar by another addon count for mouse over themselves (see checkElsewhere).
 	for i, def in ipairs(BAR_DEFS) do
-		if elsewhere.bars[i] then
+		if elsewhere.bars[i] and i ~= ns.PET_BAR then -- (the pet bar's mouse over is its own Elements row's)
 			for j = 1, def.count or 12 do ns.barHover[#ns.barHover + 1] = def.buttons .. j end
 		end
 	end
@@ -613,6 +643,19 @@ local function rebuildLists()
 		if elsewhere.extra[k] then
 			for j = 1, set[2] do ns.barHover[#ns.barHover + 1] = set[1] .. j end
 		end
+	end
+	-- The pet bar's Elements row: Mouse over looks at its frames (the game's pet bar; WackyBars' holders only while it is
+	-- loaded) and at its ten buttons only while another addon moved them out of the bar (audit Nov 10: twenty names were
+	-- looked at on every update, WackyBars there or not).
+	do
+		local pet, hover = BAR_DEFS[ns.PET_BAR], {}
+		for _, n in ipairs(pet.frames) do
+			if not wbSkip(n) then hover[#hover + 1] = n end
+		end
+		if elsewhere.bars[ns.PET_BAR] then
+			for j = 1, pet.count or 10 do hover[#hover + 1] = pet.buttons .. j end
+		end
+		SPLIT_BY.petBar.hover, SPLIT_BY.petBar.ownedHover = hover, true
 	end
 	-- The lists changed: every group is written again (write on change, above).
 	woc.names, woc.selfFading, woc.owner = {}, {}, {}
@@ -749,6 +792,32 @@ MIGRATIONS[2] = function(saved)
 		saved.barClicks = saved.barClicks + 256
 	end
 end
+-- 1.7.0-beta1 to the next. The pet bar got a row of its own on the Elements page (the owner, Nov 10): its Fade and what
+-- shows it start as they were: the Action bars row's, its Fade column box, and Mouse over only as just Mouse over.
+-- Audit Nov 10: (1) beta1 put a pet bar with its Fade box unticked at full; here that is Fade off, and an own Shown would
+-- now hold it dim, so that Shown goes back to Global. (2) A Mouse over only pet bar went to 0 in a fight when the Action bars
+-- row had Hide in combat; it keeps that box. (3) The pet row has no Low health, Low mana, Mouse over only or Show with any
+-- more: its bit in those columns is cleared (Show with: set, as ticked), or Low health kept listening for nothing.
+MIGRATIONS[3] = function(saved)
+	-- (a word or a table where a number belongs, from a file changed by hand, counts as nothing ticked)
+	local function bit(m, i) return type(m) == "number" and (math.floor(m / 2 ^ (i - 1)) % 2) == 1 end
+	if saved.fadePetBar == nil then
+		local petFadeOff = saved.fadeBars ~= false and type(saved.barFade) == "number" and not bit(saved.barFade, 9)
+		saved.fadePetBar = (saved.fadeBars ~= false) and not petFadeOff
+		if petFadeOff then saved.ovPetBar = 0 end
+	end
+	if saved.trigPetBar == nil then
+		if bit(saved.barMouse, 9) then
+			saved.trigPetBar = 8 + (bit(saved.trigBars, 5) and 16 or 0) -- (Mouse over, and Hide in combat if the bars had it)
+		elseif type(saved.trigBars) == "number" then
+			saved.trigPetBar = saved.trigBars
+		end
+	end
+	for _, k in ipairs({ "barLow", "barMana", "barMouse" }) do
+		if bit(saved[k], 9) then saved[k] = saved[k] - 256 end
+	end
+	if type(saved.barPeek) == "number" and not bit(saved.barPeek, 9) then saved.barPeek = saved.barPeek + 256 end
+end
 local dbLoaded = false
 local function initDB()
 	if dbLoaded then return end
@@ -757,7 +826,9 @@ local function initDB()
 	if type(saved) == "table" and saved.settingsVersion == nil and saved.awakeSplit == true then saved.settingsVersion = 0 end -- (1.5.0's)
 	if type(saved) == "table" and type(saved.settingsVersion) == "number" then
 		for v = saved.settingsVersion + 1, SETTINGS_VERSION do
-			if MIGRATIONS[v] then MIGRATIONS[v](saved) end
+			-- (a file changed by hand or damaged can't stop the rest of the settings loading: an error here left QuietHUD half
+			-- set up at every login; audit Nov 10)
+			if MIGRATIONS[v] then pcall(MIGRATIONS[v], saved) end
 		end
 		-- (DB stays the one table every file holds: the saved file's settings go into it, and the game saves it from
 		-- now on)
@@ -807,7 +878,6 @@ woc.fadeFlags = function()
 end
 woc.groupOfKey = { chatOwn = "chat", mapOwn = "map", rxpShown = "rxp", navShown = "nav" }
 for g, key in pairs(OVERRIDE_KEYS) do woc.groupOfKey[key] = g end
-woc.groupOfKey.ovPetBar = "bars" -- (the pet bar's Shown stops at the Global Faded like the bars'; audit 2026-11-10 evening)
 
 -- For the files after this one (QuietHUD.toc).
 ns.DB, ns.gFade, ns.gTrig, ns.LISTS, ns.elsewhere, ns.woc, ns.loop = DB, gFade, gTrig, LISTS, elsewhere, woc, loop

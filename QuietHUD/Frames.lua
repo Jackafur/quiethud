@@ -61,10 +61,25 @@ for i, def in ipairs(BAR_DEFS) do
 	end
 end
 -- The pet bar, a row of its own on the Action bars page since Nov 10 (the owner: "add petbar to the action bars tab"): all
--- the columns, Click through its own (it went with Action Bar 8's before). Ten buttons; WackyBars has no holders for it.
+-- the columns, Click through its own (it went with Action Bar 8's before). Ten buttons. WackyBars puts the game's pet
+-- buttons into a spot whose key is a pet key, inside that bar's holder 9 (WackyBarsHold<bar>9), so the holders are the
+-- pet bar's frames too.
 local PET = #BAR_DEFS + 1
 BAR_DEFS[PET] = { frames = { "PetActionBar" }, buttons = "PetActionButton", count = 10, label = "Pet bar" }
 WB_HOLDERS[PET] = {}
+for _, b in ipairs(WB_BARS) do
+	local n = "WackyBarsHold" .. b .. PET
+	WB_HOLDERS[PET][#WB_HOLDERS[PET] + 1] = n
+	BAR_DEFS[PET].frames[#BAR_DEFS[PET].frames + 1] = n
+end
+-- (the pet bar's Elements row: Mouse over looks at its frames and its ten buttons; rebuildLists narrows it to the frames
+-- that can be there and the buttons only while another addon moved them out of the bar)
+do
+	local hover = {}
+	for _, n in ipairs(BAR_DEFS[PET].frames) do hover[#hover + 1] = n end
+	for j = 1, 10 do hover[#hover + 1] = "PetActionButton" .. j end
+	SPLIT_BY.petBar.hover = hover
+end
 -- Buttons outside the action bars and the pet bar, with their count and their bar (a frame of the bars list): the stance
 -- bar, the possess bar and the shaman totem bar. They show a hotkey too.
 local EXTRA_BUTTONS = { { "StanceButton", 10, { "StanceBar" } },
@@ -108,12 +123,12 @@ local SELF_FADING = { PlayerCastingBarFrame = "cast", CastingBarFrame = "cast", 
 -- would fade the moment the mouse moves up into them. Buttons another addon moved out of their bar are added in rebuildLists.
 local ACTION_BARS = {
 	"MainActionBar", "MainMenuBar", "ForeverClassicUIBar", "MultiBarBottomLeft", "MultiBarBottomRight", "MultiBarRight",
-	"MultiBarLeft", "MultiBar5", "MultiBar6", "MultiBar7", "MultiBar8", "StanceBar", "PetActionBar", "MultiCastActionBarFrame",
+	"MultiBarLeft", "MultiBar5", "MultiBar6", "MultiBar7", "MultiBar8", "StanceBar", "MultiCastActionBarFrame",
 	"MultiCastFlyoutFrame", "MultiCastFlyoutFrameOpenButton", "SpellFlyout", "GamepadMainActionBarFrame",
 }
 -- (WackyBars' holders count by their buttons: see WB_HOLDERS above)
 for i = 1, #WB_HOLDERS do
-	for _, n in ipairs(WB_HOLDERS[i]) do ACTION_BARS[#ACTION_BARS + 1] = n end
+	if i ~= PET then for _, n in ipairs(WB_HOLDERS[i]) do ACTION_BARS[#ACTION_BARS + 1] = n end end
 end
 -- Dominos puts the action buttons into bars of its own, named DominosFrame1 to DominosFrame14, with its pet, stance
 -- ("class") and possess bars beside them (names from Dominos' frame.lua and bars folder), and has a bag bar and a menu bar.

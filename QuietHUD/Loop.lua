@@ -194,7 +194,15 @@ local function update(dt)
 		end
 		vis.hud = triggered(DB.trigUnits, wake, moved, false, combat, inside, LISTS.hud)
 		for _, s in ipairs(SPLIT) do
-			vis[s.g] = triggered(gTrig(s), wake, moved, false, combat, inside, s.hover or woc.ownedNames(s.g, LISTS[s.g]), s.deep)
+			-- (a row's own hover list: Dominos' as it is; the pet bar's owner filtered like any row's frames, a frame in the
+			-- mouseover or hidden list being that list's; audit Nov 10)
+			local names = s.hover
+			if not names then
+				names = woc.ownedNames(s.g, LISTS[s.g])
+			elseif s.ownedHover then
+				names = woc.ownedNames(s.g, names)
+			end
+			vis[s.g] = triggered(gTrig(s), wake, moved, false, combat, inside, names, s.deep)
 		end
 		-- Casting shows the cast bar (not when it is set to hide in combat and you are in combat). A running breath, fatigue or feign
 		-- death timer shows the breath bar whatever its settings: with the HUD idle the breath bar would be invisible while you drown.
@@ -243,8 +251,11 @@ local function update(dt)
 	end
 	-- The Low health and Low mana columns (ActionBars.lua): listened to only while a bar is ticked; a change of whether it
 	-- counts now writes the bars again.
-	woc.lowListen(enabled and (DB.barLow or 0) > 0, enabled and (DB.barMana or 0) > 0)
-	local lowOn = (enabled and ((DB.barLow or 0) > 0 or (DB.barMana or 0) > 0) and DB.fadeBars and not edit
+	-- (bars 1 to 8: the pet bar has no Low health or Low mana since its own row; a bit left from 1.7.0-beta1 kept the
+	-- listening on for nothing; audit Nov 10)
+	local low8, mana8 = (DB.barLow or 0) % 256, (DB.barMana or 0) % 256
+	woc.lowListen(enabled and low8 > 0, enabled and mana8 > 0)
+	local lowOn = (enabled and (low8 > 0 or mana8 > 0) and DB.fadeBars and not edit
 		and not (combat and barBit(DB.trigBars, T.COMBAT))) and true or false
 	if lowOn then -- (asked only while a bar is ticked)
 		local okDead, dead = pcall(UnitIsDeadOrGhost, "player")
@@ -282,31 +293,34 @@ local function update(dt)
 			if goneNow and goneNow[g] then floor = 0 end
 			local low = math.min(floor, peak)
 			if g == "bars" then
-				-- (the bars' fade for a bar of its own, ActionBars.lua applyBars: the pet bar's Shown, and Show with Alt unticked,
+				-- (the bars' fade for a bar of its own, ActionBars.lua applyBars: Show with Alt unticked,
 				-- which goes on as if the whole HUD were not shown; the bars are written again while the two differ)
 				local own = edit and cur[g] or step(woc.barsCurOwn or cur[g], barsOwnWanted and 1 or 0,
 					loop.moving and dt or math.min(dt, 1 / 60), DB.fadeOutSeconds)
 				-- (only while a bar has Show with unticked, and only while its own fade still moves: a settled difference, the
 				-- whole HUD held up, needs no rewrite; audit 2026-11-10 evening, it kept the loop running every frame)
-				local anyOwn = woc.peekSet() and DB.barPeek ~= nil and DB.barPeek ~= 511
+				local anyOwn = woc.peekSet() and DB.barPeek ~= nil and DB.barPeek % 256 ~= 255 -- (bars 1 to 8; audit Nov 10)
 				if anyOwn and own ~= (woc.barsCurOwn or own) then anyFade = true; woc.applied.bars = nil end
 				woc.barsFloor, woc.barsCur, woc.barsCurOwn = floor, (not edit) and cur[g] or nil, own
 			end
 			local a = low + (peak - low) * cur[g]
 			if g == "panel" and DB.hidePanel and not edit then a = 0 end
 			woc.group(g, a, false)
+			if g == "petBar" then woc.applyPetBar(a) end -- (the pet bar's row has no frames of its own)
 			if g == "map" then mapAlpha = a end
 			fading[g] = true
 		elseif fixedA then
 			if g == "bars" then woc.barsCur, woc.barsCurOwn = nil, nil end
 			woc.group(g, fixedA, true)
+			if g == "petBar" then woc.applyPetBar(fixedA) end
 			fading[g] = true
 			cur[g] = 1
 		elseif fading[g] then
-			-- (the bars' per-bar fade state goes too, or the pet bar and a Show with bar stayed faded when QuietHUD or Fade was
+			-- (the bars' per-bar fade state goes too, or a Show with bar stayed faded when QuietHUD or Fade was
 			-- switched off; audit 2026-11-10 evening)
 			if g == "bars" then woc.barsCur, woc.barsCurOwn = nil, nil end
 			woc.group(g, 1, true)
+			if g == "petBar" then woc.applyPetBar(1) end
 			fading[g] = false
 			cur[g] = 1
 		end
@@ -346,7 +360,7 @@ local function update(dt)
 	end
 
 	-- Pixel shift: once a second, and at once when Edit Mode opens or closes.
-	tickShift(dt, now, edit)
+	tickShift(dt, now, edit or ns.shiftPaused or false) -- (and while WackyBars moves its bars: QuietHUD_ShiftPause, Shift.lua)
 	applyTooltips()
 
 	hotkeyClock = hotkeyClock + dt
@@ -526,6 +540,23 @@ do
 			if m ~= mod and v[2]() then return true end
 		end
 		return false
+	end
+	-- A key used through a binding the list above can't see spoils the tap too: another addon's own keys (WackyBars' keys
+	-- are override bindings; it calls QuietHUD_TapKeyUsed from its buttons), an action bar key given to another key, and the
+	-- mouse wheel (the camera zoom; the wheel can't be asked whether it is down). Audit Nov 10: Alt and a WackyBars key, or
+	-- Alt and the wheel, flipped the whole HUD. Cost: one test per such key press, nothing otherwise.
+	local function used()
+		if tapMod and not spoiled then
+			spoiled = true
+			watcher:SetScript("OnUpdate", nil)
+		end
+	end
+	QuietHUD_TapKeyUsed = used
+	for _, fn in ipairs({ "ActionButtonDown", "MultiActionButtonDown", "MoveViewInStart", "MoveViewOutStart" }) do
+		if type(_G[fn]) == "function" then hooksecurefunc(fn, used) end
+	end
+	if type(PetActionBar) == "table" and type(PetActionBar.PetActionButtonDown) == "function" then
+		hooksecurefunc(PetActionBar, "PetActionButtonDown", used)
 	end
 	watcher:RegisterEvent("MODIFIER_STATE_CHANGED")
 	watcher:RegisterEvent("UPDATE_BINDINGS")

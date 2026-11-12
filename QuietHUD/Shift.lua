@@ -252,6 +252,21 @@ do
 		syncShift()
 	end
 
+	-- For WackyBars (audit Nov 10: moving, nudging or resizing a shifted WackyBars bar saved the shift into its place, a few
+	-- pixels more each time). The offset the shift has on a frame right now, in UIParent units: 0, 0 when it is not shifted
+	-- or was moved since. And a pause while its Move bars is open, as for Edit Mode: the frames go back to their places.
+	function QuietHUD_ShiftOffset(f)
+		local st = type(f) == "table" and shiftState[f]
+		if not (st and st.wx and st.sig) then return 0, 0 end
+		local ok, now = pcall(anchorList, f)
+		if not ok or #now == 0 or anchorSig(now) ~= st.sig then return 0, 0 end
+		return st.wx, st.wy
+	end
+	function QuietHUD_ShiftPause(on)
+		ns.shiftPaused = on and true or false
+		if ns.wakeLoop then ns.wakeLoop() end
+	end
+
 	shiftNow = function()
 		shiftNextAt = 0
 	end

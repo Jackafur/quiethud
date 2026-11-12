@@ -1,25 +1,36 @@
 # Changelog
 
-## 1.7.0-beta1
+## 1.7.0
 
-A test build. Your settings carry over.
+Your settings carry over. If you ran 1.7.0-beta1 this is that build plus the fixes below.
 
 ### Added
 
+- **Pet bar on the Elements page.** The pet bar has its own row there now with Fade and every box after it. So it can fade or stay hidden by itself while your action bars come up. How solid it gets is the Pet bar slider on the Opacity page. On the Action bars page its row keeps Hide hotkeys, Hide names and Click through.
 - **Pixel shift moves the waypoint arrow too.** RestedXP's arrow and Naowh's navigator (and its "behind you" arrow) now move with the minimap and tracker, by the same distance and as often. Naowh's pin in the world stays put, it already moves with the world.
 - **The game's controller layout fades.** Its action bar (the one that takes Action Bar 1's place) and the dot in the middle of the screen fade and come back with the action bars.
 - **Pixel shift moves the chat window (Chattynator's too) and the controller dot**, and the controller's action bar with "Also the action bars". The distance now goes up to 15 pixels, for big interfaces on a TV.
 - **Mouse move counts a controller stick.** Turning the camera with the stick keeps things shown, for the same "Stay shown after the mouse stops" seconds. The sticks are only looked at while you're playing with a controller and a row has Mouse move ticked; walking with the stick is the Moving box, as before.
 - **Click through** (Action bars page): a ticked bar's buttons never take mouse clicks, shown or faded; its keys still work.
-- **Pet bar row** (Action bars page): the pet bar has every column of its own now (it used to fade with the bars and go with Action Bar 8's Click through, and that's where it starts, so nothing changes until you change it), plus a **Pet bar** slider on the Opacity page for how solid it gets.
 - **Show with ...** (Action bars page, named after your way to show the whole HUD, like Show with Alt): untick it on a bar and showing the whole HUD leaves that bar alone, mid fade too. Ticked by default.
 - **Show Mouse over only bars together** (Action bars page, under the grid, off by default): the mouse on one Mouse over only bar shows them all.
 - **Pixel shift moves more:** Warlock HUD's icon rows and Multi-Target window, Naowh's pieces and RestedXP windows, and once per reload it picks up any other addon's frames on the screen by itself (`/qhud shift` lists them).
-- **WackyBars:** with it showing, the Action bars rows are named after its bars (Keyboard, Shift keyboard, Hypershift...).
+- **WackyBars:** with it showing, the Action bars rows are named after its bars (Keyboard, Shift keyboard, Hypershift...). A WackyBars bar holding your pet keys fades with the Pet bar row. And a bar that only shows while you hold its key (WackyBars 0.4.0) comes up to your Action bars Shown while you hold it, even with Faded at 0 or the row on Mouse over only.
+- **Naowh's Sleeping Bag button** beside the campfire fades with the Naowh row.
 
 ### Changed
 
 - **Settings window:** the Action bars columns are grouped (when a bar is shown, what's printed on it, clicks) and spaced like the Elements page, with a hover text on every heading. Show the whole HUD is first on the Show when page and Pixel shift first on Extras. The notes are short now.
+
+### Fixed
+
+- **Tap Alt** doesn't flip the whole HUD anymore when Alt went with a key the game's binding list can't see. That's WackyBars' keys, an action key you moved to another key and the mouse wheel.
+- **Your beta1 settings move over cleanly.** A beta1 pet bar with Fade unticked stays solid and a broken saved value can't stop your settings from loading.
+- **The Show with hover text** names your way to show the whole HUD again.
+
+### Known issue
+
+- Low health on an action bar can make other addons that read that bar's opacity throw errors. I've seen it with Naowh's XP bar and Chattynator. If you get those, untick Low health.
 
 ## 1.6.1
 

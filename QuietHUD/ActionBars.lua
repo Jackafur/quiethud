@@ -3,6 +3,7 @@
 local _, ns = ...
 local BAR_DEFS, EXTRA_BUTTONS, PET = ns.BAR_DEFS, ns.EXTRA_BUTTONS, ns.PET_BAR
 local DB, LISTS, elsewhere, woc, rebuildLists = ns.DB, ns.LISTS, ns.elsewhere, ns.woc, ns.rebuildLists
+local gFade, SPLIT_BY = ns.gFade, ns.SPLIT_BY
 local applyList, barBit = ns.applyList, ns.barBit
 
 local barExcluded = {} -- per bar: true once it was put back to full because it is not picked on the Action bars page
@@ -89,19 +90,17 @@ local function applyBars(a, respectMask)
 	for k, set in ipairs(EXTRA_BUTTONS) do
 		if elsewhere.extra[k] then applyButtons(set[1], set[2], a) end
 	end
-	for i = 1, #BAR_DEFS do
+	for i = 1, PET - 1 do -- (the pet bar has its own Elements row: woc.applyPetBar)
 		if respectMask and woc.mouseBar(i) then
 			barExcluded[i] = false -- (fades by itself, woc.mouseBars)
 		elseif (not respectMask) or barBit(DB.barFade, i) then
 			-- Its own fade where it differs from the group's: Show with Alt unticked follows the bars as if the whole HUD were not
-			-- shown (woc.barsCurOwn, Loop.lua: Alt neither brings it up nor stops it mid fade), and the pet bar fades to its own
-			-- Shown (Opacity page, Pet bar; 0, the default, is Global). Not while the bars' Fade is off (barsCur nil).
+			-- shown (woc.barsCurOwn, Loop.lua: Alt neither brings it up nor stops it mid fade). Not while the bars' Fade is off
+			-- (barsCur nil).
 			local ai, peak = a, woc.barsPeak
 			local cur = woc.barsCur
 			if cur and not woc.peekBar(i) then cur = woc.barsCurOwn or cur end
-			local pp = DB.ovPetBar
-			if i == PET then peak = (pp and pp > 0) and math.max(pp, 0.1) or (DB.base or 0.75) end -- (0 is Global)
-			if cur and peak and (cur ~= woc.barsCur or peak ~= woc.barsPeak) then
+			if cur and peak and cur ~= woc.barsCur then
 				local floor = math.min(woc.barsFloor or 0, peak)
 				ai = floor + (peak - floor) * cur
 			end
@@ -123,6 +122,16 @@ local function applyBars(a, respectMask)
 	end
 end
 
+-- The pet bar, from its Elements row (Loop.lua: the petBar group has no frames of its own, so its opacity comes here): its
+-- frames (the game's bar, WackyBars' holders with the pet buttons) and its buttons where another addon moved them out. On a
+-- change only (woc.forget writes it again, as the groups).
+woc.applyPetBar = function(a)
+	if woc.applied.petBarOwn == a then return end
+	woc.applied.petBarOwn = a
+	applyList("bar" .. PET, a)
+	if elsewhere.bars[PET] then applyButtons(BAR_DEFS[PET].buttons, BAR_DEFS[PET].count or 12, a) end
+end
+
 -- The Action bars page's Mouse over column (the owner, 2026-11-05: "a seperate tick boxes in action bars for mouse over on
 -- each bar"). A ticked bar, with its Fade ticked and Action bars fading on the Elements page, leaves the group: it fades by
 -- itself and comes up only while the mouse is on it (its frames, or its buttons when another addon moved them out), never
@@ -133,7 +142,7 @@ end
 woc.mouseMembership = function(on)
 	local mask = 0
 	if on and DB.fadeBars and (DB.barMouse or 0) > 0 then
-		for i = 1, #BAR_DEFS do
+		for i = 1, PET - 1 do
 			if barBit(DB.barMouse, i) and barBit(DB.barFade, i) then mask = mask + 2 ^ (i - 1) end
 		end
 	end
@@ -200,7 +209,6 @@ woc.mouseBars = function(dt, all, gone)
 			if c ~= target then busy = true end
 			woc.mbCur[i] = c
 			local ov = DB.ovBars
-			if i == PET then ov = DB.ovPetBar end -- (the pet bar's own Shown; 0 is Global)
 			local peak = (ov and ov > 0) and math.max(ov, 0.1) or (DB.base or 0.6)
 			local low = math.min(gone and 0 or DB.idle or 0, peak)
 			local a = low + (peak - low) * c
@@ -297,7 +305,7 @@ local function checkElsewhere()
 			kind[key] = away
 			changed = true
 		end
-		local ignore = (away and fadeOn and ticked) and true or false
+		local ignore = (away and ticked) and true or false
 		for j = 1, count do
 			local b = _G[prefix .. j]
 			if b and b.SetIgnoreParentAlpha and (elsewhere.ignoring[b] or false) ~= ignore then
@@ -308,8 +316,12 @@ local function checkElsewhere()
 			end
 		end
 	end
-	for i, def in ipairs(BAR_DEFS) do look(elsewhere.bars, i, def.buttons, def.count or 12, def.frames, barBit(DB.barFade, i)) end
-	for k, set in ipairs(EXTRA_BUTTONS) do look(elsewhere.extra, k, set[1], set[2], set[3], true) end
+	for i, def in ipairs(BAR_DEFS) do
+		-- (the pet bar: its Elements row's Fade)
+		local ticked = i == PET and (DB.enabled and gFade(SPLIT_BY.petBar)) or (i ~= PET and fadeOn and barBit(DB.barFade, i))
+		look(elsewhere.bars, i, def.buttons, def.count or 12, def.frames, ticked)
+	end
+	for k, set in ipairs(EXTRA_BUTTONS) do look(elsewhere.extra, k, set[1], set[2], set[3], fadeOn) end
 	if changed then
 		rebuildLists()
 	elseif flipped then

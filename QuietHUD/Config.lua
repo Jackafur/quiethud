@@ -31,8 +31,8 @@ local HELP = {
 		[6] = "Shown while you are inside a dungeon or a raid.",
 	},
 	rows = {
-		["Pet bar"] = "The pet bar's opacity when shown. It fades and is shown with the Action bars row; its boxes are on the Action bars page.",
-		["Action bars"] = "Action Bars 1 to 8 and the pet bar, plus the stance, totem and XP bars. Which bars fade is picked on the Action bars page. With Dominos loaded, Dominos hides the game's bars and its own are on the Dominos row: this row then only has what Dominos leaves, like the totem bar.",
+		["Pet bar"] = "The pet bar, also its buttons on a WackyBars bar. Untick every box after Fade to keep it faded; with the Global Faded at 0 it is hidden (tick its Click through on the Action bars page, or a click there still presses a pet button).",
+		["Action bars"] = "Action Bars 1 to 8, plus the stance, totem and XP bars. Which bars fade is picked on the Action bars page. With Dominos loaded, Dominos hides the game's bars and its own are on the Dominos row: this row then only has what Dominos leaves, like the totem bar.",
 		["Dominos"] = "Dominos' bars in one row: its action bars, pet, stance and possess bars, XP bar, bag bar and menu. It starts as a copy of the Action bars row; after that the two are separate. Best with Dominos' own fade off, so the two don't fight.",
 		["Bags bar"] = "The row of bag buttons. With Dominos loaded, Dominos hides it and its own bag bar is on the Dominos row.",
 		["Menu bar"] = "The row of small menu buttons (character, spellbook, talents and so on). With Dominos loaded, Dominos hides it and its own menu is on the Dominos row: this row then only has the beta Issue Reporter button.",
@@ -163,25 +163,12 @@ local PAGES = {
 do
 	local keyOf = { ["Objective tracker"] = "ovQuest", ["Chat"] = "chatOwn", ["Minimap"] = "mapOwn", ["Action bars"] = "ovBars",
 		["Player frame"] = "ovPlayer", ["Bags bar"] = "ovBagsBar", ["Menu bar"] = "ovMicro", ["Added frames"] = "ovHud",
-		["Guide windows"] = "rxpShown", ["Arrow"] = "navShown", ["Pet bar"] = "ovPetBar" }
+		["Guide windows"] = "rxpShown", ["Arrow"] = "navShown" }
 	local addonOf = { ["Guide windows"] = "RXPGuides", ["Arrow"] = "RXPGuides" }
 	for _, s in ipairs(SPLIT) do keyOf[s.label], addonOf[s.label] = s.ovKey, s.addon end
 	-- RestedXP's two come last, as its rows do on the Elements page, and only while it is loaded.
 	local groups = {}
 	for _, group in ipairs(SPLIT.groups) do groups[#groups + 1] = group end
-	-- The pet bar's Shown (the owner, Nov 10): on this page only, under Action bars, whose row it fades with (no Elements
-	-- row: Fade and what brings it up stay the Action bars'). 0 is Global, like every slider here (its first word, "Action
-	-- bars", ran into the next column). Uncounted: the columns split as before.
-	for gi, group in ipairs(groups) do
-		if group[1] == "Bars" then
-			local labels = {}
-			for _, label in ipairs(group[2]) do
-				labels[#labels + 1] = label
-				if label == "Action bars" then labels[#labels + 1] = "Pet bar" end
-			end
-			groups[gi] = { group[1], labels, addon = group.addon }
-		end
-	end
 	groups[#groups + 1] = { "RestedXP", { "Guide windows", "Arrow" }, addon = "RXPGuides" }
 	local total, count, left, right = 0, 0, {}, {}
 	-- The Shown bars: dragging one shows the whole HUD for a few seconds (see makeSlider). Not the Global Faded, whose look is
@@ -191,7 +178,6 @@ do
 	-- (a row marked uncounted, Naowh's, does not move the split: the columns stay as they were with or without it)
 	local uncounted = {}
 	for _, s in ipairs(SPLIT) do uncounted[s.label] = s.uncounted end
-	uncounted["Pet bar"] = true
 	for _, group in ipairs(groups) do
 		for _, label in ipairs(group[2]) do
 			if not uncounted[label] then total = total + 1 end
@@ -473,6 +459,8 @@ do
 		-- key bound) and is named after it ("Show with Alt", "Show with F5"); the columns after it close up while it is gone.
 		-- (Before the grouping: wow-addon-rollback\2026-11-10_z4_quiethud-audit-fixed-before-layout\QuietHUD\Config.lua.)
 		local pitch = 64
+		-- (before cols: the Show with help reads peekWaysText; declared after it, that was an always-nil global. Patch check Nov 12)
+		local peekHeader, peekHover, peekBoxes, peekWaysText = nil, nil, {}, nil
 		local cols = {
 			{ "Fade", "barFade", help = "Ticked: this bar fades with the action bars. Unticked: it stays as it is." },
 			{ "Mouse over\nonly", "barMouse", help = "This bar fades by itself and is shown only while the mouse is on it, not with the rest." },
@@ -482,9 +470,9 @@ do
 				return "Ticked (default): this bar is shown when you show the whole HUD. Unticked: that leaves it as it is."
 					.. (peekWaysText and ("\nYours: " .. peekWaysText .. " (Show when page, Keybindings).") or "")
 			end },
-			{ "Hide\nhotkeys", "barHotkeys", gap = true, help = "Hides the key printed in the corner of each button." },
-			{ "Hide\nnames", "barNames", help = "Hides the macro names printed on the buttons." },
-			{ "Click\nthrough", "barClicks", gap = true, help = "This bar's buttons never take mouse clicks, shown or not; clicks go to whatever is behind them. Its keys still work." },
+			{ "Hide\nhotkeys", "barHotkeys", gap = true, pet = true, help = "Hides the key printed in the corner of each button." },
+			{ "Hide\nnames", "barNames", pet = true, help = "Hides the macro names printed on the buttons." },
+			{ "Click\nthrough", "barClicks", gap = true, pet = true, help = "This bar's buttons never take mouse clicks, shown or not; clicks go to whatever is behind them. Its keys still work." },
 		}
 		-- Where each column goes, with "Show with" there or not.
 		local function place(withPeek)
@@ -499,7 +487,6 @@ do
 			end
 		end
 		place(true)
-		local peekHeader, peekHover, peekBoxes, peekWaysText = nil, nil, {}, nil
 		for _, c in ipairs(cols) do
 			local header = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 			header:SetPoint("TOP", parent, "TOPLEFT", c.x + CELL / 2, y)
@@ -539,10 +526,13 @@ do
 			label:SetText(BAR_DEFS[i].label or ("Action Bar " .. i))
 			labels[i] = label
 			for _, c in ipairs(cols) do
-				local box = makeMaskCheck(parent, c.x, rowY, c[2], i, c.pair)
-				box.qhRowY = rowY
-				c.boxes[#c.boxes + 1] = box
-				if c.peek then peekBoxes[#peekBoxes + 1] = box end
+				-- (the pet bar fades and shows by its Elements row: here only what is printed on it and its clicks)
+				if i ~= ns.PET_BAR or c.pet then
+					local box = makeMaskCheck(parent, c.x, rowY, c[2], i, c.pair)
+					box.qhRowY = rowY
+					c.boxes[#c.boxes + 1] = box
+					if c.peek then peekBoxes[#peekBoxes + 1] = box end
+				end
 			end
 			rowY = rowY - 24
 		end
@@ -552,7 +542,8 @@ do
 			local names, any = {}, false
 			for i = 1, #BAR_DEFS do
 				names[i] = {}
-				for _, hn in ipairs(ns.WB_HOLDERS[i]) do
+				-- (the pet bar keeps its name: its holders hold the game's pet buttons, wherever WackyBars put them)
+				for _, hn in ipairs(BAR_DEFS[i].label and {} or ns.WB_HOLDERS[i]) do
 					local h = _G[hn]
 					local bar = h and h.GetParent and h:GetParent()
 					if h and type(h.qhudButtons) == "table" and #h.qhudButtons > 0 and bar and bar:IsShown() then
