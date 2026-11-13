@@ -262,6 +262,27 @@ do
 		if not ok or #now == 0 or anchorSig(now) ~= st.sig then return 0, 0 end
 		return st.wx, st.wy
 	end
+	-- For an addon that places its shifted frame again by itself (Spy, whenever its list grows or shrinks): called right
+	-- after it did. fromSaved: it put the frame at its saved spot, which has no shift in it, so the shift goes back on top.
+	-- Otherwise it started from where the frame is now, shift included, so the shift is taken back out of the new normal
+	-- (else the shift would add up into its place, a few pixels more each time). Out of combat only; in a fight the shift
+	-- steps aside as for any other move.
+	ns.shiftOwnerPlaced = function(f, fromSaved)
+		local st = type(f) == "table" and shiftState[f]
+		if not (st and st.wx and st.sig) or (InCombatLockdown and InCombatLockdown()) then return end
+		local okNow, now = pcall(anchorList, f)
+		if not okNow or #now == 0 then return end
+		local k = f:GetEffectiveScale() / UIParent:GetEffectiveScale()
+		if not (k >= 0.5 and k <= 2) then return end
+		local dx, dy = st.wx / k, st.wy / k
+		local base = {}
+		for i, a in ipairs(now) do
+			base[i] = { a[1], a[2], a[3], fromSaved and a[4] or a[4] - dx, fromSaved and a[5] or a[5] - dy }
+		end
+		st.base = base
+		if fromSaved then pcall(setAnchors, f, base, dx, dy) end
+		st.sig = anchorSig(anchorList(f))
+	end
 	function QuietHUD_ShiftPause(on)
 		ns.shiftPaused = on and true or false
 		if ns.wakeLoop then ns.wakeLoop() end

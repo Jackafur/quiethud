@@ -8,14 +8,14 @@ local MOVE_LINGER = 1.5
 local SKULL = 8
 
 local DEFAULT_LISTS = {
-	-- The game's controller layout (Options, Controller): its action bar in place of Action Bar 1, and the dot in the middle
-	-- of the screen. Both are hidden while no controller is set up.
-	bars = { "StatusTrackingBarManager", "StanceBar", "PossessActionBar", "MultiCastActionBarFrame",
-		"GamepadMainActionBarFrame", "GamepadReticle" },
+	-- (the game's controller layout, its bar, dot and button reminder box: the Controller row, Settings.lua)
+	bars = { "StatusTrackingBarManager", "StanceBar", "PossessActionBar", "MultiCastActionBarFrame" },
 	player = { "PlayerFrame" },
 	hud = { "QuietHUDWarlockHud", "QuietHUDWarlockMulti", "WarlockHudMultiTargetWindow" }, -- Warlock HUD (woc.watchWarlockHud), and frames you add with /qhud add hud
 	quest = { "ObjectiveTrackerFrame", "Questie_BaseFrame" }, -- Questie hides the game's tracker and shows its own
-	map = { "MinimapCluster" },
+	-- The group finder's eye (QueueStatusButton): pinned to the minimap's edge on Forever but a frame of the screen, so it never
+	-- faded with it (the owner, Nov 12: "can we add this dungeon/party finder icon to qhud"). Shown only while you're queued.
+	map = { "MinimapCluster", "QueueStatusButton" },
 	micro = { "MicroMenuContainer" }, -- (Dominos' menu bar and bag bar: see the Dominos block below)
 	bags = { "BagsBar" },
 	reporter = { "PTR_IssueReporter", "PTR_IssueReporterButton", "PTR_IssueReporterFrame" },
@@ -124,7 +124,7 @@ local SELF_FADING = { PlayerCastingBarFrame = "cast", CastingBarFrame = "cast", 
 local ACTION_BARS = {
 	"MainActionBar", "MainMenuBar", "ForeverClassicUIBar", "MultiBarBottomLeft", "MultiBarBottomRight", "MultiBarRight",
 	"MultiBarLeft", "MultiBar5", "MultiBar6", "MultiBar7", "MultiBar8", "StanceBar", "MultiCastActionBarFrame",
-	"MultiCastFlyoutFrame", "MultiCastFlyoutFrameOpenButton", "SpellFlyout", "GamepadMainActionBarFrame",
+	"MultiCastFlyoutFrame", "MultiCastFlyoutFrameOpenButton", "SpellFlyout",
 }
 -- (WackyBars' holders count by their buttons: see WB_HOLDERS above)
 for i = 1, #WB_HOLDERS do

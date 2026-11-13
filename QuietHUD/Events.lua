@@ -109,12 +109,40 @@ ns.applyMouseWatch = function()
 end
 ns.applyMouseWatch()
 
+-- Spy's alarm brings the Spy row up (its New info column): every alert function Spy has, hooked once Spy is loaded (Spy
+-- loads after QuietHUD; its Forever port replaces AlertPlayer while loading, so the hook goes on after). Cost: one time
+-- written per alarm, nothing between alarms.
+local SPY_ALARMS = { "AlertPlayer", "AlertStealthPlayer", "AlertProwlPlayer", "AlertWatch", "AlertGuild" }
+local function hookSpy()
+	local spy = _G.Spy
+	if ns.spyHooked or type(spy) ~= "table" then return end
+	ns.spyHooked = true
+	for _, n in ipairs(SPY_ALARMS) do
+		if type(spy[n]) == "function" then
+			hooksecurefunc(spy, n, function()
+				ns.spyUntil = GetTime() + (DB.questSeconds or 10)
+				wakeLoop()
+			end)
+		end
+	end
+	-- Pixel shift moves Spy's window (Core.lua, the shift list). Spy places it again whenever its list changes size, from its
+	-- saved spot or from where it is now (shift included): the shift is told which, so it never adds up into its place.
+	if type(spy.RestoreMainWindowPosition) == "function" then
+		hooksecurefunc(spy, "RestoreMainWindowPosition", function(_, x, y)
+			if not ns.shiftOwnerPlaced then return end
+			local pos = spy.db and spy.db.profile and spy.db.profile.MainWindow and spy.db.profile.MainWindow.Position
+			ns.shiftOwnerPlaced(spy.MainWindow, pos ~= nil and pos.x == x and pos.y == y)
+		end)
+	end
+end
+
 ev:SetScript("OnEvent", function(_, event, arg1, _, _, arg4)
 	wakeLoop()
 	if event == "ADDON_LOADED" then
 		woc.forget()
 		if arg1 == ADDON then initDB() end
 		if arg1 == "Warlock_Hud" then woc.watchWarlockMulti() end
+		if arg1 == "Spy" then pcall(hookSpy) end
 	elseif event == "VARIABLES_LOADED" then
 		initDB()
 	elseif event == "PLAYER_ENTERING_WORLD" then
@@ -140,6 +168,7 @@ ev:SetScript("OnEvent", function(_, event, arg1, _, _, arg4)
 				wakeLoop()
 			end)
 		end
+		pcall(hookSpy)
 		ns.armEntry()
 		discoverBars()
 		rebuildLists()

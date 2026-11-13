@@ -202,7 +202,7 @@ local function update(dt)
 			elseif s.ownedHover then
 				names = woc.ownedNames(s.g, names)
 			end
-			vis[s.g] = triggered(gTrig(s), wake, moved, false, combat, inside, names, s.deep)
+			vis[s.g] = triggered(gTrig(s), wake, moved, s.info and now < (ns[s.info] or 0) or false, combat, inside, names, s.deep)
 		end
 		-- Casting shows the cast bar (not when it is set to hide in combat and you are in combat). A running breath, fatigue or feign
 		-- death timer shows the breath bar whatever its settings: with the HUD idle the breath bar would be invisible while you drown.

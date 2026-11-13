@@ -17,6 +17,9 @@ local DEFAULTS = {
 	fadeMinimap = true,
 	mapFollowsHud = true,
 	mapDarken = false,
+	mapDarkFloor = 0, -- the darkened minimap's own Faded (0: the Global Faded)
+	mapCover = 0, -- the arrow cover's opacity (0: off), Minimap.lua
+	mapCoverSize = 20, -- its size
 	fadeTracker = true,
 	fadeChat = true,
 	chatDim = true,
@@ -86,18 +89,41 @@ local DEFAULTS = {
 -- The saved file's version. A file from before the launch build has none and is not read: everyone starts on these
 -- defaults. A later change that renames or removes a setting, or changes what one means, adds a step to MIGRATIONS and
 -- raises this number (see initDB in Core.lua).
-local SETTINGS_VERSION = 3
+local SETTINGS_VERSION = 4
 
 -- The unit frame, aura and alert rows, the cast bar and the breath bar, and Dominos. Each has its own frames, its own row in
 -- the trigger grid (Fade and triggers) and its own opacity; their settings are named after the group (fadeTarget,
 -- trigTarget, ovTarget). cols is which trigger columns the row offers (5 is Hide in combat). The cast bar is shown while you
 -- cast and the breath bar while a timer runs.
+-- Whether the game's controller layout is on (Options, Controller, or the controller interface style): the Controller row is
+-- on the Elements and Opacity pages, and counts, only then. Asked when the lists are built and when the settings window is.
+local function padSetUp()
+	local ok, on = pcall(function()
+		return (C_GamePad and C_GamePad.IsEnabled and C_GamePad.IsEnabled())
+			or (InputUtil and InputUtil.IsGamepadUIEnabled and InputUtil.IsGamepadUIEnabled())
+	end)
+	return ok and on and true or false
+end
 local SPLIT = {
 	-- The pet bar (the owner, Nov 10: "put the pet actionbar in elements", "i need to hide it"): Fade and its triggers here, its
 	-- Shown on the Opacity page (ovPetBar). Its frames and buttons are the Action bars page's Pet bar row (ActionBars.lua
 	-- woc.applyPetBar writes them), which keeps only Hide hotkeys, Hide names and Click through for it. hover: what Mouse over
 	-- looks at (Frames.lua adds WackyBars' holders). Not counted when the Opacity columns split.
 	{ g = "petBar", label = "Pet bar", frames = {}, uncounted = true },
+	-- The game's controller layout, a group of its own, one row per piece (the owner, Nov 12: "it should have its own row if the
+	-- controller thing is turned on", then "controller should be its own main section ... seperate things indvidually"): its
+	-- action bar in place of Action Bar 1, the aiming dot in the middle of the screen, and the button reminder box at the top
+	-- left (LB/RB targeting, Ping, Auto-Run, and the lists shown while LB / RB are held; Blizzard_Gamepad's
+	-- GamepadPersistentInputLegend, a small holder with the box you see as a child, so mouse over looks at the children: deep).
+	-- All hidden by the game while no controller is set up. Each starts as a copy of the Action bars row (MIGRATIONS[4]), where
+	-- they were before. when: on the pages only while a controller is set up (the game's option to enable a controller).
+	{ g = "padBar", label = "Controller bar", frames = { "GamepadMainActionBarFrame" }, uncounted = true, when = padSetUp },
+	-- The aiming dot has no Mouse over (cols without 4, an empty hover list): it sits where you aim, so the cursor on a player
+	-- or a mob is on it, and that brought the rows up (the owner, Nov 12: "when my cursor goes over people it pops the menus up").
+	{ g = "padDot", label = "Aiming dot", frames = { "GamepadReticle" }, uncounted = true, when = padSetUp,
+		cols = { 7, 8, 9, 10, 2, 6, 5 }, hover = {} },
+	{ g = "padLegend", label = "Button reminder", frames = { "GamepadPersistentInputLegend" }, deep = true, uncounted = true,
+		when = padSetUp },
 	{ g = "target", label = "Target and focus", frames = { "TargetFrame", "FocusFrame" } },
 	-- PetSpellBar is BetterBlizzFrames' pet cast bar: a separate frame on the screen that would not fade with PetFrame
 	-- (the name means nothing without that addon, and is skipped then).
@@ -154,6 +180,17 @@ local SPLIT = {
 	-- host). Fade unticked by default: it is up for the whole flight, and in the air nothing else shows the HUD.
 	{ g = "flightTimer", label = "Flight timer", frames = { "NaowhForeverFlightTimer" }, addon = "NaowhForever",
 		uncounted = true, fade = false },
+	-- Spy's window (the Nearby list of enemy players it saw), on the Elements and Opacity pages only while Spy is loaded (the
+	-- owner runs it on a PvP realm, Nov 12: "add it to qhud tie it to something"). Fades and comes up like the other rows, and
+	-- has New info, ticked by default: Spy's alarm (a new enemy, a stealthed or prowling one, a watched player or guild) brings
+	-- it up for the "Stay shown after something new" seconds (the owner: "it should get new info. any time the alarm goes off
+	-- it should come up"). The alarm is heard through hooks on Spy's alert functions (Events.lua hookSpy), nothing polled; info
+	-- names the ns field the loop compares the time with.
+	-- Spy's warning in the middle of the screen (Spy_AlertWindow) and its sound are left alone: they are the warning, and Spy
+	-- flashes that box itself for a few seconds. Spy sets the window's opacity only on a zone change or from its own slider, so
+	-- QuietHUD writes it directly (no host); Spy makes it after QuietHUD loads, the CreateFrame hook (Core.lua) catches it.
+	{ g = "spy", label = "Spy", frames = { "Spy_MainWindow" }, addon = "Spy", uncounted = true,
+		cols = { 7, 8, 9, 10, 2, 3, 4, 5, 6 }, trig = 78, info = "spyUntil" },
 }
 local SPLIT_BY = {}
 for _, s in ipairs(SPLIT) do
@@ -174,10 +211,11 @@ SPLIT.mainTrig = { "trigBars", "trigPlayer", "trigUnits", "trigTracker", "trigCh
 -- Opacity page.)
 SPLIT.groups = {
 	{ "Bars", { "Action bars", "Pet bar", "Bags bar", "Menu bar", "Dominos", "Cast bar", "Breath bar" } },
+	{ "Controller", { "Controller bar", "Aiming dot", "Button reminder" }, when = padSetUp },
 	{ "Unit frames", { "Player frame", "Target and focus", "Pet frame", "Party and raid", "Party panel" } },
 	{ "Auras and alerts", { "Buffs", "Debuffs", "Cooldown trackers", "Alerts" } },
 	{ "Info", { "Objective tracker", "Chat", "Minimap" } },
-	{ "Other", { "Damage meter", "Added frames", "Naowh", "Naowh alerts", "Flight timer" } },
+	{ "Other", { "Damage meter", "Added frames", "Naowh", "Naowh alerts", "Flight timer", "Spy" } },
 }
 
 -- For the files after this one (QuietHUD.toc).

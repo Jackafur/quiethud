@@ -26,6 +26,7 @@ local LISTS = {}
 -- a chat message, the end of a fight and moving keep their elements shown; the frames that count for the action bars' mouse
 -- over and the action bars found by name (rebuildLists); /qhud debug.
 ns.drawn, ns.questUntil, ns.mapUntil, ns.chatUntil, ns.combatEnd, ns.moveUntil = false, 0, 0, 0, 0, 0
+ns.spyUntil = 0 -- (Spy's alarm, the Spy row's New info: Events.lua hookSpy)
 ns.peekUntil = 0   -- the "hold to show" key: everything is shown until this time
 ns.barHover, ns.discovered = {}, {}
 -- Buttons that another addon has moved out of their bar (bars[i] for Action Bar i, extra[k] for the sets in EXTRA_BUTTONS):
@@ -485,6 +486,8 @@ local function rebuildLists()
 			local ok, yes = pcall(isLoaded, s.addon)
 			if ok and not yes then woc.off[s.g] = true end
 		end
+		-- (the Controller row while no controller is set up: not on the page either)
+		if s.when and not s.when() then woc.off[s.g] = true end
 	end
 	-- The same for RestedXP's rows (Guide window, Arrow): without RestedXP, and with no frame added to their groups by hand,
 	-- their boxes count for nothing. The Arrow row's boxes still count while Naowh Forever is loaded: its waypoint is in the
@@ -568,6 +571,10 @@ local function rebuildLists()
 				add("QuietHUDWarlockMulti")
 				add("WarlockHudMultiTargetWindow")
 			end
+			-- Spy's window (its Nearby list) sits in one spot (the owner, Nov 12: "make it so the screen shift thing moves it
+			-- around"). Only while Spy is loaded. Spy places it again from where it is now whenever the list changes size:
+			-- Events.lua hookSpy tells the shift (ns.shiftOwnerPlaced), so the shift is never taken into its place.
+			if loaded("Spy") then add("Spy_MainWindow") end
 			-- Chattynator's windows, with the game's chat windows (named just above)
 			if loaded("Chattynator") then
 				woc.nameChattynator()
@@ -817,6 +824,15 @@ MIGRATIONS[3] = function(saved)
 		if bit(saved[k], 9) then saved[k] = saved[k] - 256 end
 	end
 	if type(saved.barPeek) == "number" and not bit(saved.barPeek, 9) then saved.barPeek = saved.barPeek + 256 end
+end
+-- 1.7.0 to the next. The controller's bar, aiming dot and button reminder box got a group of their own, a row each (the owner,
+-- Nov 12); they faded with the Action bars row before, so each row starts as a copy of it: Fade, what shows it, Shown.
+MIGRATIONS[4] = function(saved)
+	for _, g in ipairs({ "PadBar", "PadDot", "PadLegend" }) do
+		if saved["fade" .. g] == nil and type(saved.fadeBars) == "boolean" then saved["fade" .. g] = saved.fadeBars end
+		if saved["trig" .. g] == nil and type(saved.trigBars) == "number" then saved["trig" .. g] = saved.trigBars end
+		if saved["ov" .. g] == nil and type(saved.ovBars) == "number" then saved["ov" .. g] = saved.ovBars end
+	end
 end
 local dbLoaded = false
 local function initDB()

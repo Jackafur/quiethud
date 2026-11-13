@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.7.1
+
+Your settings carry over.
+
+### Added
+
+- **A Controller group** on the Elements and Opacity pages, listed while a controller is enabled in the game's options, with a row each for the controller bar, the aiming dot in the middle of the screen and the button reminder box at the top left (LB/RB targeting, Ping, Auto-Run). They no longer fade with the Action bars. Each row starts as a copy of your Action bars row, so nothing changes until you change it. The aiming dot has no Mouse over: it sits where you aim, so putting the cursor on a player or a mob no longer brings your bars up.
+- **A Spy row** on the Elements and Opacity pages while Spy is loaded: its window (the list of enemy players near you) fades and comes up like the rest of the HUD, and comes up for a few seconds whenever Spy's alarm goes off (New info, ticked; the same seconds as the tracker and minimap). Spy's warning in the middle of the screen and its sound are never faded. Untick Fade on the row to keep the list up. Pixel shift moves Spy's window too.
+- **Darkened map's Faded** (Opacity page, under "Darken the minimap"): how bright the darkened minimap stays while it's faded. With the Global Faded at 0.30 the darkened map went 70% black, a dark hole in the screen (and on an OLED a circle that wears less than the rest). Set it to 0.60 and it only goes 40% dark. The ring and buttons around it still fade to the Global Faded. Global (the default) keeps the old look.
+- **Arrow cover** (Opacity page, under the minimap's darken box, Off by default): a small dark circle over the middle of the minimap while it's faded, to take the edge off your bright arrow. The game doesn't let addons fade the arrow itself. Set how dark it is with Arrow cover and how big with Arrow cover size.
+- **The group finder eye** next to the minimap fades with the minimap now.
+
+### Known issue
+
+- Low health on an action bar can make other addons that read that bar's opacity throw errors. I've seen it with Naowh's XP bar and Chattynator. If you get those, untick Low health.
+
 ## 1.7.0
 
 Your settings carry over. If you ran 1.7.0-beta1 this is that build plus the fixes below.

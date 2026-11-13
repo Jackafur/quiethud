@@ -31,6 +31,9 @@ local HELP = {
 		[6] = "Shown while you are inside a dungeon or a raid.",
 	},
 	rows = {
+		["Controller bar"] = "The controller's action bar, in place of Action Bar 1. The Controller rows are only listed while a controller is enabled in the game's options (reload after switching it on). Each started as a copy of the Action bars row.",
+		["Aiming dot"] = "The dot in the middle of the screen in controller mode.",
+		["Button reminder"] = "The box at the top left in controller mode: LB/RB targeting, Ping, Auto-Run, and the lists it shows while you hold LB or RB.",
 		["Pet bar"] = "The pet bar, also its buttons on a WackyBars bar. Untick every box after Fade to keep it faded; with the Global Faded at 0 it is hidden (tick its Click through on the Action bars page, or a click there still presses a pet button).",
 		["Action bars"] = "Action Bars 1 to 8, plus the stance, totem and XP bars. Which bars fade is picked on the Action bars page. With Dominos loaded, Dominos hides the game's bars and its own are on the Dominos row: this row then only has what Dominos leaves, like the totem bar.",
 		["Dominos"] = "Dominos' bars in one row: its action bars, pet, stance and possess bars, XP bar, bag bar and menu. It starts as a copy of the Action bars row; after that the two are separate. Best with Dominos' own fade off, so the two don't fight.",
@@ -52,6 +55,7 @@ local HELP = {
 		["Minimap"] = "The minimap and the buttons around it.",
 		["Damage meter"] = "The game's own damage meter.",
 		["Added frames"] = "Frames you added yourself with /qhud add hud. Empty unless you did that.",
+		["Spy"] = "Spy's window, the list of enemy players near you. New info: it comes up when Spy's alarm goes off. Spy's warning in the middle of the screen is never faded.",
 		["Guide windows"] = "The RestedXP guide window and its targets and items windows.",
 		["Arrow"] = "The RestedXP waypoint arrow.",
 		["Guide window"] = "The RestedXP guide window.",
@@ -92,7 +96,7 @@ local PAGES = {
 		{ "heading", "Mouse move" },
 		{ "slider", "mouseSeconds", "Stay shown after the mouse stops (seconds)", 1, 60, 1, "%.0f", nil, nil, "How long an element stays shown after you stop moving the cursor, turning the camera or moving a controller stick.", 420 },
 		{ "heading", "New info" },
-		{ "slider", "questSeconds", "Stay shown after quest progress or a new zone (seconds)", 3, 180, 1, "%.0f", nil, nil, "How long the tracker, the minimap and RestedXP stay shown after something new. The chat has its own on the Chat page.", 420 },
+		{ "slider", "questSeconds", "Stay shown after quest progress or a new zone (seconds)", 3, 180, 1, "%.0f", nil, nil, "How long the tracker, the minimap, RestedXP and Spy's window (after its alarm) stay shown after something new. The chat has its own on the Chat page.", 420 },
 		{ "heading", "Player frame" },
 		{ "check", "notFullShows", "Show the player frame while health or power is changing", "Shows the player frame only, while your health or your power bar goes up or down and for a few seconds after (3, or 8 for mana, which waits a moment before it comes back). In practice: until you are topped off. The game does not let addons read your health or power, so QuietHUD goes by them changing. Hide in combat on the Player frame row still wins in a fight." },
 		{ "heading", "Fading out" },
@@ -111,6 +115,9 @@ local PAGES = {
 		-- (its Shown is the Minimap row under Shown per element)
 		{ "heading", "Minimap" },
 		{ "check", "mapDarken", "Darken the minimap instead of making it see-through", "Unticked (default): as the minimap fades it turns see-through. The little icons on it (your arrow, quest and party icons) stay bright, because the game does not let addons fade them.\nTicked: as the minimap fades it turns darker instead, and the icons darken with it." },
+		{ "slider", "mapDarkFloor", "Darkened map's Faded", 0, 0.9, 0.05, "%.2f", "Global", true, "With Darken the minimap ticked: how bright the map stays while it is faded, so it does not turn into a black hole on the screen. Global (default): as dark as the Global Faded.\nOnly the map and the icons on it. The ring and buttons around it fade to the Global Faded. With the Global Faded at 0 the minimap still goes away when faded." },
+		{ "slider", "mapCover", "Arrow cover", 0, 1, 0.05, "%.2f", "Off", true, "A small dark circle over the middle of the minimap while it is faded, to take the edge off your bright arrow (the game does not let addons fade the arrow itself). This sets how dark the circle is. Off (default): no circle." },
+		{ "slider", "mapCoverSize", "Arrow cover size", 8, 48, 1, "%d", nil, true, "How big the circle is, to fit over your arrow." },
 		{ "note", "Everything starts on Global. Hover a name for more." },
 	} },
 	{ title = "Action bars", items = {
@@ -165,7 +172,8 @@ do
 		["Player frame"] = "ovPlayer", ["Bags bar"] = "ovBagsBar", ["Menu bar"] = "ovMicro", ["Added frames"] = "ovHud",
 		["Guide windows"] = "rxpShown", ["Arrow"] = "navShown" }
 	local addonOf = { ["Guide windows"] = "RXPGuides", ["Arrow"] = "RXPGuides" }
-	for _, s in ipairs(SPLIT) do keyOf[s.label], addonOf[s.label] = s.ovKey, s.addon end
+	local whenOf = {}
+	for _, s in ipairs(SPLIT) do keyOf[s.label], addonOf[s.label], whenOf[s.label] = s.ovKey, s.addon, s.when end
 	-- RestedXP's two come last, as its rows do on the Elements page, and only while it is loaded.
 	local groups = {}
 	for _, group in ipairs(SPLIT.groups) do groups[#groups + 1] = group end
@@ -185,11 +193,11 @@ do
 	end
 	for _, group in ipairs(groups) do
 		local column = count < total / 2 and left or right
-		column[#column + 1] = { "group", group[1], addon = group.addon }
+		column[#column + 1] = { "group", group[1], addon = group.addon, when = group.when }
 		for _, label in ipairs(group[2]) do
 			-- (an addon's slider, Dominos', is left out while it is not loaded, as the page items are)
 			column[#column + 1] = { "slider", keyOf[label], label, 0, 1, 0.05, "%.2f", "Global", "column", HELP.rows[label],
-				addon = addonOf[label] }
+				addon = addonOf[label], when = whenOf[label] }
 			if not uncounted[label] then count = count + 1 end
 		end
 	end
@@ -649,13 +657,13 @@ do
 		local byLabel, used, rows = {}, {}, {}
 		for _, r in ipairs(GRIDS.elements.rows) do byLabel[r[1]] = r end
 		for _, s in ipairs(SPLIT) do
-			if not s.noGrid then byLabel[s.label] = { s.label, s.fadeKey, s.trigKey, s.cols, addon = s.addon } end
+			if not s.noGrid then byLabel[s.label] = { s.label, s.fadeKey, s.trigKey, s.cols, addon = s.addon, when = s.when } end
 		end
 		for _, group in ipairs(SPLIT.groups) do
 			local first = true
 			for _, label in ipairs(group[2]) do
 				if byLabel[label] then
-					if first then rows[#rows + 1], first = { heading = group[1] }, false end
+					if first then rows[#rows + 1], first = { heading = group[1], when = group.when }, false end
 					rows[#rows + 1], used[label] = byLabel[label], true
 				end
 			end
@@ -738,7 +746,7 @@ do
 		end
 		local rows = {}
 		for _, row in ipairs(grid.rows) do
-			if loaded(row.addon) then rows[#rows + 1] = row end
+			if loaded(row.addon) and not (row.when and not row.when()) then rows[#rows + 1] = row end
 		end
 		local extra = grid.extra
 		if extra and loaded(extra.addon) then
@@ -990,6 +998,7 @@ do
 		-- An item for another addon is left out while that addon is not loaded (when the game cannot say, it is shown).
 		local isLoaded = (C_AddOns and C_AddOns.IsAddOnLoaded) or IsAddOnLoaded
 		local function wanted(item)
+			if item.when and not item.when() then return false end -- (the Controller row's slider, without a controller)
 			if not (item.addon and isLoaded) then return true end
 			local ok, loaded = pcall(isLoaded, item.addon)
 			return not ok or loaded and true or false

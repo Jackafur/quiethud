@@ -18,7 +18,8 @@ do
 	-- with its own opacity. The map itself is faded with its mask instead (see applyMinimapMask), or, for the "darken it"
 	-- option, with a black overlay on the map (which also dims the player and quest arrows the game draws on it). The other
 	-- parts of the cluster are faded one by one. The cluster and the frames the map sits in keep opacity 1.
-	local mapOverlay, mapParts, mapPartSet, mapDimApplied, mapAncestors
+	local mapOverlay, mapParts, mapPartSet, mapDimApplied, mapAncestors, mapCover
+	local mapDimFloor = 0 -- (the darkened map's own Faded the dark layer was last set with, see applyMinimapAlpha)
 	local mapDimPartsAt = 0 -- (the dark layer's next look at the parts, see applyMinimapAlpha)
 	-- An addon that sets a part's opacity while the map is faded (RestedXP sets its step pin again as it redraws) would
 	-- show it at that opacity until the next half-second pass, which looks like blinking. So each part's SetAlpha is hooked
@@ -125,7 +126,7 @@ do
 
 	local function fadeMapParts(frame, factor)
 		for _, child in ipairs({ frame:GetChildren() }) do
-			if child ~= Minimap and child ~= mapOverlay then
+			if child ~= Minimap and child ~= mapOverlay and child ~= mapCover then
 				if mapAncestors[child] then
 					fadeMapParts(child, factor)
 				else
@@ -201,18 +202,23 @@ do
 		-- The parts again every half second while the opacity holds, for map pins that addons add and frames added to the map
 		-- group while the map is faded (as with the mask, below).
 		local now = GetTime()
-		if mapDimApplied and math.abs(mapDimApplied - a) < 0.004 then
+		-- The darkened map's own Faded (Opacity page, 0 = Global): the dark layer never goes darker than that, so a faded
+		-- map is not a black hole in the screen (a player's ask, Nov 13: on an OLED the map's circle burns in less than the
+		-- rest). Only the map and the icons on it; the parts around it fade to the Global Faded as before.
+		local floor = DB.mapDarkFloor
+		floor = (type(floor) == "number" and floor > 0) and math.min(floor, 0.95) or 0
+		if mapDimApplied and math.abs(mapDimApplied - a) < 0.004 and mapDimFloor == floor then
 			if now < mapDimPartsAt then return end
 			mapDimPartsAt = now + 0.5
 			fadeMapAround(a)
 			return
 		end
-		mapDimApplied, mapDimPartsAt = a, now + 0.5
+		mapDimApplied, mapDimPartsAt, mapDimFloor = a, now + 0.5, floor
 		local overlay = getMapOverlay()
 		local square = mapShape() == "SQUARE"
 		overlay.square:SetShown(square)
 		overlay.round:SetShown(not square)
-		overlay:SetAlpha(1 - a)
+		overlay:SetAlpha(1 - math.max(a, floor))
 		overlay:Show()
 		fadeMapAround(a)
 	end
@@ -298,6 +304,42 @@ do
 		fadeMapAround(a)
 	end
 
+	-- The arrow cover (a player's ask, Nov 13, the owner: "we can put on his dumb circle over the arrow"): the game's arrow
+	-- ignores opacity, so on a faded map it stays bright in the middle. A small dark circle of a fixed opacity sits over it
+	-- while the map is below full. It is not one of the faded parts (a cover that faded with the map would dim the arrow
+	-- least when the map is faintest). Opacity 0 (Off, the default) and it is never made. Written on change.
+	local coverAlpha, coverSize = nil, nil
+	local function applyCover(a)
+		local want = DB.mapCover
+		want = (type(want) == "number" and want > 0 and a < 0.995) and math.min(want, 1) or 0
+		if want == 0 then
+			if mapCover and coverAlpha ~= 0 then mapCover:Hide() coverAlpha = 0 end
+			return
+		end
+		if not mapCover then
+			mapCover = CreateFrame("Frame", nil, Minimap)
+			mapCover:SetPoint("CENTER", Minimap, "CENTER")
+			mapCover:SetFrameLevel(Minimap:GetFrameLevel() + 21)
+			local tex = mapCover:CreateTexture(nil, "OVERLAY")
+			tex:SetAllPoints()
+			tex:SetColorTexture(0, 0, 0, 1)
+			if mapCover.CreateMaskTexture then
+				local mask = mapCover:CreateMaskTexture()
+				mask:SetAllPoints(tex)
+				mask:SetTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+				tex:AddMaskTexture(mask)
+			end
+		end
+		local size = DB.mapCoverSize
+		size = type(size) == "number" and math.max(4, math.min(size, 64)) or 20
+		if size ~= coverSize then mapCover:SetSize(size, size) coverSize = size end
+		if want ~= coverAlpha then
+			mapCover:SetAlpha(want)
+			mapCover:Show()
+			coverAlpha = want
+		end
+	end
+
 	-- How the minimap is faded: with the mask; with the dark layer for the "darken" option; and for a minimap that is neither
 	-- round nor square, the dark layer in buildings and cities and plain opacity in the open world.
 	local mapMode
@@ -317,6 +359,7 @@ do
 		end
 		if mode ~= "mask" and mapMaskStep then applyMinimapMask(1) end
 		if mode ~= "dark" and mapDimApplied then applyMinimapAlpha(1) end
+		applyCover(a)
 		if mode == "mask" then
 			applyMinimapMask(a)
 		elseif mode == "dark" then
