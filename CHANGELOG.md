@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.7.2
+
+Your settings carry over.
+
+### Fixed
+
+- **Arrow cover** goes away when the minimap comes up. It stayed on while the map was up at a Shown under 1 (the default 0.75).
+- **Darkened map's Faded** set above your Shown no longer makes the map brighter when it comes up than the Shown says.
+- **Spy's window** no longer creeps across the screen with pixel shift on while you drag Spy's Window scale slider.
+
 ## 1.7.1
 
 Your settings carry over.

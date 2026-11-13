@@ -131,7 +131,7 @@ local function hookSpy()
 		hooksecurefunc(spy, "RestoreMainWindowPosition", function(_, x, y)
 			if not ns.shiftOwnerPlaced then return end
 			local pos = spy.db and spy.db.profile and spy.db.profile.MainWindow and spy.db.profile.MainWindow.Position
-			ns.shiftOwnerPlaced(spy.MainWindow, pos ~= nil and pos.x == x and pos.y == y)
+			ns.shiftOwnerPlaced(spy.MainWindow, pos ~= nil and pos.x == x and pos.y == y, x, y)
 		end)
 	end
 end

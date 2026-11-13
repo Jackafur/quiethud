@@ -288,6 +288,8 @@ local function update(dt)
 			local ownKey = OVERRIDE_KEYS[g]
 			if ownKey and not edit and (DB[ownKey] or 0) > 0 then peak = math.max(DB[ownKey], 0.1) end
 			if g == "bars" then woc.barsPeak = peak end
+			-- (the map's "up" opacity: the Arrow cover and the darkened map's Faded measure "faded" against it, Minimap.lua)
+			if g == "map" then woc.mapPeak = peak end
 			-- Everything fades to the Global Faded.
 			local floor = idle
 			if goneNow and goneNow[g] then floor = 0 end
@@ -311,6 +313,7 @@ local function update(dt)
 			fading[g] = true
 		elseif fixedA then
 			if g == "bars" then woc.barsCur, woc.barsCurOwn = nil, nil end
+			if g == "map" then woc.mapPeak = fixedA end
 			woc.group(g, fixedA, true)
 			if g == "petBar" then woc.applyPetBar(fixedA) end
 			fading[g] = true

@@ -207,6 +207,9 @@ do
 		-- rest). Only the map and the icons on it; the parts around it fade to the Global Faded as before.
 		local floor = DB.mapDarkFloor
 		floor = (type(floor) == "number" and floor > 0) and math.min(floor, 0.95) or 0
+		-- (never above the map's up opacity: a Faded over the Shown would stop the map fading and make it brighter when up;
+		-- audit Nov 13)
+		floor = math.min(floor, woc.mapPeak or 1)
 		if mapDimApplied and math.abs(mapDimApplied - a) < 0.004 and mapDimFloor == floor then
 			if now < mapDimPartsAt then return end
 			mapDimPartsAt = now + 0.5
@@ -311,7 +314,9 @@ do
 	local coverAlpha, coverSize = nil, nil
 	local function applyCover(a)
 		local want = DB.mapCover
-		want = (type(want) == "number" and want > 0 and a < 0.995) and math.min(want, 1) or 0
+		-- (faded = below the map's up opacity, not below 1: with the map up at a Global Shown of 0.75 the cover stayed on;
+		-- audit Nov 13)
+		want = (type(want) == "number" and want > 0 and a < (woc.mapPeak or 1) - 0.005) and math.min(want, 1) or 0
 		if want == 0 then
 			if mapCover and coverAlpha ~= 0 then mapCover:Hide() coverAlpha = 0 end
 			return

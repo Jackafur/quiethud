@@ -267,7 +267,10 @@ do
 	-- Otherwise it started from where the frame is now, shift included, so the shift is taken back out of the new normal
 	-- (else the shift would add up into its place, a few pixels more each time). Out of combat only; in a fight the shift
 	-- steps aside as for any other move.
-	ns.shiftOwnerPlaced = function(f, fromSaved)
+	-- x, y (when the addon says where it put the frame): a spot equal to where the shifted frame was is "from now", whatever
+	-- the addon saved. Spy's Window scale slider saves the shifted spot and places it there on every step, which crept by
+	-- one shift a step when that counted as "saved" (audit Nov 13).
+	ns.shiftOwnerPlaced = function(f, fromSaved, x, y)
 		local st = type(f) == "table" and shiftState[f]
 		if not (st and st.wx and st.sig) or (InCombatLockdown and InCombatLockdown()) then return end
 		local okNow, now = pcall(anchorList, f)
@@ -275,6 +278,11 @@ do
 		local k = f:GetEffectiveScale() / UIParent:GetEffectiveScale()
 		if not (k >= 0.5 and k <= 2) then return end
 		local dx, dy = st.wx / k, st.wy / k
+		local old = st.base and st.base[1]
+		if fromSaved and type(x) == "number" and type(y) == "number" and old and type(old[4]) == "number" and type(old[5]) == "number"
+			and math.abs(x - (old[4] + dx)) < 0.5 and math.abs(y - (old[5] + dy)) < 0.5 then
+			fromSaved = false
+		end
 		local base = {}
 		for i, a in ipairs(now) do
 			base[i] = { a[1], a[2], a[3], fromSaved and a[4] or a[4] - dx, fromSaved and a[5] or a[5] - dy }
