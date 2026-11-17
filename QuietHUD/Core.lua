@@ -28,6 +28,7 @@ local LISTS = {}
 ns.drawn, ns.questUntil, ns.mapUntil, ns.chatUntil, ns.combatEnd, ns.moveUntil = false, 0, 0, 0, 0, 0
 ns.spyUntil = 0 -- (Spy's alarm, the Spy row's New info: Events.lua hookSpy)
 ns.peekUntil = 0   -- the "hold to show" key: everything is shown until this time
+ns.peekLingerUntil = 0 -- (after a hold key is let go, with Stay shown while the mouse moves: Loop.lua)
 ns.barHover, ns.discovered = {}, {}
 -- Buttons that another addon has moved out of their bar (bars[i] for Action Bar i, extra[k] for the sets in EXTRA_BUTTONS):
 -- faded on their own and counted for mouse over. ignoring: the buttons told to ignore their parent's opacity (checkElsewhere).
@@ -59,6 +60,15 @@ do
 	-- sets no frame in QuietHUD's lists to a plain 0 (the chat tabs go down to 0.2); the loss of control alert can pass
 	-- through a computed 0 as it runs out, and its next update sets 1, which takes it back.
 	local yielded = setmetatable({}, { __mode = "k" })
+	-- Except a frame whose addon only copies another frame's opacity into it (by name, filled below: Polestar: UI's unit
+	-- frames copy the game frame's they sit on). Its 0 is the game frame faded to 0, not a hide: on a new target it repainted
+	-- with that 0, and its frames came up only at its next repaint (the owner, 2026-11-16: "the actionbars load in faster then
+	-- the player frame", "on target"). Looked at only when a 0 comes in.
+	woc.copiesAlpha = {}
+	local function copies(f)
+		local ok, n = pcall(f.GetName, f)
+		return ok and n ~= nil and woc.copiesAlpha[n] or false
+	end
 	-- The Low health column's value per frame (a hidden value from the game, only ever handed back to SetAlpha, never
 	-- compared): what keep and the drift pass put back over the plain want (ChatGPT's audit of Nov 6, F1).
 	local lowKept = setmetatable({}, { __mode = "k" })
@@ -69,8 +79,11 @@ do
 		if writing then return end
 		if num(a) then
 			if a < 0.01 then
-				yielded[f], want[f], lowKept[f] = true, nil, nil
-				return
+				-- (a frame that copies another's opacity gets QuietHUD's back, below: see copies)
+				if not copies(f) then
+					yielded[f], want[f], lowKept[f] = true, nil, nil
+					return
+				end
 			elseif yielded[f] then
 				yielded[f] = nil
 				woc.forget() -- (shown again by its owner: written at the next update)
@@ -80,6 +93,8 @@ do
 		if not DB.enabled then return end
 		local w = want[f]
 		if w == nil then return end
+		-- (a frame that copies another's opacity times a factor of its own, Polestar: UI's party frames: a lower value is kept)
+		if num(a) and a < w - 0.005 and copies(f) == "lower" then return end
 		-- (a frame with a Low health or Low mana overlay is written again also when the outside value equals the plain one: that
 		-- write dropped the overlay; audit 2026-11-06 pre-1.6.0 F3)
 		if not lowKept[f] and type(a) == "number" and not (issecretvalue and issecretvalue(a)) and math.abs(a - w) < 0.005 then return end
@@ -99,7 +114,7 @@ do
 			-- First sight: a frame already at 0 that QuietHUD never wrote was hidden by another addon, shown or not (one
 			-- set to 0 and hidden, then shown again by the game with no SetAlpha call, stays at 0).
 			local okA, now = pcall(f.GetAlpha, f)
-			if okA and num(now) and now < 0.01 then
+			if okA and num(now) and now < 0.01 and not copies(f) then
 				yielded[f] = true
 				return
 			end
@@ -128,6 +143,21 @@ do
 	-- Twice a second: a held frame whose opacity moved without a SetAlpha call gets QuietHUD's back, and a frame left to
 	-- another addon (yielded) that is above 0 again, however it got there, is QuietHUD's again.
 	woc.drift = function()
+		-- A listed name whose frame did not exist at the last list rebuild: an addon that makes its window with no name and
+		-- sets the global itself (Guidelime's window two seconds after login and its arrow on first use, audit 2026-11-16
+		-- F3) never reaches the CreateFrame hook below. Its groups are written again once it appears. Cost: one table look
+		-- per such name twice a second, about 70 in a real game (the default names of addons that are not loaded count too).
+		local absent = woc.absent
+		if absent and next(absent) then
+			for n in pairs(absent) do
+				if type(_G[n]) == "table" then
+					absent[n] = nil
+					woc.forget()
+					if woc.hookAll then woc.hookAll() end
+				end
+			end
+		end
+		if ns.partyBgCheck then ns.partyBgCheck() end
 		for f in pairs(yielded) do
 			local ok, a = pcall(f.GetAlpha, f)
 			if ok and num(a) and a >= 0.01 then
@@ -138,6 +168,8 @@ do
 		if not DB.enabled then return end
 		for f, w in pairs(want) do
 			local ok, a = pcall(f.GetAlpha, f)
+			-- (Polestar: UI's party frames dim a phased member below the row's value: kept, as in keep; second audit F4)
+			if ok and num(a) and a < w - 0.005 and copies(f) == "lower" then ok = false end
 			-- (with an overlay kept the game reads back a hidden value; a plain one means the overlay was dropped)
 			if ok and type(a) == "number" and not (issecretvalue and issecretvalue(a)) and (math.abs(a - w) > 0.01 or lowKept[f]) then
 				writing = true
@@ -353,6 +385,19 @@ woc.nameRxpTimers = function()
 	end
 	if changed then woc.forget() end
 end
+-- Naowh's Dungeon Quest Tracker (NaowhForever_DungeonJournal/UI/QuestTracker.lua): a window with no name on UIParent, told
+-- apart from Naowh's other tracker windows by its dungeon picker and its Share All button. True when it was found.
+function woc.nameNaowhQuestTracker()
+	local kids = { UIParent:GetChildren() }
+	for i = 1, #kids do
+		local f = kids[i]
+		if type(f) == "table" and type(f.dungeonNames) == "table" and type(f.picker) == "table" and type(f.share) == "table" then
+			_G.QuietHUDNaowhQuestTracker = f
+			return true
+		end
+	end
+	return false
+end
 -- Naowh's Waypoint Pin (NaowhForever_QoL/Interface/Waypoints.lua): the navigator card at the top, the pin with its card in
 -- the world and the "behind you" cue at the bottom. None has a name, and Naowh builds all three at once, the first time
 -- the pin is needed: the pin, then the navigator (which gets its HUD Editor plate, "Waypoint Navigator"), then the cue.
@@ -411,10 +456,130 @@ woc.nameChattynator = function()
 		end
 	end
 end
+-- Every other piece in Naowh's HUD Editor joins a Naowh row by itself, so a Naowh piece no longer needs its own ask (the
+-- owner, 2026-11-14, its Library Books tracker: "i'd add as much as naowhs shit to qhud as possible", "like with out me
+-- asking"). Each piece Naowh lets you move is in its HUD Editor's list (placement.items: the label and the frame), built as
+-- Naowh makes it. A piece QuietHUD already lists by name, or has a row of its own (the waypoint, the threat meter, the flight
+-- timer), is left where it is. The rest are named QuietHUDNaowhAuto<label>: the panels that sit on the screen go into the
+-- Naowh row, everything else (pop-up reminders and alerts, fight displays, and any piece a later Naowh adds) into Naowh
+-- alerts, which never fades it out completely, so a warning still reaches you. Labels are Naowh's English ones; on another
+-- language a panel lands in Naowh alerts. Cost: one pass over Naowh's list at a rebuild; a piece built later is picked up
+-- by the BindMover hook below (one rebuild half a second later, however many pieces came); nothing in the loop.
+local NAOWH_PANELS = { ["Library Books"] = true, ["Sleeping Bag"] = true, ["Zone Info"] = true,
+	["Instance Tracker"] = true, ["Layer Tracker"] = true, ["Group XP"] = true, ["Group Buttons"] = true,
+	["Boat and Zeppelin Timers"] = true, ["Tracking"] = true, ["PvP Flag"] = true }
+-- (Druid Mana and Trinkets are combat displays: with the alerts, which never fade out completely; in the Naowh row, Mouse
+-- over only by default, they vanished in fights; audit 2026-11-16 F9)
+local NAOWH_OWN_ROW = { ["Waypoint Navigator"] = true, ["Threat Meter"] = true, ["Flight Timer"] = true }
+woc.naowhAuto = { naowh = {}, naowhAlerts = {} } -- the names given, per row
+woc.naowhAutoFrames = setmetatable({}, { __mode = "k" }) -- frame -> its name
+woc.nameNaowhAuto = function()
+	local editor = type(_G.NaowhForever) == "table" and _G.NaowhForever.HudEditor
+	local items = type(editor) == "table" and type(editor.placement) == "table" and editor.placement.items
+	if type(items) ~= "table" then return end
+	local listed = {}
+	for _, list in pairs(DEFAULT_LISTS) do
+		for _, n in ipairs(list) do
+			local f = _G[n]
+			if type(f) == "table" and not n:find("^QuietHUDNaowhAuto") then listed[f] = true end
+		end
+	end
+	for _, n in ipairs({ "QuietHUDNaowhWaypointNav", "QuietHUDNaowhWaypointPin", "QuietHUDNaowhWaypointCue" }) do
+		if type(_G[n]) == "table" then listed[_G[n]] = true end
+	end
+	-- (a piece the player added himself with /qhud add, to any row, stays where he put it and is not named into a Naowh
+	-- row: these are picked by QuietHUD itself, not a support he asked for. Under two names it was written by two rows and
+	-- hidden in Naowh alerts (audit Nov 16, F6); a hidden one came back with the Naowh row, and one in a Naowh row with Fade
+	-- unticked, as everyone who updated from 1.5.0 has it, sat at full (second audit Nov 16, F2, F5))
+	for _, list in pairs(DB.extra or {}) do
+		for _, n in ipairs(type(list) == "table" and list or {}) do
+			local f = _G[n]
+			if type(f) == "table" and not n:find("^QuietHUDNaowhAuto") then listed[f] = true end
+		end
+	end
+	local rows = { naowh = {}, naowhAlerts = {} }
+	for _, item in ipairs(items) do
+		local f, label = type(item) == "table" and item.frame, type(item) == "table" and item.label
+		if type(f) == "table" and type(label) == "string" and not listed[f] and not NAOWH_OWN_ROW[label] then
+			local name = woc.naowhAutoFrames[f] or ("QuietHUDNaowhAuto" .. label:gsub("[^%w]", ""))
+			if _G[name] == nil or _G[name] == f or woc.naowhAutoFrames[_G[name]] then
+				_G[name] = f
+				woc.naowhAutoFrames[f] = name
+				local list = rows[NAOWH_PANELS[label] and "naowh" or "naowhAlerts"]
+				list[#list + 1] = name
+			end
+		end
+	end
+	woc.naowhAuto = rows
+end
+-- The quest guide rows (Guide window, Targets, Arrow) work for Guidelime too (the owner, 2026-11-14: "ok just add them.
+-- guidelimes bullshit and sage guide"; a commenter, Sage, asked for Guidelime in October, when its windows had no names; by
+-- v6.021 they have: GuidelimeWindow, GuidelimeOngoingWindow, GuidelimeArrow, made on UIParent. Its target and use-item
+-- buttons sit inside GuidelimeWindow, so they fade with it. Guidelime_Sage is guide text shown in those same windows). The
+-- rows show while RestedXP or Guidelime is loaded; nothing is special-cased, the names go into the same lists.
+-- Polestar too (the owner, 2026-11-16: "just put in support for both to put that shit to bed", after a CurseForge report on
+-- Polestar; Polestar 0.3.7.2, POLESTAR below).
+ns.guideAddon = function()
+	local isLoaded = (C_AddOns and C_AddOns.IsAddOnLoaded) or IsAddOnLoaded
+	if not isLoaded then return "RXPGuides" end -- (a client that cannot say: the rows show, as before)
+	for _, a in ipairs({ "RXPGuides", "Guidelime", "Polestar" }) do
+		local ok, yes = pcall(isLoaded, a)
+		if ok and yes then return a end
+	end
+end
+-- The name the quest guide rows' heading shows (the Elements and Opacity pages)
+ns.guideName = function()
+	local a = ns.guideAddon()
+	return (a == "Guidelime" or a == "Polestar") and a or "RestedXP"
+end
+-- Polestar's frames, by list. Its windows, cards and toasts all hang off one layer as big as the screen (PolestarUIParent,
+-- its Core/Init.lua); only the guide window goes in a list, never the layer (a hosted move would take the window out of
+-- Polestar's own hide, and the toasts and setup windows are not HUD). Its action buttons (quest item, hearthstone, target,
+-- rare, bag, and the travel button under the arrow) are secure buttons on UIParent: the Targets, items row, faded where
+-- they are. Its arrow is a plain frame on UIParent: the Arrow row, hosted, so Polestar's own arrow opacity still counts.
+-- Polestar: UI (another author's companion) draws unit frames of its own over the game's, which it leaves in place with
+-- their art hidden; it copies the game frame's opacity only when it repaints (a health or power change), so they faded late
+-- and in jumps. Each goes in the row of the game frame it sits on. Its boss frames are left alone, like the game's.
+-- Names only while that addon is loaded.
+local POLESTAR = {
+	guide = { "PolestarGuideFrame" },
+	targets = { "PolestarQuestItemButton", "PolestarHearthButton", "PolestarTargetButton", "PolestarRareButton",
+		"PolestarBagButton", "PolestarTravelButton" },
+	arrow = { "PolestarNavArrow" },
+}
+local POLESTAR_UI = {
+	player = { "PolestarUIPlayerFrame" },
+	target = { "PolestarUITargetFrame", "PolestarUIFocusFrame", "PolestarUITargetToT", "PolestarUIFocusToT" },
+	pet = { "PolestarUIPetFrame" },
+	party = { "PolestarUIPartyFrame1", "PolestarUIPartyFrame2", "PolestarUIPartyFrame3", "PolestarUIPartyFrame4" },
+}
+-- (they copy the game frame's opacity, a 0 included: never taken as a hide, see woc.copiesAlpha. The party frames copy the
+-- member's opacity times the party frame's, and the game dims a member who is phased or in another group to 0.6: a lower
+-- value from them is kept, "lower"; audit 2026-11-16 F4)
+for g, names in pairs(POLESTAR_UI) do
+	for _, n in ipairs(names) do woc.copiesAlpha[n] = (g == "party") and "lower" or true end
+end
+-- A row's name as the Elements page shows it, for the messages about frames added by hand (woc.ignoredExtra).
+local ROW_LABELS = { bars = "Action bars", player = "Player frame", hud = "Added frames", quest = "Objective tracker",
+	map = "Minimap", chat = "Chat", nav = "Arrow", rxp = "Guide window", bags = "Bags bar", micro = "Menu bar",
+	reporter = "Menu bar" }
+woc.rowLabel = function(g)
+	if SPLIT_BY[g] then return SPLIT_BY[g].label end
+	if type(g) == "string" and g:find("^bar%d") then return "Action bars" end
+	return ROW_LABELS[g] or tostring(g)
+end
 local function rebuildLists()
 	local rxpTimers = _G.RXPFrameBarContainer
 	if not woc.rxpTimersHooked and type(rxpTimers) == "table" and type(rxpTimers.ClearAllPoints) == "function" then
 		woc.rxpTimersHooked = pcall(hooksecurefunc, rxpTimers, "ClearAllPoints", woc.nameRxpTimers) or nil
+	end
+	-- RestedXP's new guide window (its beta "V2 interface") is an AceGUI frame with no name on UIParent, shown in place of
+	-- RXPFrame, so it stayed solid while the Guide window row faded (the owner, 2026-11-14, a screenshot with Naowh off;
+	-- with Naowh on, Naowh's own window takes its place). RestedXP keeps the widget as _G.RXPV2GuideWindow once built
+	-- (at its login setup, before PLAYER_ENTERING_WORLD), so its frame is named here.
+	local v2 = _G.RXPV2GuideWindow
+	if type(v2) == "table" and type(v2.frame) == "table" and _G.QuietHUDRXPV2Window ~= v2.frame then
+		_G.QuietHUDRXPV2Window = v2.frame
 	end
 	-- Naowh's FPS / MS readout is a button with no name beside its top bar (bar.sys): named here so the Naowh row can fade it.
 	if not _G.QuietHUDNaowhSystem then
@@ -443,6 +608,12 @@ local function rebuildLists()
 				-- (the cue is made right after this call returns: looked for once the build is done)
 				C_Timer.After(0, function() woc.nameNaowhWaypoint(frame) end)
 			end
+			-- (any other piece built after login: the lists are made again once, half a second after the last one, so it
+			-- joins its Naowh row; see woc.nameNaowhAuto)
+			if type(frame) == "table" and not woc.naowhAutoFrames[frame] and not woc.naowhAutoSoon then
+				woc.naowhAutoSoon = true
+				C_Timer.After(0.5, function() woc.naowhAutoSoon = nil; rebuildLists() end)
+			end
 		end)
 	end
 	-- Naowh's HUD Editor puts its mover plates inside the frames it moves, so a faded frame hides its plate: while it is open,
@@ -467,6 +638,27 @@ local function rebuildLists()
 			and editor.placement.byLabel["Campfire Bag"]
 		if type(item) == "table" and type(item.frame) == "table" then _G.QuietHUDNaowhCampBag = item.frame end
 	end
+	-- Naowh's Dungeon Quest Tracker is not in its HUD Editor (it is dragged by its title), so neither BindMover nor the
+	-- automatic pickup below ever sees it (the owner, 2026-11-16, a screenshot of it: "add this in the naowh group"). Naowh
+	-- builds it the first time it opens, and every way it opens goes through Journal.QuestTracker.Show (the journal, its
+	-- settings, the auto-open on a loading screen): hooked once, the window is named on its first show (one pass over
+	-- UIParent's children, once a session; nothing in the loop). It goes in the Naowh row (Settings.lua).
+	local journal = type(_G.NaowhForever) == "table" and _G.NaowhForever.Journal
+	local questTracker = type(journal) == "table" and journal.QuestTracker
+	if type(questTracker) == "table" and type(questTracker.Show) == "function" then
+		if not woc.naowhQuestHooked then
+			woc.naowhQuestHooked = true
+			hooksecurefunc(questTracker, "Show", function()
+				if not _G.QuietHUDNaowhQuestTracker and woc.nameNaowhQuestTracker() then woc.forget() end
+			end)
+		end
+		-- (opened before the hook went on: Naowh has built it once it showed a dungeon; looked for once)
+		if not _G.QuietHUDNaowhQuestTracker and not woc.naowhQuestLooked and type(questTracker.Showing) == "function"
+			and questTracker.Showing() ~= nil then
+			woc.naowhQuestLooked = true
+			woc.nameNaowhQuestTracker()
+		end
+	end
 	-- (the Waypoint Pin built before the hook above: found from the HUD Editor's list the same way)
 	if not (_G.QuietHUDNaowhWaypointPin and _G.QuietHUDNaowhWaypointCue) then
 		local editor = type(_G.NaowhForever) == "table" and _G.NaowhForever.HudEditor
@@ -474,6 +666,7 @@ local function rebuildLists()
 			and editor.placement.byLabel["Waypoint Navigator"]
 		if type(item) == "table" and type(item.frame) == "table" then woc.nameNaowhWaypoint(item.frame) end
 	end
+	woc.nameNaowhAuto()
 	local dominos = SPLIT_BY.dominos
 	local dominosOwn = woc.dominosOwn()
 	-- An addon's row (Dominos) counts for nothing while that addon is not loaded: the row is not on the Elements page then,
@@ -493,8 +686,7 @@ local function rebuildLists()
 	-- their boxes count for nothing. The Arrow row's boxes still count while Naowh Forever is loaded: its waypoint is in the
 	-- nav list without RestedXP too (ChatGPT's audit, 2026-11-08 F1: a Weapon tick there was never looked at).
 	if isLoaded then
-		local ok, yes = pcall(isLoaded, "RXPGuides")
-		if ok and not yes and #(DB.extra.rxp or {}) == 0 and #(DB.extra.nav or {}) == 0 then
+		if not ns.guideAddon() and #(DB.extra.rxp or {}) == 0 and #(DB.extra.nav or {}) == 0 then
 			woc.off.rxp = true
 			local okN, naowhOn = pcall(isLoaded, "NaowhForever")
 			if not (okN and naowhOn) then woc.off.nav = true end
@@ -511,12 +703,24 @@ local function rebuildLists()
 		wbOff = ok and not yes
 	end
 	local function wbSkip(n) return wbOff and n:find("^WackyBars") ~= nil end
+	-- Polestar's and Polestar: UI's names (POLESTAR, POLESTAR_UI above), only while each is loaded
+	-- (Guidelime's: listed as before when the client cannot say)
+	local polestar, polestarUI, guidelime = false, false, true
+	if isLoaded then
+		local ok, yes = pcall(isLoaded, "Polestar")
+		polestar = ok and yes and true or false
+		ok, yes = pcall(isLoaded, "Polestar_UI")
+		polestarUI = ok and yes and true or false
+		ok, yes = pcall(isLoaded, "Guidelime")
+		guidelime = ok and yes and true or false
+	end
 	local before = {}
 	for g, list in pairs(LISTS) do
 		if not HOSTED[g] and g ~= "shift" then
 			for _, n in ipairs(list) do before[n] = true end
 		end
 	end
+	local extrasFor = {} -- (the frames added with /qhud add, per group: joined after every built-in list is made, below)
 	for _, g in ipairs(ALL_LISTS) do
 		local merged, seen = {}, {}
 		local function add(n)
@@ -538,6 +742,7 @@ local function rebuildLists()
 		if g == "micro" and not DB.hideReporter then
 			for _, n in ipairs(DEFAULT_LISTS.reporter) do add(n) end
 		end
+		if polestarUI then for _, n in ipairs(POLESTAR_UI[g] or {}) do add(n) end end
 		if g == "bars" then
 			for _, n in ipairs(ns.discovered) do
 				if not KNOWN_BAR_FRAMES[n] then add(n) end
@@ -555,6 +760,7 @@ local function rebuildLists()
 				-- stuff on my screen doesnt shift either")
 				for _, g in ipairs({ "naowh", "naowhAlerts", "flightTimer" }) do
 					for _, n in ipairs(SPLIT_BY[g] and SPLIT_BY[g].frames or {}) do add(n) end
+					for _, n in ipairs(woc.naowhAuto[g] or {}) do add(n) end -- (the HUD Editor's other pieces)
 				end
 			end
 			-- RestedXP's guide window and Naowh's own window for it (the owner, Nov 10: "naowhs RXP stuff doesnt shift"); its
@@ -562,7 +768,20 @@ local function rebuildLists()
 			if loaded("RXPGuides") then
 				add("RXPG_ARROW")
 				add("RXPFrame")
+				add("QuietHUDRXPV2Window") -- (RestedXP's new window, named in rebuildLists)
 				add("NaowhRXPWindow")
+			end
+			if loaded("Guidelime") then -- (its windows and arrow, see ns.guideAddon)
+				add("GuidelimeWindow")
+				add("GuidelimeOngoingWindow")
+				add("GuidelimeArrow")
+			end
+			-- Polestar's guide window and arrow sit in one spot too. Polestar saves their spot only when dragged or resized,
+			-- so the shift never creeps into it (audit 2026-11-16 F10). Polestar: UI's unit frames are placed from the game's
+			-- Edit Mode boxes and are not shifted.
+			if polestar then
+				add("PolestarGuideFrame")
+				add("PolestarNavArrow")
 			end
 			-- Warlock HUD's rows (one full-screen frame, named in findWarlockHud) and its Multi-Target window sit in one spot
 			-- in the middle of the screen (the owner, Nov 10: "the warlock hud rows thats like weak auras doesnt move").
@@ -585,20 +804,37 @@ local function rebuildLists()
 		end
 		-- The RestedXP windows are added by their checkboxes. The frames do not have to exist yet: they are looked up
 		-- by name every time they are faded.
+		-- Naowh's other HUD Editor pieces, named in woc.nameNaowhAuto
+		if g == "naowh" or g == "naowhAlerts" then
+			for _, n in ipairs(woc.naowhAuto[g] or {}) do add(n) end
+		end
 		if g == "rxp" then
 			if DB.rxpGuide then
 				add("RXPFrame")
+				add("QuietHUDRXPV2Window") -- (RestedXP's new window, named in rebuildLists)
 				for i = 1, 4 do add("QuietHUDRXPTimer" .. i) end -- (its timer bars, named above)
 			-- Naowh Forever's own window for RestedXP's guide (NaowhForever/Core/Integrations/RestedXP/Window.lua), shown in
 			-- place of RestedXP's while Naowh's RestedXP window is on (the owner, 2026-11-07: "add naowhs guide thing for rxp")
 			add("NaowhRXPWindow")
+			-- Guidelime's guide window (its target and use-item buttons are inside it) and its ongoing-steps window (only
+			-- while Guidelime is loaded, like Polestar's names; audit 2026-11-16 F11)
+			if guidelime then
+				add("GuidelimeWindow")
+				add("GuidelimeOngoingWindow")
+			end
+			if polestar then for _, n in ipairs(POLESTAR.guide) do add(n) end end
 			end
 			if DB.rxpTargets then
 				add("RXPTargetFrame")
 				add("RXPItemFrame")
+				if polestar then for _, n in ipairs(POLESTAR.targets) do add(n) end end
 			end
 		elseif g == "nav" then
-			if DB.rxpArrow then add("RXPG_ARROW") end
+			if DB.rxpArrow then
+				add("RXPG_ARROW")
+				if guidelime then add("GuidelimeArrow") end
+				if polestar then for _, n in ipairs(POLESTAR.arrow) do add(n) end end
+			end
 			-- Naowh's Waypoint Pin, named above (nothing while Naowh is not there or the pin was never built)
 			add("QuietHUDNaowhWaypointNav")
 			add("QuietHUDNaowhWaypointPin")
@@ -614,9 +850,64 @@ local function rebuildLists()
 		-- Faded times Faded; /qhud add refuses them now, a file from before can still hold one; audit Nov 10)
 		for _, n in ipairs(DB.extra[g] or {}) do
 			local v = _G[n]
-			if (v == nil or type(v) == "table") and not n:find("^WackyBars") then add(n) end
+			if (v == nil or type(v) == "table") and not n:find("^WackyBars") then
+				extrasFor[g] = extrasFor[g] or {}
+				table.insert(extrasFor[g], n)
+			end
 		end
 		LISTS[g] = merged
+	end
+	-- A frame added by hand with /qhud add that QuietHUD now fades by itself, or that holds a frame it fades by itself (a
+	-- layer as big as the screen, like Polestar's PolestarUIParent, under its guide window), is left out of a plain fade
+	-- row: the built-in support wins, so nothing fades twice and nobody has to /qhud remove anything after an update (the
+	-- owner, 2026-11-16: "if something wasnt added, and someone /added it, after we add support for it, whatever they
+	-- /added gets ignored"). Compared by frame, so a frame QuietHUD lists under a name of its own (Naowh's pieces) counts.
+	-- The hidden and mouseover rows keep their frames: those are choices, not a stand-in for support. /qhud list shows the
+	-- ones left out, /qhud add says so. Cost: at a list rebuild only (a parent walk per built-in frame), nothing in the loop.
+	local KEEP_EXTRA = { hidden = true, mouseover = true, shift = true }
+	-- (a frame holding a built-in one counts only when it is as big as the screen, a layer like Polestar's: the game's own
+	-- containers, RightManagedFrameContainer and BottomManagedFrameContainer, hold built-in frames next to boss frames, the
+	-- extra action button and the like, which a hover add of them faded; second audit Nov 16, F3)
+	local function screenWide(f)
+		local ok, w, h, sc = pcall(function() return f:GetWidth(), f:GetHeight(), f:GetEffectiveScale() end)
+		local W, H, S = UIParent:GetWidth(), UIParent:GetHeight(), UIParent:GetEffectiveScale()
+		return ok and type(w) == "number" and type(h) == "number" and type(sc) == "number" and W > 0 and H > 0
+			and w * sc >= 0.95 * W * S and h * sc >= 0.95 * H * S or false
+	end
+	local builtinFrame, builtinAncestor = {}, {}
+	for g, list in pairs(LISTS) do
+		if not KEEP_EXTRA[g] then
+			for _, n in ipairs(list) do
+				local f = _G[n]
+				if type(f) == "table" and not builtinFrame[f] then
+					builtinFrame[f] = g
+					local p = f
+					for _ = 1, 8 do
+						local ok, parent = pcall(p.GetParent, p)
+						if not ok or type(parent) ~= "table" or parent == UIParent or parent == WorldFrame then break end
+						if not builtinAncestor[parent] then builtinAncestor[parent] = n end
+						p = parent
+					end
+				end
+			end
+		end
+	end
+	woc.builtinFrame, woc.ignoredExtra = builtinFrame, {}
+	woc.builtinAncestor = setmetatable({}, { __index = function(_, f) return builtinAncestor[f] and screenWide(f) and builtinAncestor[f] or nil end })
+	for g, names in pairs(extrasFor) do
+		local list, have = LISTS[g], {}
+		for _, n in ipairs(list) do have[n] = true end
+		for _, n in ipairs(names) do
+			local f = _G[n]
+			local mine = not KEEP_EXTRA[g] and type(f) == "table" and (builtinFrame[f] or (builtinAncestor[f] and screenWide(f)))
+			if mine then
+				woc.ignoredExtra[n] = builtinFrame[f] and ("QuietHUD fades it with its " .. woc.rowLabel(builtinFrame[f]) .. " row")
+					or ("it holds " .. builtinAncestor[f] .. ", which QuietHUD fades by itself")
+			elseif not have[n] then
+				have[n] = true
+				list[#list + 1] = n
+			end
+		end
 	end
 	-- A frame that left a group (a box unticked, /qhud remove) is no longer faded, so it gets its opacity back.
 	-- A hosted list (the nav group, Naowh's alerts) does this itself, when it takes a frame out of its container.
@@ -632,9 +923,11 @@ local function rebuildLists()
 	end
 	ns.barHover = {}
 	local seen = {}
-	for _, list in ipairs({ ACTION_BARS, ns.discovered, not dominosOwn and dominos.barHover or {}, DB.extra.bars or {} }) do
+	local handAdded = DB.extra.bars or {}
+	for _, list in ipairs({ ACTION_BARS, ns.discovered, not dominosOwn and dominos.barHover or {}, handAdded }) do
 		for _, n in ipairs(list) do
-			if not seen[n] and not wbSkip(n) then
+			-- (a built-in bar's own name stays even when a hand-added copy of it is left out; second audit Nov 16, F1)
+			if not seen[n] and not wbSkip(n) and not (list == handAdded and woc.ignoredExtra[n]) then
 				seen[n] = true
 				ns.barHover[#ns.barHover + 1] = n
 			end
@@ -666,10 +959,12 @@ local function rebuildLists()
 	end
 	-- The lists changed: every group is written again (write on change, above).
 	woc.names, woc.selfFading, woc.owner = {}, {}, {}
+	woc.absent = {} -- (a listed name with no frame yet: looked for again in woc.drift)
 	for g, list in pairs(LISTS) do
 		for _, n in ipairs(list) do
 			woc.names[n] = true
 			if SELF_FADING[n] then woc.selfFading[g] = true end
+			if g ~= "shift" and _G[n] == nil then woc.absent[n] = true end
 		end
 	end
 	for _, list in ipairs(WRITE_ORDER) do
@@ -834,6 +1129,9 @@ MIGRATIONS[4] = function(saved)
 		if saved["ov" .. g] == nil and type(saved.ovBars) == "number" then saved["ov" .. g] = saved.ovBars end
 	end
 end
+-- (5: a settings update was tried for 1.7.3 on 2026-11-16 and dropped after the audit: unticking Fade on a row whose Shown
+-- sat below the Global Faded wrote every action bar, lost Hide in combat and stranded the cast and breath bars. An element
+-- set below the Global Faded now fades lower instead, the changelog says so. The number stays used: SETTINGS_VERSION 5.)
 local dbLoaded = false
 local function initDB()
 	if dbLoaded then return end
@@ -882,18 +1180,23 @@ local function initDB()
 end
 
 -- The setting that gives a group its own opacity, in place of the Global Shown.
+-- An element's Faded. An element whose own Shown is set below the Global Faded still fades, lowered by the same share as its
+-- Shown is below the Global Shown (Shown 1, Faded 0.2, an element at 0.1 fades to 0.02): a CurseForge ask, 2026-11-16, "set
+-- my player frame more transparent than everything else"; the owner: "souns annoying to have 2 bars for each thing", so no
+-- second slider. Every other element fades to the Global Faded, as before: the share applied to every element below the
+-- Global Shown (the first try, the same day) changed existing setups, the owner's minimap at 0.45 went to 0.09 from 0.2 ("so
+-- it will probably affect alot of people"). The Opacity slider used to stop at the Global Faded, so few setups have an
+-- element below it (an old file, or Fade unticked while setting it); such an element used to sit at its own level, now it
+-- fades lower (changelog). To keep one at a fixed level: untick its Fade on the Elements page.
+-- floor: the Faded it would have (0 while Hide in combat holds it), peak: its Shown.
+woc.fadedFloor = function(floor, peak)
+	local base = DB.base or 0.75
+	if base > 0 and peak < floor - 0.001 then return floor * peak / base end
+	return floor
+end
 local OVERRIDE_KEYS = { bars = "ovBars", player = "ovPlayer", hud = "ovHud", quest = "ovQuest", map = "ovMap", bags = "ovBagsBar", micro = "ovMicro" }
 for _, s in ipairs(SPLIT) do OVERRIDE_KEYS[s.g] = s.ovKey end
 
--- Which rows fade now (their Fade box, or the one they follow), by group; and the group of each Opacity bar's setting.
-woc.fadeFlags = function()
-	local fades = { bars = DB.fadeBars, player = DB.fadePlayer, hud = DB.fadeUnits, quest = DB.fadeTracker, map = DB.fadeMinimap,
-		chat = DB.fadeChat, nav = true, rxp = true, bags = DB.fadeBags, micro = DB.fadeMicro }
-	for _, s in ipairs(SPLIT) do fades[s.g] = gFade(s) end
-	return fades
-end
-woc.groupOfKey = { chatOwn = "chat", mapOwn = "map", rxpShown = "rxp", navShown = "nav" }
-for g, key in pairs(OVERRIDE_KEYS) do woc.groupOfKey[key] = g end
 
 -- For the files after this one (QuietHUD.toc).
 ns.DB, ns.gFade, ns.gTrig, ns.LISTS, ns.elsewhere, ns.woc, ns.loop = DB, gFade, gTrig, LISTS, elsewhere, woc, loop

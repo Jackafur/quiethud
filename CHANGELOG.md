@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.7.3
+
+Your settings carry over.
+
+### Added
+
+- **Polestar and Polestar: UI.** While Polestar is loaded, its guide window, its item, target, hearth and travel buttons and its arrow fade with the quest guide rows on the Elements page, the same rows RestedXP uses. Polestar: UI's player, target, focus, pet and party frames fade with the game's frames they stand in for.
+- **Guidelime:** its windows and arrow use the quest guide rows too. The rows show while RestedXP, Guidelime or Polestar is loaded, under that addon's name.
+- **RestedXP's new guide window** fades with the Guide window row and moves with the pixel shift.
+- **Naowh Forever:** the pieces in Naowh's HUD Editor that QuietHUD didn't know by name join the Naowh rows by themselves (panels in Naowh, the rest in Naowh alerts), Druid Mana and Trinkets included. Naowh's Dungeon Quest Tracker fades with the Naowh row.
+- **Only an enemy target counts** (Show when page, under Target): Target on the Elements page then shows things only while your target is something you can attack. A vendor, a quest giver or a friendly player leaves the HUD faded. Unticked (the default) works as before.
+- **Stay shown while the mouse moves after I let go** (Show when page, off by default): for the While I hold boxes and the hold key. Let go while you're moving the mouse and the HUD stays up until the mouse stops, with a slider for how long it waits.
+- **An element's Shown can go below the Global Faded** now, and it still fades: it drops to the same share of its Shown as the rest of the HUD does. Before, the slider stopped at the Global Faded. Every other element fades as before.
+
+### Fixed
+
+- **A frame you added with `/qhud add` that covers the whole screen** (Polestar's layer, for one) fades now. The mouse was always over it, so it never did. Mouse over counts the frames inside it instead.
+- **A frame QuietHUD now supports by itself** is no longer also handled by an older `/qhud add` of the same frame. `/qhud add` turns such a frame down and `/qhud list` says so. Frames you added to hide, to mouse over or to the pixel shift stay as they are.
+- **Party and raid frames:** BetterBlizzFrames' solid range background (on by default) left a dark box where the faded party frames were. It fades with the Party and raid row now, and so does the yellow box on the party member you target.
+- **Buffs that Edit Mode hangs on the minimap** stay where they are when the faded minimap shrinks. They slid into the corner.
+- **Pixel shift:** the game's damage meter and Questie's tracker move with the rest, so windows lined up against them stay lined up. Dragging a shifted window pauses the shift until a second after you let go, so the spot its addon saves has no shift in it. Naowh's HUD Editor pieces anchored to another piece follow that piece instead of being shifted a second time, and Naowh putting a window back no longer makes the shift give up on it.
+- Fixes from two code reviews: Guidelime loading late, Naowh pieces added by hand, the game's own frame containers, party frames drifting with the pixel shift.
+
 ## 1.7.2
 
 Your settings carry over.

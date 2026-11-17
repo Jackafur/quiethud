@@ -68,8 +68,93 @@ local function setAlpha(names, a, onlySelfFading, list)
 	end
 end
 
+-- The raid-style party and raid member frames' backgrounds, when another addon told them to ignore their frame's opacity.
+-- BetterBlizzFrames' party range option (Party Frame Range Alpha, with its "solid background" on, the default) does that at
+-- every range update (frame.background:SetIgnoreParentAlpha(true), then SetAlpha(1)), so with the Party and raid row faded
+-- the backgrounds stayed up as a dark box (the owner, Nov 14). Such a background is given the row's opacity itself; the
+-- hook woc.write puts on it brings the opacity back at once when BetterBlizzFrames sets 1 again. A background that follows
+-- its frame is left alone. The members are the children of the row's frames, two deep (PartyFrame > CompactPartyFrame >
+-- members and pets; CompactRaidFrameContainer > CompactRaidFrameN, or CompactRaidGroupN > members), looked up again after
+-- a group change or a loading screen, not at every write.
+-- The yellow box on the member you target (selectionHighlight) is the same case, made so by the game itself: its XML gives
+-- it ignoreParentAlpha (CompactUnitFrame.xml), so it stayed solid on faded party frames (the owner, 2026-11-16: "when you
+-- select a party member, a yellow rectangle goes over the targeted party member"). It gets the row's opacity the same way.
+-- The ready check icon ignores it too and is left alone: a prompt you have to see.
+local MEMBER_PARTS = { "background", "selectionHighlight" }
+local members = { dirty = true }
+do
+	local f = CreateFrame("Frame")
+	pcall(f.RegisterEvent, f, "GROUP_ROSTER_UPDATE")
+	pcall(f.RegisterEvent, f, "PLAYER_ENTERING_WORLD")
+	-- (Raid-Style Party Frames switched on in Edit Mode makes the compact party frame on demand, with no roster change;
+	-- audit 2026-11-16 F8)
+	pcall(f.RegisterEvent, f, "EDIT_MODE_LAYOUTS_UPDATED")
+	f:SetScript("OnEvent", function()
+		members.dirty = true
+		woc.applied.party = nil -- (the row is written again at the next update, with the new members)
+		wakeLoop()
+	end)
+end
+local function memberBackgrounds(a)
+	if members.dirty then
+		members.dirty = false
+		local list = {}
+		local function look(frame, depth)
+			local ok, kids = pcall(function() return { frame:GetChildren() } end)
+			if not ok then return end
+			for _, k in ipairs(kids) do
+				if (type(k.background) == "table" and k.background.IsIgnoringParentAlpha)
+					or (type(k.selectionHighlight) == "table" and k.selectionHighlight.IsIgnoringParentAlpha) then
+					list[#list + 1] = k
+				elseif depth < 2 then
+					look(k, depth + 1)
+				end
+			end
+		end
+		for _, n in ipairs(LISTS.party or {}) do
+			local root = _G[n]
+			if type(root) == "table" and root.GetChildren then look(root, 1) end
+		end
+		members.list = list
+	end
+	for _, m in ipairs(members.list) do
+		for _, key in ipairs(MEMBER_PARTS) do
+			local part = m[key]
+			if type(part) == "table" and part.IsIgnoringParentAlpha then
+				local ok, ignoring = pcall(part.IsIgnoringParentAlpha, part)
+				if ok and ignoring == true then
+					woc.write(part, a)
+					members.written[part] = true
+				end
+			end
+		end
+	end
+end
+members.written = setmetatable({}, { __mode = "k" })
+-- Twice a second (woc.drift), only while the party row has members listed: a background that started ignoring its frame's
+-- opacity after the row's last write (BetterBlizzFrames' option ticked mid-session) has the row written again, or it
+-- stayed solid until the row's opacity next changed (audit 2026-11-16 F8).
+ns.partyBgCheck = function()
+	local list = members.list
+	if not list or #list == 0 then return end
+	for _, m in ipairs(list) do
+		for _, key in ipairs(MEMBER_PARTS) do
+			local part = m[key]
+			if type(part) == "table" and part.IsIgnoringParentAlpha and not members.written[part] then
+				local ok, ignoring = pcall(part.IsIgnoringParentAlpha, part)
+				if ok and ignoring == true then
+					woc.applied.party = nil
+					wakeLoop()
+					return
+				end
+			end
+		end
+	end
+end
+
 local function applyList(name, a)
 	setAlpha(LISTS[name], a, nil, name)
+	if name == "party" then memberBackgrounds(a) end
 end
 
 -- Per-bar options are stored as a bitmask: bit i is Action Bar i.

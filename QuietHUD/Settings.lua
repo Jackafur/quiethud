@@ -74,11 +74,14 @@ local DEFAULTS = {
 	peekTapAlt = false, -- a tap of Alt on its own toggles the whole HUD (the Tap boxes and the hold boxes untick each other)
 	peekTapCtrl = false,
 	peekTapShift = false,
+	peekLinger = false, -- let go of a hold key (or the hold binding): the whole HUD stays while the cursor moves (Loop.lua)
+	peekLingerSeconds = 0.4, -- (how long it waits for the cursor to move, at the let-go and between moves)
 	bagAlpha = 1, -- (0 = Global; solid by default, as the tooltips)
 	fadeOutSeconds = 0.35,
 	mouseSeconds = 3,
 	notFullShows = false,
 	keepDrawn = false,
+	targetEnemy = false, -- the Target column counts only a target you can attack (Show when page; Loop.lua)
 	bagX = 0, bagY = 0, -- where the open bag windows were dragged to (see the bags block)
 	moveBags = false, -- let QuietHUD move the open bags (Extras page)
 	hideMmButtons = false, -- hide the minimap buttons of other addons
@@ -89,7 +92,7 @@ local DEFAULTS = {
 -- The saved file's version. A file from before the launch build has none and is not read: everyone starts on these
 -- defaults. A later change that renames or removes a setting, or changes what one means, adds a step to MIGRATIONS and
 -- raises this number (see initDB in Core.lua).
-local SETTINGS_VERSION = 4
+local SETTINGS_VERSION = 5
 
 -- The unit frame, aura and alert rows, the cast bar and the breath bar, and Dominos. Each has its own frames, its own row in
 -- the trigger grid (Fade and triggers) and its own opacity; their settings are named after the group (fadeTarget,
@@ -157,7 +160,7 @@ local SPLIT = {
 	{ g = "naowh", label = "Naowh", frames = { "NaowhForeverXPBar", "NaowhForeverXPTicker", "NaowhForeverCampfire",
 		"NaowhForeverBagSpace", "NaowhForeverTopBar", "QuietHUDNaowhSystem",
 		"QuietHUDNaowhJourney", "QuietHUDNaowhCampBag", "NaowhForeverConsumableBar", "NaowhForeverFoodBar",
-		"NaowhForeverBlessingBar", "NaowhForeverGearBar" }, addon = "NaowhForever",
+		"NaowhForeverBlessingBar", "NaowhForeverGearBar", "QuietHUDNaowhQuestTracker" }, addon = "NaowhForever",
 		deep = true, uncounted = true, trig = 8 }, -- (the consumable bar and the food and drink buttons: his ask, Nov 6, "attatched to the other naowh stuff") -- (trig 8: Mouse over only by default, his ask)
 	-- (the Blessings bar, NaowhForever_Combat/Blessings, and the Gear Sets bar, NaowhForever_Combat/GearSets: his ask, Nov 7;
 	-- both are named holders on UIParent with their buttons as children, and Naowh only shows and hides them, never sets their opacity)

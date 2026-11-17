@@ -5,6 +5,44 @@ local SPLIT = ns.SPLIT
 local DB, gTrig, woc, wakeLoop = ns.DB, ns.gTrig, ns.woc, ns.wakeLoop
 local barBit = ns.barBit
 
+-- A frame as big as the screen is always under the mouse. Polestar hangs all its windows off one (PolestarUIParent), and
+-- /qhud add hud while pointing at a Polestar window adds that one, so with Mouse over ticked (the Added frames row's default)
+-- the row stayed at its Shown and never faded (a CurseForge report, 2026-11-16). Such a frame counts by its shown children
+-- instead, leaving out a child as big as the screen too. Its size is only looked at while the mouse is over it, and kept a
+-- second; its children are listed at most ten times a second (listing them makes garbage).
+local bigCache = setmetatable({}, { __mode = "k" })
+local function screenSized(f)
+	local now = GetTime()
+	local c = bigCache[f]
+	if c and now - c.at < 1 then return c.big end
+	local ok, w, h, s = pcall(function() return f:GetWidth(), f:GetHeight(), f:GetEffectiveScale() end)
+	local W, H, S = UIParent:GetWidth(), UIParent:GetHeight(), UIParent:GetEffectiveScale()
+	local big = ok and w and h and s and W and H and S and W > 0 and H > 0
+		and w * s >= 0.95 * W * S and h * s >= 0.95 * H * S or false
+	c = c or {}
+	bigCache[f] = c
+	c.at, c.big = now, big and true or false
+	return c.big
+end
+local kidCache = setmetatable({}, { __mode = "k" })
+local function childHovered(f)
+	local now = GetTime()
+	local c = kidCache[f]
+	if c and now - c.at < 0.1 then return c.result end
+	c = c or {}
+	kidCache[f] = c
+	c.at, c.result = now, false
+	local kids = { f:GetChildren() }
+	for j = 1, #kids do
+		local k = kids[j]
+		if k.IsShown and k.IsMouseOver and k:IsShown() and k:IsMouseOver() and not screenSized(k) then
+			c.result = true
+			break
+		end
+	end
+	return c.result
+end
+
 -- Visible, not just shown: a frame whose parent is hidden is not on the screen. ClassicUI Forever puts the buttons of a bar
 -- that is turned off in the game's options into a hidden holder, and those buttons still say they are shown, so bars 6 to 8
 -- (in the middle of the screen by default) woke the action bars while switched off.
@@ -26,7 +64,9 @@ local function hovered(f)
 		end
 		return false
 	end
-	return f:IsVisible() and f:IsMouseOver()
+	if not (f:IsVisible() and f:IsMouseOver()) then return false end
+	if screenSized(f) then return childHovered(f) end -- (see screenSized above)
+	return true
 end
 
 local function anyHovered(names)
@@ -57,16 +97,10 @@ local function anyHoveredDeep(names)
 			cache.result = true
 			break
 		end
-		if type(f) == "table" and f.GetChildren and f:IsShown() then
-			local kids = { f:GetChildren() }
-			for j = 1, #kids do
-				local c = kids[j]
-				if c.IsShown and c.IsMouseOver and c:IsShown() and c:IsMouseOver() then
-					cache.result = true
-					break
-				end
-			end
-			if cache.result then break end
+		-- (a child as big as the screen does not count: childHovered; audit 2026-11-16 F7)
+		if type(f) == "table" and f.GetChildren and f:IsShown() and childHovered(f) then
+			cache.result = true
+			break
 		end
 	end
 	return cache.result
@@ -287,25 +321,12 @@ woc.moStep = function(c, target, dt)
 	return c
 end
 -- A frame or one of its children under the mouse (Naowh's bag counter is an empty holder with its card as a child).
--- The children are listed at most ten times a second per frame (listing them makes garbage; ChatGPT's audit, Nov 5).
-woc.ocCache = setmetatable({}, { __mode = "k" })
+-- The children are listed at most ten times a second per frame (listing them makes garbage; ChatGPT's audit, Nov 5), and a
+-- child as big as the screen does not count (childHovered).
 woc.overOrChild = function(f)
 	if hovered(f) then return true end
 	if type(f) ~= "table" or not (f.GetChildren and f:IsShown()) then return false end
-	local now, cache = GetTime(), woc.ocCache[f]
-	if cache and now - cache.at < 0.1 then return cache.result end
-	cache = cache or {}
-	woc.ocCache[f] = cache
-	cache.at, cache.result = now, false
-	local kids = { f:GetChildren() }
-	for j = 1, #kids do
-		local k = kids[j]
-		if k.IsShown and k.IsMouseOver and k:IsShown() and k:IsMouseOver() then
-			cache.result = true
-			break
-		end
-	end
-	return cache.result
+	return childHovered(f)
 end
 -- The frames of a row that count for its mouse over: only those the row owns (one also in the mouseover or hidden list is
 -- that list's; second audit, F3, the same rule as the bars' woc.groupHover). Kept until the lists change.

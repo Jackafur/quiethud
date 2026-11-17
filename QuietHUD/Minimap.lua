@@ -445,6 +445,128 @@ local function setMapScale(s)
 	if MinimapCluster.SetScaleBase then MinimapCluster:SetScaleBase(s) else MinimapCluster:SetScale(s) end
 end
 
+-- A frame placed next to the minimap in Edit Mode can end up anchored to it (Edit Mode's snapping saves the minimap cluster
+-- as its anchor). Shrinking the cluster pulled such a frame along: the buffs slid right into the corner every time the faded
+-- minimap shrank (Nov 8, in the WoW Forever tab). So while the map is shrunk, a frame of this short list that hangs on the
+-- cluster hangs on a stand-in instead: an empty frame with the cluster's own anchors, size and full scale, so the frame sits
+-- exactly where it sat and follows a UI scale or window size change the same way. When the minimap grows back its own
+-- anchors are put back, unless something (Edit Mode, another addon) moved it meanwhile: then that is its place now. A frame
+-- anchored anywhere else, or on a part inside the cluster, is never touched. Edit Mode lays its frames out again on a layout
+-- change or a spec change without touching the cluster's scale, which hangs the buffs on the shrunk cluster again; those
+-- events pin them again, with Edit Mode's new anchors as the ones put back (audit of Nov 14). The game's own SetPointBase and
+-- ClearAllPointsBase, as in Shift.lua, so Edit Mode's records are not marked changed.
+local pinMapNeighbours, unpinMapNeighbours
+do
+	local MAP_NEIGHBOURS = { "BuffFrame", "DebuffFrame", "TemporaryEnchantFrame", "TotemFrame" }
+	local mapPinned = {} -- frame -> { anchors = its own (put back), pins = what was set (still ours?) }
+	local mapGhost
+
+	local function hangsOnCluster(rel)
+		for _ = 1, 8 do
+			if rel == nil or rel == UIParent then return false end
+			if rel == MinimapCluster then return true end
+			local ok, p = pcall(rel.GetParent, rel)
+			if not ok then return false end
+			rel = p
+		end
+		return false
+	end
+	local function lockedFrame(f)
+		return InCombatLockdown and InCombatLockdown() and f.IsProtected and f:IsProtected()
+	end
+	local function readAnchors(f)
+		local t = {}
+		for i = 1, f:GetNumPoints() do
+			local p, rel, rp, x, y = f:GetPoint(i)
+			t[i] = { p, rel, rp, x or 0, y or 0 }
+		end
+		return t
+	end
+	local function setAnchors(f, t)
+		local clear, set = f.ClearAllPointsBase or f.ClearAllPoints, f.SetPointBase or f.SetPoint
+		clear(f)
+		for _, a in ipairs(t) do set(f, a[1], a[2], a[3], a[4], a[5]) end
+	end
+	local function stillPinned(f, rec)
+		local now = readAnchors(f)
+		if #now ~= #rec.pins then return false end
+		for i, a in ipairs(rec.pins) do
+			local b = now[i]
+			if b[1] ~= a[1] or b[2] ~= a[2] or b[3] ~= a[3] or type(b[4]) ~= "number" or type(b[5]) ~= "number"
+				or math.abs(b[4] - a[4]) > 0.01 or math.abs(b[5] - a[5]) > 0.01 then return false end
+		end
+		return true
+	end
+
+	-- The stand-in, set again at every pin (the cluster may have been moved meanwhile). nil when the cluster's anchors
+	-- cannot be copied (none, or on something inside itself).
+	local function placeGhost()
+		local c = MinimapCluster
+		local anchors = readAnchors(c)
+		if #anchors == 0 then return nil end
+		for _, a in ipairs(anchors) do
+			if a[2] == nil then a[2] = c:GetParent() end
+			if a[2] == c or hangsOnCluster(a[2]) then return nil end
+		end
+		if not mapGhost then mapGhost = CreateFrame("Frame", nil, UIParent) end
+		mapGhost:SetParent(c:GetParent() or UIParent)
+		mapGhost:SetScale(ns.mapSavedScale or c:GetScale())
+		mapGhost:SetSize(c:GetWidth(), c:GetHeight())
+		mapGhost:ClearAllPoints()
+		for _, a in ipairs(anchors) do mapGhost:SetPoint(a[1], a[2], a[3], a[4], a[5]) end
+		return mapGhost
+	end
+
+	local function pinOne(f, ghost)
+		local rec = mapPinned[f]
+		if rec and stillPinned(f, rec) then return end
+		mapPinned[f] = nil -- (moved since, or never pinned: looked at afresh)
+		local anchors, pins, onCluster = readAnchors(f), {}, false
+		for i, a in ipairs(anchors) do
+			if a[2] == MinimapCluster then
+				onCluster = true
+				pins[i] = { a[1], ghost, a[3], a[4], a[5] }
+			elseif hangsOnCluster(a[2]) then
+				return -- (on a part inside the cluster: no stand-in for that)
+			else
+				pins[i] = a
+			end
+		end
+		if not (onCluster and ghost) then return end
+		setAnchors(f, pins)
+		mapPinned[f] = { anchors = anchors, pins = pins }
+	end
+
+	pinMapNeighbours = function()
+		local okG, ghost = pcall(placeGhost)
+		if not okG then return end
+		for _, name in ipairs(MAP_NEIGHBOURS) do
+			local f = _G[name]
+			if f and f.GetNumPoints and not (f.IsForbidden and f:IsForbidden()) and not lockedFrame(f) then
+				pcall(pinOne, f, ghost)
+			end
+		end
+	end
+	unpinMapNeighbours = function()
+		for f, rec in pairs(mapPinned) do
+			if not lockedFrame(f) then
+				mapPinned[f] = nil
+				pcall(function()
+					if stillPinned(f, rec) then setAnchors(f, rec.anchors) end
+				end)
+			end
+		end
+	end
+
+	-- Edit Mode's own handler for these lays the frames out again; the pin runs on the next frame, after it.
+	local watch = CreateFrame("Frame")
+	for _, e in ipairs({ "EDIT_MODE_LAYOUTS_UPDATED", "PLAYER_SPECIALIZATION_CHANGED" }) do pcall(watch.RegisterEvent, watch, e) end
+	watch:SetScript("OnEvent", function()
+		if not (ns.mapSavedScale and C_Timer and C_Timer.After) then return end
+		C_Timer.After(0, function() if ns.mapSavedScale then pinMapNeighbours() end end)
+	end)
+end
+
 local function setMinimapVisible(visible, alpha)
 	if not MinimapCluster then return true end
 	if not canScaleMap() then return false end
@@ -452,6 +574,7 @@ local function setMinimapVisible(visible, alpha)
 		if ns.mapSavedScale then
 			setMapScale(ns.mapSavedScale)
 			ns.mapSavedScale = nil
+			unpinMapNeighbours()
 			guardOversizedMinimapKids()
 			-- Our mask is set again at its new size, now and once more when the size has settled.
 			refreshMapMask()
@@ -465,6 +588,7 @@ local function setMinimapVisible(visible, alpha)
 	else
 		pcall(rememberMapRect)
 		if not ns.mapSavedScale then ns.mapSavedScale = MinimapCluster:GetScale() end
+		pinMapNeighbours()
 		setMapScale(0.001)
 	end
 	mapLog(string.format("minimap %s (cluster alpha %.2f, scale %.3f)", visible and "shown" or "hidden", alpha or -1,
@@ -475,3 +599,4 @@ end
 -- For the files after this one (QuietHUD.toc).
 ns.mapLog, ns.applyMap, ns.refreshMapMask, ns.rememberMapRect = mapLog, applyMap, refreshMapMask, rememberMapRect
 ns.mouseInMapRect, ns.setMinimapVisible, ns.canScaleMap, ns.setMapScale = mouseInMapRect, setMinimapVisible, canScaleMap, setMapScale
+ns.pinMapNeighbours = pinMapNeighbours

@@ -53,7 +53,9 @@ do
 		return false
 	end
 
-	local function syncFrame(f, listed)
+	local hookDrags -- (below: a drag of a shifted frame pauses the shift)
+
+	local function syncFrame(f, listed, followers)
 		local c = contested[f]
 		if c and c.off then return end
 		local now = anchorList(f)
@@ -63,23 +65,29 @@ do
 		if st and st.sig ~= sig then
 			-- Something else moved it since: that position is the new normal, and ours is forgotten. An addon that puts the
 			-- frame back every time (ClassicUI Forever lays its bar out again whenever the game's bar frames move, so the
-			-- bags jumped once a second) would be fought for ever, so after three such moves within ten seconds the frame is
-			-- left alone until the option is turned on again.
+			-- bags jumped once a second) would be fought for ever, so after three such moves on back-to-back checks the
+			-- frame is left alone until the option is turned on again. Counted only while the shift is applied, and only
+			-- moves that come close together: Naowh puts its XP window back at its saved spot whenever its HUD Editor or
+			-- options close, and three of those within ten seconds left it alone while its neighbours went on shifting
+			-- (the owner, 2026-11-16: "i aligned the xp tracker again and its out of alignment again").
 			st = nil
 			shiftState[f] = nil
-			local t = GetTime()
-			if not c or t - c.since > 10 then
-				c = { since = t, n = 0 }
-				contested[f] = c
-			end
-			c.n = c.n + 1
-			if c.n >= 3 then
-				c.off = true
-				return
+			if shiftWantX ~= 0 or shiftWantY ~= 0 then
+				local t = GetTime()
+				if not c or t - c.last > 2.5 then
+					c = { last = t, n = 0 }
+					contested[f] = c
+				end
+				c.n, c.last = c.n + 1, t
+				if c.n >= 3 then
+					c.off = true
+					return
+				end
 			end
 		end
-		-- A frame anchored to another frame of the group moves along with it, so it is not shifted a second time.
-		if anchoredToListed(now, listed, f) then
+		-- A frame anchored to another frame of the group moves along with it, so it is not shifted a second time. So does
+		-- a piece Naowh's HUD Editor anchors to another (followers, see naowhFollowers).
+		if anchoredToListed(now, listed, f) or followers[f] then
 			if st then
 				setAnchors(f, st.base, 0, 0)
 				shiftState[f] = nil
@@ -96,7 +104,10 @@ do
 		-- Offsets are in the frame's own units. A frame that is shrunk (the faded minimap) is left alone until it is back to size.
 		local k = f:GetEffectiveScale() / UIParent:GetEffectiveScale()
 		if not (k >= 0.5 and k <= 2) then return end
-		if not st then st = { base = now } end
+		if not st then
+			st = { base = now }
+			hookDrags(f)
+		end
 		if st.wx ~= shiftWantX or st.wy ~= shiftWantY then
 			setAnchors(f, st.base, shiftWantX / k, shiftWantY / k)
 			st.wx, st.wy = shiftWantX, shiftWantY
@@ -175,6 +186,39 @@ do
 		walk(UIParent, 1)
 	end
 
+	-- Naowh's HUD Editor can anchor a piece to another (its Anchor button; Food & Drink hangs on Bag Space by default). Naowh
+	-- then places it against its leader every time the leader moves, the shift's moves included, so it already moves with
+	-- the leader. Shifted again on top, it sat 6 pixels off its leader at every step, and Naowh saved that (the owner's save,
+	-- 2026-11-16: Food & Drink and the Loot Feed 7 pixels off between two reloads). Read from Naowh's own list each time the
+	-- shift writes: a handful of labels.
+	local function naowhFollowers()
+		local out = {}
+		local nf = _G.NaowhForever
+		local settings = type(nf) == "table" and nf.UnlockModeSettings
+		local editor = type(nf) == "table" and nf.HudEditor
+		local byLabel = type(editor) == "table" and type(editor.placement) == "table" and editor.placement.byLabel
+		if type(settings) ~= "table" or type(byLabel) ~= "table" then return out end
+		local anchored
+		if type(settings.DB) == "function" then
+			local ok, db = pcall(settings.DB)
+			anchored = ok and type(db) == "table" and db.anchoredTo
+		end
+		if type(anchored) ~= "table" and type(settings.Default) == "function" then
+			local ok, d = pcall(settings.Default, "anchoredTo") -- (no list of his own yet: Naowh's defaults are the ones in use)
+			anchored = ok and d
+		end
+		if type(anchored) ~= "table" then return out end
+		for label, info in pairs(anchored) do
+			local item = byLabel[label]
+			-- (a piece that places itself, ownAnchor, never follows its anchor: shifted as any other)
+			if type(info) == "table" and type(info.target) == "string" and type(item) == "table" and type(item.frame) == "table"
+				and not item.ownAnchor then
+				out[item.frame] = true
+			end
+		end
+		return out
+	end
+
 	local function syncShift()
 		if InCombatLockdown() then return end
 		-- (Warlock HUD's rows, which it makes anew at each build: named again when the shift moves, not every second)
@@ -203,8 +247,9 @@ do
 			end
 		end
 		if searched then foundFor = want end
+		local followers = naowhFollowers()
 		for _, rec in ipairs(frames) do
-			local ok, err = pcall(syncFrame, rec[1], listed)
+			local ok, err = pcall(syncFrame, rec[1], listed, followers)
 			if not ok then shiftLastError = rec[2] .. ": " .. tostring(err) end
 		end
 		-- Frames taken out of the group are put back.
@@ -236,8 +281,55 @@ do
 		syncShift()
 	end
 
+	-- A shifted window dragged by its title (Questie's tracker, Spy, Chattynator, Naowh's quest tracker) was dropped where
+	-- it looked lined up against shifted neighbours, and its addon saved that spot, the shift in it: the window stayed off
+	-- by that step's offset for good (the owner, 2026-11-16: "every time I allign it, it gets all fucked up"). So the moment
+	-- one starts moving or sizing, the shift steps aside as for Edit Mode (every frame at its real spot, the dragged one
+	-- too), and comes back a second after the drop (Questie saves through a queue). Hooked on each frame the first time it is
+	-- shifted; a drag never stopped (its window hidden mid-drag) ends the pause after 30 seconds once no button is down.
+	local dragHooked = setmetatable({}, { __mode = "k" })
+	local dragToken = 0
+	local function dragStart()
+		dragToken = dragToken + 1
+		ns.shiftDragging = GetTime()
+		if not InCombatLockdown() and (shiftWantX ~= 0 or shiftWantY ~= 0) then
+			shiftWantX, shiftWantY = 0, 0
+			local ok, err = pcall(syncShift) -- (at once: a click on the title and a drop in the same moment saves the real spot)
+			if not ok then shiftLastError = tostring(err) end
+		end
+		if ns.wakeLoop then ns.wakeLoop() end
+	end
+	local function dragStop()
+		if not ns.shiftDragging then return end
+		dragToken = dragToken + 1
+		local mine = dragToken
+		C_Timer.After(1, function()
+			if dragToken == mine then
+				ns.shiftDragging = nil
+				if ns.wakeLoop then ns.wakeLoop() end
+			end
+		end)
+	end
+	hookDrags = function(f)
+		if dragHooked[f] then return end
+		dragHooked[f] = true
+		pcall(hooksecurefunc, f, "StartMoving", dragStart)
+		pcall(hooksecurefunc, f, "StartSizing", dragStart)
+		pcall(hooksecurefunc, f, "StopMovingOrSizing", dragStop)
+	end
+	local function dragging(now)
+		local at = ns.shiftDragging
+		if not at then return false end
+		if now - at > 30 and not (IsMouseButtonDown and IsMouseButtonDown()) then
+			ns.shiftDragging = nil
+			return false
+		end
+		return true
+	end
+
 	-- Once a second, and at once when Edit Mode opens or closes.
 	tickShift = function(dt, now, edit)
+		edit = edit or dragging(now)
 		shiftClock = shiftClock + dt
 		if shiftClock > 1 or edit ~= lastEdit then
 			shiftClock = 0

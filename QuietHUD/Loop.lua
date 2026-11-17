@@ -162,6 +162,12 @@ local function update(dt)
 		wake.fight = combat or now < ns.combatEnd
 		wake.weapon = weaponOut
 		wake.target = UnitExists("target") and true or false
+		-- Only an enemy target counts (Show when page; a CurseForge ask, 2026-11-16: the HUD stays faded on a vendor or quest
+		-- giver). Asked only while ticked and a target exists; an answer the game hides or refuses counts as an enemy, as before.
+		if wake.target and DB.targetEnemy then
+			local okE, enemy = pcall(UnitCanAttack, "player", "target")
+			if okE and not (issecretvalue and issecretvalue(enemy)) and not enemy then wake.target = false end
+		end
 		wake.mouse = woc.anyRow(T.MOUSE) and mouseActive(now) and true or false
 		-- (no row with Moving: not moving, and the map log and /qhud state say why; the game's own "started moving" message
 		-- still sets ns.moveUntil, Events.lua. isMoving(true) forgets the last position once, so ticking Moving again later
@@ -227,7 +233,7 @@ local function update(dt)
 		vis.rxp = triggered(DB.trigRxp, wake, moved, now < ns.questUntil, combat, inside, LISTS.rxp, true)
 	end
 	local showAll = edit or now < ns.peekUntil or (DB.peekAlt and IsAltKeyDown()) or (DB.peekCtrl and IsControlKeyDown())
-		or (DB.peekShift and IsShiftKeyDown())
+		or (DB.peekShift and IsShiftKeyDown()) or now < ns.peekLingerUntil
 	-- (the bars as if the whole HUD were not shown, for a bar with Show with unticked: woc.barsCurOwn below)
 	local barsOwnWanted = vis.bars and true or false
 	if showAll then
@@ -290,9 +296,10 @@ local function update(dt)
 			if g == "bars" then woc.barsPeak = peak end
 			-- (the map's "up" opacity: the Arrow cover and the darkened map's Faded measure "faded" against it, Minimap.lua)
 			if g == "map" then woc.mapPeak = peak end
-			-- Everything fades to the Global Faded.
+			-- Everything fades to the Global Faded, lower for an element whose Shown is set below it (woc.fadedFloor).
 			local floor = idle
 			if goneNow and goneNow[g] then floor = 0 end
+			floor = woc.fadedFloor(floor, peak)
 			local low = math.min(floor, peak)
 			if g == "bars" then
 				-- (the bars' fade for a bar of its own, ActionBars.lua applyBars: Show with Alt unticked,
@@ -372,7 +379,10 @@ local function update(dt)
 		pcall(checkElsewhere)
 		pcall(woc.drift)
 		if MinimapCluster and MinimapCluster:GetScale() > 0.5 then pcall(rememberMapRect) end
-		if MinimapCluster and ns.mapSavedScale and MinimapCluster:GetScale() > 0.01 and ns.canScaleMap() then ns.setMapScale(0.001) end
+		if MinimapCluster and ns.mapSavedScale and MinimapCluster:GetScale() > 0.01 and ns.canScaleMap() then
+			ns.pinMapNeighbours() -- (something gave the cluster its scale back; the buffs are pinned before it shrinks again)
+			ns.setMapScale(0.001)
+		end
 		local wantShort = enabled and DB.shortHotkeys
 		for i = 1, #BAR_DEFS do
 			for j = 1, BAR_DEFS[i].count or 12 do
@@ -591,5 +601,50 @@ do
 			ns.peekUntil = now < ns.peekUntil and 0 or math.huge
 			wakeLoop()
 		end
+	end)
+end
+-- Stay shown while the mouse moves after I let go (the Show when page, peekLinger; the owner, Nov 15: Naowh's food and drink
+-- buttons take no click while Alt is held, and he wanted the HUD to still go at once after a plain look). Letting go of a
+-- ticked hold key (Alt, Ctrl or Shift, or the hold key binding's release, Commands.lua) keeps the whole HUD shown
+-- (ns.peekLingerUntil) for peekLingerSeconds, and again for that long after every cursor move; once the cursor stands still
+-- that long, it fades. A Mouse over element under the cursor then keeps itself shown as usual.
+-- Cost: one cursor read per frame, only from a let-go until the cursor has stood still for peekLingerSeconds; nothing
+-- otherwise (the key-up is the MODIFIER_STATE_CHANGED message).
+do
+	local HOLDS = { ALT = { "peekAlt", IsAltKeyDown }, CTRL = { "peekCtrl", IsControlKeyDown },
+		SHIFT = { "peekShift", IsShiftKeyDown } }
+	local lastX, lastY
+	local lingerer = CreateFrame("Frame")
+	local function cursor()
+		local ok, x, y = pcall(GetCursorPosition)
+		if ok and type(x) == "number" and type(y) == "number" and not (issecretvalue and (issecretvalue(x) or issecretvalue(y))) then
+			return x, y
+		end
+	end
+	local function wait() return math.max(0.1, DB.peekLingerSeconds or 0.4) end
+	local function onUpdate()
+		local now = GetTime()
+		local x, y = cursor()
+		if x and lastX and (x ~= lastX or y ~= lastY) then ns.peekLingerUntil = now + wait() end
+		lastX, lastY = x, y
+		if now >= ns.peekLingerUntil then
+			lingerer:SetScript("OnUpdate", nil)
+			ns.peekLingerUntil = 0
+			wakeLoop() -- (the fade starts on this frame's let-go, not on the next tick)
+		end
+	end
+	woc.peekLetGo = function()
+		if not (DB.enabled and DB.peekLinger) then return end
+		ns.peekLingerUntil = GetTime() + wait()
+		lastX, lastY = cursor()
+		lingerer:SetScript("OnUpdate", onUpdate)
+	end
+	lingerer:RegisterEvent("MODIFIER_STATE_CHANGED")
+	lingerer:SetScript("OnEvent", function(_, _, key, down)
+		if down == 1 then return end
+		local mod = type(key) == "string" and key:match("^[LR](%u+)$")
+		local h = mod and HOLDS[mod]
+		-- (the other Alt still held is no let-go)
+		if h and DB[h[1]] and not h[2]() then woc.peekLetGo() end
 	end)
 end

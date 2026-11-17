@@ -27,8 +27,13 @@ local DEFAULT_LISTS = {
 	rxp = {},
 	-- The chat windows: docked ones hang off ChatFrame1 and move with it (Shift.lua skips a frame anchored to a moved one).
 	-- The controller's dot in the middle of the screen never moves by itself.
+	-- The game's damage meter is an Edit Mode frame, so the search for frames on the screen skips it, while Naowh's Threat
+	-- Meter (its partner in the Damage meter row) was found and moved: lined up under it, the two came apart at every move
+	-- (the owner, 2026-11-16: "every time I allign it, it gets all fucked up"). Listed like the minimap: not protected, not in
+	-- the game's managed containers, moved with the game's own SetPointBase (Shift.lua setAnchors).
 	shift = { "MinimapCluster", "ObjectiveTrackerFrame", "ChatFrame1", "ChatFrame2", "ChatFrame3", "ChatFrame4", "ChatFrame5",
-		"ChatFrame6", "ChatFrame7", "ChatFrame8", "ChatFrame9", "ChatFrame10", "GamepadReticle" },
+		"ChatFrame6", "ChatFrame7", "ChatFrame8", "ChatFrame9", "ChatFrame10", "GamepadReticle", "DamageMeter",
+		"Questie_BaseFrame" }, -- (Questie's tracker: found on the screen only when it was built before the one search a reload)
 }
 local ALL_LISTS = { "bars", "player", "hud", "quest", "map", "micro", "bags", "reporter", "hidden", "chat", "nav", "rxp", "shift", "mouseover" }
 for _, s in ipairs(SPLIT) do DEFAULT_LISTS[s.g] = s.frames; ALL_LISTS[#ALL_LISTS + 1] = s.g end

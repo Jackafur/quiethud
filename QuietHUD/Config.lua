@@ -88,11 +88,15 @@ local PAGES = {
 			right = { "peekTapCtrl", "Tap Ctrl to toggle", PEEK.tapHelp, untick = PEEK.holdKeys } },
 		{ "check", "peekShift", "While I hold Shift", PEEK.holdHelp, untick = PEEK.tapKeys,
 			right = { "peekTapShift", "Tap Shift to toggle", PEEK.tapHelp, untick = PEEK.holdKeys } },
+		{ "check", "peekLinger", "Stay shown while the mouse moves after I let go", "For the While I hold boxes and the hold key. Let go with the mouse still and the HUD fades after the short wait below. Let go while moving the mouse and it stays shown until the mouse stops, so you can reach a button and click it. Once the mouse is on an element with Mouse over ticked, that keeps it shown." },
+		{ "slider", "peekLingerSeconds", "Wait for the mouse (seconds)", 0.1, 2, 0.05, "%.2f", nil, nil, "With Stay shown while the mouse moves ticked: how long the HUD waits for the mouse to move after you let go, and how long the mouse can stop on the way before the HUD fades. Higher is easier to reach a button, lower fades sooner after a plain look.", 420 },
 		{ "note", "Or bind a key: Esc, Options, Keybindings, AddOns, QuietHUD (one to hold, one to toggle)." },
 		{ "heading", "Show in combat" },
 		{ "slider", "linger", "Stay shown after combat (seconds)", 0, 180, 1, "%.0f", nil, nil, "How long an element stays shown after a fight ends.", 420 },
 		{ "heading", "Weapon drawn" },
 		{ "check", "keepDrawn", "Keep my weapon drawn after spells, chests and crafting", "When the game puts your weapon away by itself (a buff, a chest, a lock, crafting, looting), QuietHUD draws it again as soon as the cast is over, so the HUD stays shown. You will see your character draw the weapon again. Pressing the sheath key still puts it away, and then Weapon drawn stops showing the HUD. Not while mounted, swimming, dead, on a flight path or in a fight." },
+		{ "heading", "Target" },
+		{ "check", "targetEnemy", "Only an enemy target counts", "Target on the Elements page then shows things only while your target is something you can attack. A vendor, a quest giver or a friendly player leaves the HUD faded. Unticked (default): any target counts." },
 		{ "heading", "Mouse move" },
 		{ "slider", "mouseSeconds", "Stay shown after the mouse stops (seconds)", 1, 60, 1, "%.0f", nil, nil, "How long an element stays shown after you stop moving the cursor, turning the camera or moving a controller stick.", 420 },
 		{ "heading", "New info" },
@@ -106,7 +110,7 @@ local PAGES = {
 		{ "heading", "Global" },
 		{ "slider", "base", "Shown", 0.1, 1, 0.05, "%.2f", nil, true, "How solid an element is while it is shown. Every element set to Global uses this, except one with Fade unticked on the Elements page: on Global that one is fully solid." },
 		-- (the one Faded: every element fades to it)
-		{ "slider", "idle", "Faded", 0, 1, 0.05, "%.2f", "Hidden", true, "How solid every element is while it is faded. 0 hides them completely. For an element that should stay at one level all the time, untick its Fade on the Elements page and set its value under Shown per element." },
+		{ "slider", "idle", "Faded", 0, 1, 0.05, "%.2f", "Hidden", true, "How solid every element is while it is faded. 0 hides them completely. Under Shown per element, an element can go below this and still fades, lower by the same share: at a tenth of the Global Shown, it fades to a tenth of this. For an element that should stay at one level all the time, untick its Fade on the Elements page and set its value under Shown per element." },
 		{ "heading", "Shown per element" },
 		-- (a slider for every element goes here, in two columns: see below)
 		{ "heading", "Windows" },
@@ -171,13 +175,17 @@ do
 	local keyOf = { ["Objective tracker"] = "ovQuest", ["Chat"] = "chatOwn", ["Minimap"] = "mapOwn", ["Action bars"] = "ovBars",
 		["Player frame"] = "ovPlayer", ["Bags bar"] = "ovBagsBar", ["Menu bar"] = "ovMicro", ["Added frames"] = "ovHud",
 		["Guide windows"] = "rxpShown", ["Arrow"] = "navShown" }
-	local addonOf = { ["Guide windows"] = "RXPGuides", ["Arrow"] = "RXPGuides" }
-	local whenOf = {}
+	local addonOf = {}
+	-- (the quest guide sliders: while RestedXP, Guidelime or Polestar is loaded, see ns.guideAddon)
+	local whenOf = { ["Guide windows"] = function() return ns.guideAddon() ~= nil end }
+	whenOf["Arrow"] = whenOf["Guide windows"]
 	for _, s in ipairs(SPLIT) do keyOf[s.label], addonOf[s.label], whenOf[s.label] = s.ovKey, s.addon, s.when end
 	-- RestedXP's two come last, as its rows do on the Elements page, and only while it is loaded.
 	local groups = {}
 	for _, group in ipairs(SPLIT.groups) do groups[#groups + 1] = group end
-	groups[#groups + 1] = { "RestedXP", { "Guide windows", "Arrow" }, addon = "RXPGuides" }
+	-- (its heading is picked when the page is built: RestedXP loads after QuietHUD, so a name picked here would be wrong)
+	groups[#groups + 1] = { function() return ns.guideName() end, { "Guide windows", "Arrow" },
+		when = whenOf["Guide windows"] }
 	local total, count, left, right = 0, 0, {}, {}
 	-- The Shown bars: dragging one shows the whole HUD for a few seconds (see makeSlider). Not the Global Faded, whose look is
 	-- the faded one.
@@ -356,15 +364,9 @@ do
 			local dragging = IsMouseButtonDown and IsMouseButtonDown("LeftButton") and (over or (not okOver and self:IsMouseOver()))
 			if not dragging then return end
 			val = math.floor(val / stepV + 0.5) * stepV
-			-- An element's own Shown stops at the Global Faded: below it the element would never fade (the lower one wins).
-			-- Global, at the far left, is always allowed.
-			-- Only for a row that fades: with Fade unticked its bar is a fixed level, and any level is fine.
-			local snapped = false
-			local fades = woc.fadeFlags()
-			if key ~= "base" and woc.previewKeys and woc.previewKeys[key] and fades[woc.groupOfKey[key]]
-				and val > 0 and val < (DB.idle or 0) - 0.001 then
-				val, snapped = DB.idle, true
-			end
+			-- (an element's own Shown may go below the Global Faded: it then fades lower by the same share, woc.fadedFloor, so
+			-- it still fades. It used to stop at the Global Faded; 2026-11-16, a CurseForge ask for a player frame fainter than
+			-- the rest)
 			if VIRTUAL[key] then VIRTUAL[key].set(val) else DB[key] = val end
 			readout:SetText((zeroText and val == 0) and zeroText or string.format(fmt, val))
 			-- (a Shown bar shows the HUD while it is dragged and 3 seconds after, so the change can be seen: standing still with
@@ -375,24 +377,11 @@ do
 				wakeLoop()
 			end
 			-- Idle can never be brighter than shown: dragging one past the other carries the other with it.
-			local carried = snapped
+			local carried = false
 			if key == "idle" and val > (DB.base or 0) + 0.001 then
 				DB.base, carried = val, true
 			elseif key == "base" and val < (DB.idle or 0) - 0.001 then
 				DB.idle, carried = val, true
-			end
-			-- (and the Global Faded raised past an element's own Shown carries that one up with it)
-			if key == "idle" and woc.previewKeys then
-				for k in pairs(woc.previewKeys) do
-					-- (not a row that still follows another, Dominos': pulling it would split it off)
-					if k ~= "base" and fades[woc.groupOfKey[k]] and not (VIRTUAL[k] and VIRTUAL[k].follows and DB[k] == nil) then
-						local v = VIRTUAL[k] and VIRTUAL[k].get() or DB[k]
-						if type(v) == "number" and v > 0 and v < val - 0.001 then
-							if VIRTUAL[k] then VIRTUAL[k].set(val) else DB[k] = val end
-							carried = true
-						end
-					end
-				end
 			end
 			settingChanged()
 			if carried then syncControls() end
@@ -644,7 +633,10 @@ do
 	-- RestedXP's rows, a group at the end of the Elements grid while RestedXP is loaded. Its three fade switches are the Fade
 	-- boxes. The targets and items
 	-- windows come up with the guide window (one setting, trigRxp), so their row has only its Fade box.
-	GRIDS.elements.extra = { addon = "RXPGuides", heading = "RestedXP", rows = {
+	-- (Guidelime's and Polestar's windows and arrows are in the same rows, so they show while any of them is loaded, under its
+	-- name; ns.guideAddon)
+	GRIDS.elements.extra = { when = function() return ns.guideAddon() ~= nil end,
+		heading = function() return ns.guideName() end, rows = {
 		{ "Guide window", "rxpGuide", "trigRxp", { 7, 8, 9, 10, 2, 3, 4, 5, 6 } },
 		{ "Targets, items", "rxpTargets", "trigRxp", {} },
 		{ "Arrow", "rxpArrow", "trigNav", { 7, 8, 9, 10, 2, 4, 5, 6 } },
@@ -749,8 +741,8 @@ do
 			if loaded(row.addon) and not (row.when and not row.when()) then rows[#rows + 1] = row end
 		end
 		local extra = grid.extra
-		if extra and loaded(extra.addon) then
-			rows[#rows + 1] = { heading = extra.heading }
+		if extra and loaded(extra.addon) and not (extra.when and not extra.when()) then
+			rows[#rows + 1] = { heading = type(extra.heading) == "function" and extra.heading() or extra.heading }
 			for _, row in ipairs(extra.rows) do rows[#rows + 1] = row end
 		end
 		local labelX = (rows[1] and rows[1].heading) and 24 or 16
@@ -1050,7 +1042,7 @@ do
 							if entry[1] == "group" then
 								if wanted(entry) then -- (an addon's group, RestedXP's, only while it is loaded)
 									if n > 1 then cy = cy - 6 end
-									makeGroupHeading(frame, 16 + x, cy, entry[2])
+									makeGroupHeading(frame, 16 + x, cy, type(entry[2]) == "function" and entry[2]() or entry[2])
 									cy = cy - 18
 								end
 							elseif wanted(entry) then

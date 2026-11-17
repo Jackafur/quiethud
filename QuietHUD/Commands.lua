@@ -175,7 +175,9 @@ SlashCmdList["QUIETHUD"] = function(msg)
 		if rest == "down" then
 			ns.peekUntil = peekNow + 120
 		elseif rest == "up" then
+			local held = peekNow < ns.peekUntil
 			ns.peekUntil = 0
+			if held and woc.peekLetGo then woc.peekLetGo() end -- (Stay shown while the mouse moves, Loop.lua)
 		elseif rest == "toggle" then
 			ns.peekUntil = peekNow < ns.peekUntil and 0 or math.huge
 		else
@@ -373,6 +375,13 @@ SlashCmdList["QUIETHUD"] = function(msg)
 		elseif name:find("^WackyBars") then
 			-- (they fade with their Action bars rows already: added here too, they faded twice; audit Nov 10)
 			print("QuietHUD: WackyBars' bars fade with their rows on the Action bars page (/qhud), so " .. name .. " is not added")
+		elseif group ~= "hidden" and group ~= "mouseover" and group ~= "shift" and woc.builtinFrame and woc.builtinFrame[_G[name]] then
+			-- (QuietHUD fades it itself: added again it would fade twice; see woc.ignoredExtra in rebuildLists)
+			print("QuietHUD: " .. name .. " already fades with its " .. woc.rowLabel(woc.builtinFrame[_G[name]])
+				.. " row (Elements page), so it is not added")
+		elseif group ~= "hidden" and group ~= "mouseover" and group ~= "shift" and woc.builtinAncestor and woc.builtinAncestor[_G[name]] then
+			print("QuietHUD: " .. name .. " holds " .. woc.builtinAncestor[_G[name]] .. ", which QuietHUD already fades, so it is not added."
+				.. " To fade something else on it, add that frame by its name")
 		else
 			addExtra(group, name)
 			print("QuietHUD: added " .. name .. " to " .. group)
@@ -386,6 +395,10 @@ SlashCmdList["QUIETHUD"] = function(msg)
 	elseif cmd == "list" then
 		for _, g in ipairs(EXTRA_GROUPS) do
 			print("QuietHUD " .. g .. " extras: " .. table.concat(DB.extra[g] or {}, ", "))
+		end
+		-- (the ones left out because QuietHUD handles them by itself now; woc.ignoredExtra)
+		for n, why in pairs(woc.ignoredExtra or {}) do
+			print("QuietHUD: " .. n .. " is left out: " .. why .. " (/qhud remove " .. n .. " to drop it from the list)")
 		end
 	else
 		print("QuietHUD: /qhud (menu), toggle, peek, shift, reset, target, quest, map, chat, bars, instance, state, debug, where, hotkeys, arrow, nav, mouse, alpha <frame> <0-1>, chain <frame>, around <frame>, find <text>, methods <frame> [text], add <group> [name], remove <name>, list")
