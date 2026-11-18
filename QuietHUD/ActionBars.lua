@@ -159,9 +159,10 @@ end
 -- on the Opacity page shows every bar too, so the bar being set can be seen (ns.previewUntil).
 woc.peekSet = function()
 	if DB.peekAlt or DB.peekCtrl or DB.peekShift or DB.peekTapAlt or DB.peekTapCtrl or DB.peekTapShift then return true end
-	if woc.peekSetCache == nil then -- (the two keys: asked again only after a binding or setting change)
-		woc.peekSetCache = GetBindingKey and (GetBindingKey("QUIETHUD_PEEK") or GetBindingKey("QUIETHUD_PEEKTOGGLE")) ~= nil
-			or false
+	-- (the two keys and the controller boxes: asked again only after a binding or setting change, not on every bar write)
+	if woc.peekSetCache == nil then
+		local bound = GetBindingKey and (GetBindingKey("QUIETHUD_PEEK") or GetBindingKey("QUIETHUD_PEEKTOGGLE")) ~= nil
+		woc.peekSetCache = (bound or ((DB.peekPad or DB.peekPadTriggers) and ns.padSetUp())) and true or false
 	end
 	return woc.peekSetCache
 end
@@ -210,7 +211,7 @@ woc.mouseBars = function(dt, all, gone)
 			woc.mbCur[i] = c
 			local ov = DB.ovBars
 			local peak = (ov and ov > 0) and math.max(ov, 0.1) or (DB.base or 0.6)
-			local low = math.min(woc.fadedFloor(gone and 0 or DB.idle or 0, peak), peak) -- (its own Shown lowers it too)
+			local low = math.min(woc.fadedFloor("bars", gone), peak) -- (the Action bars' own Faded, and never above their Shown)
 			local a = low + (peak - low) * c
 			if woc.mbA[i] ~= a then
 				woc.mbA[i] = a

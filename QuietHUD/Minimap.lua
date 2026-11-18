@@ -345,6 +345,49 @@ do
 		end
 	end
 
+	-- The game's own icons on the map (your arrow, town icons, party members, what you track) ignore opacity and the mask, so
+	-- they stayed whole while the map faded and went only when it was gone. The one control the game gives addons is their
+	-- size, all at once (Minimap:SetIconScale). So while the map fades they are sized with it: whole at the map's up opacity,
+	-- gone at 0, going out together with the map (the owner, Nov 17: "i want the icons and the map to fade at the same time",
+	-- "that should always be like that"). Not with the dark layer, which dims them with the map already. Their own size is the
+	-- last one anyone but QuietHUD set (Edit Mode's Icon Size), else Edit Mode's setting; it is put back only after QuietHUD
+	-- changed it. Cost: in 20 steps, written on change, so at most 20 calls a fade and none while the map holds.
+	local iconScale, iconsSetting, iconStep, iconsShrunk = nil, false, nil, false
+	local function gameIconScale()
+		if iconScale then return iconScale end
+		local ok, v = pcall(function()
+			local key = Enum.EditModeMinimapSetting.IconScale
+			if MinimapCluster:HasSetting(key) then return MinimapCluster:GetSettingValue(key) / 100 end
+		end)
+		return ok and type(v) == "number" and v > 0 and v or 1
+	end
+	local function setIconScale(scale)
+		iconsSetting = true
+		if not pcall(Minimap.SetIconScale, Minimap, scale) and scale == 0 then pcall(Minimap.SetIconScale, Minimap, 0.01) end
+		iconsSetting = false
+	end
+	if Minimap and Minimap.SetIconScale then
+		hooksecurefunc(Minimap, "SetIconScale", function(_, scale)
+			if iconsSetting or type(scale) ~= "number" then return end
+			iconScale = scale
+			iconStep = nil -- (Edit Mode set a size: the shrink goes on from that one at the next update)
+		end)
+	end
+	local function sizeIcons(a, mode)
+		local peak = woc.mapPeak or 1
+		local share = (mode ~= "dark" and peak > 0) and math.max(0, math.min(1, a / peak)) or 1
+		local step = math.floor(share * 20 + 0.5)
+		if step == iconStep then return end
+		iconStep = step
+		if step >= 20 then
+			if iconsShrunk then setIconScale(gameIconScale()) end
+			iconsShrunk = false
+		else
+			setIconScale(gameIconScale() * step / 20)
+			iconsShrunk = true
+		end
+	end
+
 	-- How the minimap is faded: with the mask; with the dark layer for the "darken" option; and for a minimap that is neither
 	-- round nor square, the dark layer in buildings and cities and plain opacity in the open world.
 	local mapMode
@@ -365,6 +408,7 @@ do
 		if mode ~= "mask" and mapMaskStep then applyMinimapMask(1) end
 		if mode ~= "dark" and mapDimApplied then applyMinimapAlpha(1) end
 		applyCover(a)
+		sizeIcons(a, mode)
 		if mode == "mask" then
 			applyMinimapMask(a)
 		elseif mode == "dark" then

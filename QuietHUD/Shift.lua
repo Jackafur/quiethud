@@ -274,7 +274,17 @@ do
 			end
 			local s = SHIFT_STEPS[shiftIndex]
 			local px = DB.shiftPixels or 2
-			shiftWantX, shiftWantY = s[1] * px, s[2] * px
+			-- On whole screen pixels: the offset is in the screen's units (UIParent's), and a step of 6 of those can land a frame
+			-- between two of the screen's own pixels. Nock keeps its HUD box on whole pixels and put it back at once, so the
+			-- shift took its box for one that keeps being put back and left it out (Nov 17). Rounded to the screen's pixels the
+			-- move is the same whole number of pixels for every frame, whatever its own scale; it differs from the setting by
+			-- less than half a pixel.
+			local dev = 0
+			local okP, _, ph = pcall(GetPhysicalScreenSize)
+			local okU, us = pcall(UIParent.GetEffectiveScale, UIParent)
+			if okP and okU and type(ph) == "number" and ph > 0 and type(us) == "number" and us > 0 then dev = us * ph / 768 end
+			local function onPixels(v) return (dev > 0 and v ~= 0) and math.floor(v * dev + 0.5) / dev or v end
+			shiftWantX, shiftWantY = onPixels(s[1] * px), onPixels(s[2] * px)
 		else
 			shiftWantX, shiftWantY = 0, 0
 		end
@@ -393,7 +403,7 @@ do
 	end
 
 	shiftReport = function()
-		print("QuietHUD pixel shift (experimental): " .. (DB.pixelShift and (DB.enabled and "on" or "on, but QuietHUD is switched off") or "off") .. ", offset now " .. shiftWantX .. "," .. shiftWantY .. " pixels, a move every " .. (DB.shiftMinutes or 3) .. " minutes, /qhud shift on, off or now")
+		print("QuietHUD pixel shift (experimental): " .. (DB.pixelShift and (DB.enabled and "on" or "on, but QuietHUD is switched off") or "off") .. ", offset now " .. string.format("%.1f,%.1f", shiftWantX, shiftWantY) .. " pixels, a move every " .. (DB.shiftMinutes or 3) .. " minutes, /qhud shift on, off or now")
 		local named = {}
 		for _, name in ipairs(LISTS.shift) do if _G[name] then named[_G[name]] = true end end
 		local extra = {}

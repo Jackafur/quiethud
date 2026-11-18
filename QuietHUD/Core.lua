@@ -513,7 +513,7 @@ woc.nameNaowhAuto = function()
 	woc.naowhAuto = rows
 end
 -- The quest guide rows (Guide window, Targets, Arrow) work for Guidelime too (the owner, 2026-11-14: "ok just add them.
--- guidelimes bullshit and sage guide"; a commenter, Sage, asked for Guidelime in October, when its windows had no names; by
+-- guidelimes bullshit and sage guide"; a commenter asked for Guidelime in October, when its windows had no names; by
 -- v6.021 they have: GuidelimeWindow, GuidelimeOngoingWindow, GuidelimeArrow, made on UIParent. Its target and use-item
 -- buttons sit inside GuidelimeWindow, so they fade with it. Guidelime_Sage is guide text shown in those same windows). The
 -- rows show while RestedXP or Guidelime is loaded; nothing is special-cased, the names go into the same lists.
@@ -536,7 +536,10 @@ end
 -- its Core/Init.lua); only the guide window goes in a list, never the layer (a hosted move would take the window out of
 -- Polestar's own hide, and the toasts and setup windows are not HUD). Its action buttons (quest item, hearthstone, target,
 -- rare, bag, and the travel button under the arrow) are secure buttons on UIParent: the Targets, items row, faded where
--- they are. Its arrow is a plain frame on UIParent: the Arrow row, hosted, so Polestar's own arrow opacity still counts.
+-- they are. So is its target list (the owner, 2026-11-17, a screenshot: "polestars target list doesnt fade"): the mark
+-- PolestarTargetAnchor and up to 8 secure rows PolestarTargetRow1 to 8 on UIParent (QoL/Buttons.lua, TL.MAX), made only
+-- when a step first names that many targets; a row made later is found by woc.drift (woc.absent).
+-- Its arrow is a plain frame on UIParent: the Arrow row, hosted, so Polestar's own arrow opacity still counts.
 -- Polestar: UI (another author's companion) draws unit frames of its own over the game's, which it leaves in place with
 -- their art hidden; it copies the game frame's opacity only when it repaints (a health or power change), so they faded late
 -- and in jumps. Each goes in the row of the game frame it sits on. Its boss frames are left alone, like the game's.
@@ -544,7 +547,9 @@ end
 local POLESTAR = {
 	guide = { "PolestarGuideFrame" },
 	targets = { "PolestarQuestItemButton", "PolestarHearthButton", "PolestarTargetButton", "PolestarRareButton",
-		"PolestarBagButton", "PolestarTravelButton" },
+		"PolestarBagButton", "PolestarTravelButton", "PolestarTargetAnchor", "PolestarTargetRow1", "PolestarTargetRow2",
+		"PolestarTargetRow3", "PolestarTargetRow4", "PolestarTargetRow5", "PolestarTargetRow6", "PolestarTargetRow7",
+		"PolestarTargetRow8" },
 	arrow = { "PolestarNavArrow" },
 }
 local POLESTAR_UI = {
@@ -624,6 +629,34 @@ local function rebuildLists()
 		woc.naowhEditHooked = true
 		hooksecurefunc(naowh, "ShowUnlockMode", function() ns.naowhEditing = true; wakeLoop() end)
 		hooksecurefunc(naowh, "HideUnlockMode", function() ns.naowhEditing = false; wakeLoop() end)
+	end
+	-- Nock's edit mode (its Edit button, its setup's steps, the Lock button) goes through Nock:SetLocked, and its frames take the
+	-- mouse only while it is unlocked: while it is, everything is shown as in Edit Mode, so a faded Nock piece can be found and
+	-- dragged. Told by that call and by a profile change, copy, reset or import (Nock:OnProfileSwitched; the lock is part of
+	-- the profile), hooked once, no polling; read once here for a Nock left unlocked at the last logout. Only on a hunter:
+	-- Nock loads on every class (its HUD hidden), and a profile shared with the hunter, left unlocked there, kept every row
+	-- in full and the pixel shift paused on a mage (audit Nov 17).
+	local nock = _G.Nock
+	if type(nock) == "table" and type(nock.SetLocked) == "function" and type(nock.IsLocked) == "function"
+		and not woc.nockEditHooked then
+		woc.nockEditHooked = true
+		local function nockEdit()
+			local ok, locked = pcall(nock.IsLocked)
+			ns.nockEditing = (nock.isHunter and ok and locked == false) or false
+			wakeLoop()
+		end
+		hooksecurefunc(nock, "SetLocked", nockEdit)
+		if type(nock.OnProfileSwitched) == "function" then hooksecurefunc(nock, "OnProfileSwitched", nockEdit) end
+		nockEdit()
+		-- Nock places its HUD box again from its saved spot now and then (a pet summoned or lost, a spell learned, a profile
+		-- change: its HUD:ApplyPosition). The shift is told, so it goes back on top at once instead of the box jumping to its
+		-- own spot for a second, and three such places close together never get the box left out of the shift (audit Nov 17).
+		local okM, hud = pcall(nock.GetModule, nock, "HUD", true)
+		if okM and type(hud) == "table" and type(hud.ApplyPosition) == "function" then
+			hooksecurefunc(hud, "ApplyPosition", function()
+				if ns.shiftOwnerPlaced then ns.shiftOwnerPlaced(_G.NockHUD, true) end
+			end)
+		end
 	end
 	if not _G.QuietHUDNaowhJourney then
 		local editor = type(_G.NaowhForever) == "table" and _G.NaowhForever.HudEditor
@@ -794,6 +827,15 @@ local function rebuildLists()
 			-- around"). Only while Spy is loaded. Spy places it again from where it is now whenever the list changes size:
 			-- Events.lua hookSpy tells the shift (ns.shiftOwnerPlaced), so the shift is never taken into its place.
 			if loaded("Spy") then add("Spy_MainWindow") end
+			-- Nock's HUD box and its alerts, the frames of its two rows (the owner, Nov 17: "yea add nock to the
+			-- shift"; beside WackyBars' bars, which shift, the box that stayed put looked unbalanced). Nock keeps its box on
+			-- whole screen pixels and puts it back when it is off them (its HUD:Refresh), so the shift moves by whole screen
+			-- pixels (stepShift, Shift.lua).
+			if loaded("Nock") then
+				for _, row in ipairs({ "nock", "nockAlerts" }) do
+					for _, n in ipairs(SPLIT_BY[row] and SPLIT_BY[row].frames or {}) do add(n) end
+				end
+			end
 			-- Chattynator's windows, with the game's chat windows (named just above)
 			if loaded("Chattynator") then
 				woc.nameChattynator()
@@ -988,6 +1030,8 @@ woc.claimDominos = function()
 	for i, key in ipairs({ d.fadeKey, d.trigKey, d.ovKey }) do
 		if DB[key] == nil then DB[key] = DB[d.follows[i]] end
 	end
+	-- (and the Action bars' own Faded, which its bars faded to while they sat in the Action bars list; audit Nov 17)
+	if type(DB[d.fdKey]) ~= "number" or DB[d.fdKey] < 0 then DB[d.fdKey] = DB.fdBars end
 	rebuildLists()
 end
 
@@ -1132,6 +1176,54 @@ end
 -- (5: a settings update was tried for 1.7.3 on 2026-11-16 and dropped after the audit: unticking Fade on a row whose Shown
 -- sat below the Global Faded wrote every action bar, lost Hide in combat and stranded the cast and breath bars. An element
 -- set below the Global Faded now fades lower instead, the changelog says so. The number stays used: SETTINGS_VERSION 5.)
+-- 1.7.3 to the next. 1.7.3 lowered the Faded of an element whose Shown was set below the Global Faded by the same share
+-- (Shown 0.2 of a Global 0.8 faded to a quarter of the Global Faded). That rule is gone: an element fades to the Global Faded
+-- or to its own (Faded per element, fd<Group>). An element that used the share gets the level it faded to as its own Faded,
+-- so nothing changes on the screen and the level is now on the page. Only for an element that fades (Fade ticked) and has no
+-- Faded of its own yet; not the cast bar and the breath bar, which have no row there and are only up for a cast or a timer.
+-- Only a 1.7.3 file (version 5): before 1.7.3 such an element stayed at its Shown, which is the rule again now, so an older
+-- file needs nothing (audit Nov 17: a 1.7.2 file's player frame went from 0.30 to 0.19). The file still holds its own
+-- version while the updates run; initDB writes the new one after them.
+MIGRATIONS[6] = function(saved)
+	if saved.settingsVersion ~= 5 then return end
+	local function get(k)
+		local v = saved[k]
+		if v == nil then v = DEFAULTS[k] end
+		return v
+	end
+	local function num(k) local v = get(k); return type(v) == "number" and v or 0 end
+	local base, idle = num("base"), num("idle")
+	-- (a Global Faded at or above the Global Shown, only in a file changed by hand: the share never showed there)
+	if base <= 0 or idle <= 0 or idle >= base then return end
+	-- (its Shown, as the loop works it out, and whether it fades)
+	local function own(key) local v = num(key); return v > 0 and math.max(v, 0.1) or nil end
+	local list = {
+		{ "fdBars", own("ovBars") or base, get("fadeBars") },
+		{ "fdPlayer", own("ovPlayer") or base, get("fadePlayer") },
+		{ "fdHud", own("ovHud") or base, get("fadeUnits") },
+		{ "fdQuest", own("ovQuest") or base, get("fadeTracker") },
+		{ "fdMap", own("ovMap") or (get("mapFollowsHud") and base or 1), get("fadeMinimap") },
+		{ "fdChat", get("chatDim") and base or (num("chatOpacity") > 0 and num("chatOpacity") or 1), get("fadeChat") },
+		{ "fdBagsBar", own("ovBagsBar") or base, get("fadeBags") },
+		{ "fdMicro", own("ovMicro") or base, get("fadeMicro") },
+		{ "fdRxp", num("rxpShown") > 0 and num("rxpShown") or base, true }, -- (these two as the loop reads them, no 0.1 floor)
+		{ "fdNav", num("navShown") > 0 and num("navShown") or base, true },
+	}
+	for _, s in ipairs(SPLIT) do
+		if not s.noGrid then
+			local fades = saved[s.fadeKey]
+			if fades == nil then
+				if s.follows then fades = get(s.follows[1]) else fades = DEFAULTS[s.fadeKey] end
+			end
+			list[#list + 1] = { s.fdKey, own(s.ovKey) or base, fades }
+		end
+	end
+	for _, e in ipairs(list) do
+		local key, peak, fades = e[1], e[2], e[3]
+		local has = type(saved[key]) == "number" and saved[key] >= 0
+		if fades == true and not has and peak < idle - 0.001 then saved[key] = math.min(idle * peak / base, peak) end
+	end
+end
 local dbLoaded = false
 local function initDB()
 	if dbLoaded then return end
@@ -1180,19 +1272,19 @@ local function initDB()
 end
 
 -- The setting that gives a group its own opacity, in place of the Global Shown.
--- An element's Faded. An element whose own Shown is set below the Global Faded still fades, lowered by the same share as its
--- Shown is below the Global Shown (Shown 1, Faded 0.2, an element at 0.1 fades to 0.02): a CurseForge ask, 2026-11-16, "set
--- my player frame more transparent than everything else"; the owner: "souns annoying to have 2 bars for each thing", so no
--- second slider. Every other element fades to the Global Faded, as before: the share applied to every element below the
--- Global Shown (the first try, the same day) changed existing setups, the owner's minimap at 0.45 went to 0.09 from 0.2 ("so
--- it will probably affect alot of people"). The Opacity slider used to stop at the Global Faded, so few setups have an
--- element below it (an old file, or Fade unticked while setting it); such an element used to sit at its own level, now it
--- fades lower (changelog). To keep one at a fixed level: untick its Fade on the Elements page.
--- floor: the Faded it would have (0 while Hide in combat holds it), peak: its Shown.
-woc.fadedFloor = function(floor, peak)
-	local base = DB.base or 0.75
-	if base > 0 and peak < floor - 0.001 then return floor * peak / base end
-	return floor
+-- An element's Faded: its own (Faded per element on the Opacity page), else the Global Faded; 0 while Hide in combat holds
+-- it. Never above its Shown: the callers take the lower of the two, so an element whose Shown is set below its Faded stays at
+-- its Shown. (1.7.3 lowered the Faded of an element set below the Global Faded by the same share, with nothing on the page to
+-- show it: a CurseForge ask, "set my player frame more transparent than everything else", that turned out to mean a Faded of
+-- its own, 0.35 faded and the Global Shown on mouse over. The owner, Nov 17: no second bar on every row, so the list you add
+-- to; and of the share, "cant we just remove it". MIGRATIONS[6] gives an element that used the share that level as its own
+-- Faded, so nothing changes on the screen.)
+-- g: the group, gone: Hide in combat holds it at 0 now.
+woc.fadedFloor = function(g, gone)
+	if gone then return 0 end
+	local own = DB[ns.FADED_KEYS[g] or ""]
+	if type(own) == "number" and own >= 0 then return own end
+	return DB.idle or 0
 end
 local OVERRIDE_KEYS = { bars = "ovBars", player = "ovPlayer", hud = "ovHud", quest = "ovQuest", map = "ovMap", bags = "ovBagsBar", micro = "ovMicro" }
 for _, s in ipairs(SPLIT) do OVERRIDE_KEYS[s.g] = s.ovKey end

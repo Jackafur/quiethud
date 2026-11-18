@@ -17,7 +17,7 @@ Open the settings with `/qhud`, or from the game's options: Esc, Options, AddOns
 - Mouse over is optional for every element. For "only on mouse over", leave just that one box ticked in the row. An element with only Fade ticked sits at the Faded opacity all the time, so with Faded at 0 it stays hidden, which is a way to keep the bags bar or the menu bar off.
 - On a fresh install everything fades, and comes up in combat, while you move and on mouse over (the tracker, chat and minimap also for New info).
 - The cast bar and the breath bar (the underwater timer, which also shows fatigue and feign death) aren't in the grid. They appear by themselves when needed: casting shows the cast bar and a running timer shows the breath bar, even when everything else is faded, so they only have an opacity.
-- The minimap's row works like the others. Moving shows it only while you move and an unticked Fade never fades it. Everything fades to the one Faded on the Opacity page.
+- The minimap's row works like the others. Moving shows it only while you move and an unticked Fade never fades it. Everything fades to the Global Faded on the Opacity page, unless you gave it a Faded of its own there.
 - A flight path doesn't count as moving. The HUD fades during the flight like you're standing still and comes back when you land and walk.
 - An element with Fade unticked is never faded. It stays at its own opacity from the Opacity page, or fully solid when that is Global. So to keep something at 0.5 all the time, untick its Fade and set its own opacity to 0.5.
 
@@ -28,11 +28,11 @@ Open the settings with `/qhud`, or from the game's options: Esc, Options, AddOns
 - New info: how long quest progress or a new zone keeps the tracker, the minimap and RestedXP up (up to 3 minutes). The chat has its own time on the Chat page.
 - Player frame: show the player frame while health or power is changing (off by default). Only the player frame comes up, and it fades a few seconds after the last change (3, or 8 for mana), so once you're topped off.
 - Fading out: how long elements take to fade out (the chat has its own time on the Chat page).
-- Show the whole HUD on demand: hold Alt, Ctrl or Shift, or tap one to toggle it, or use a key you bind (Esc, Options, Keybindings, AddOns, QuietHUD), held or as a toggle. With Stay shown while the mouse moves after I let go (off by default), letting go while you move the mouse keeps the HUD up until the mouse stops.
+- Show the whole HUD on demand: hold Alt, Ctrl or Shift, or tap one to toggle it, or use a key you bind (Esc, Options, Keybindings, AddOns, QuietHUD), held or as a toggle. With a controller, hold LB and RB together, or LT and RT (the game keeps those buttons for itself, so they can't be bound to QuietHUD's keys). With Stay shown while the mouse moves after I let go (off by default), letting go while you move the mouse keeps the HUD up until the mouse stops.
 - Target: Only an enemy target counts (off by default) leaves the HUD faded while you target a vendor, a quest giver or a friendly player.
 
 **Opacity** (how solid each thing is)
-- Global: one value for Shown and one for Faded (0 hides it completely and reads Hidden). Every element follows Global unless it has its own: under "Shown per element" there's a slider for each element, in two columns and the same groups as the Elements page, where Global (the far left of the slider) follows the global value and any number uses that instead. An element set below the Global Faded still fades, to the same share of its Shown as the rest of the HUD.
+- Global: one value for Shown and one for Faded (0 hides it completely and reads Hidden). Every element follows Global unless it has its own: under "Shown per element" there's a slider for each element, in two columns and the same groups as the Elements page, where Global (the far left of the slider) follows the global value and any number uses that instead. Under "Faded per element" there's a list that starts empty. Click Add an element and pick one, and it gets a row with its own Faded bar while the rest keep fading to the Global Faded. The x on the row takes it off the list again. Nothing fades to more than its own Shown.
 - The open bag windows and tooltips, and a box to darken the minimap instead of making it see-through (see Minimap below).
 - Chat, the minimap, the open bag windows and tooltips are solid until you change them.
 
@@ -74,7 +74,8 @@ have "Fade" unticked on the Action bars page while the rest still fade.
 
 **Faded opacity.** Zero hides an element completely. A small value like 0.2 leaves a faint ghost of
 it, which is handy if you sometimes need to find a button without bringing up the whole HUD. Faded can never be
-brighter than Shown, so if you drag one slider past the other, the other one moves with it.
+brighter than Shown, so if you drag one slider past the other, the other one moves with it. To give one element
+a Faded of its own, add it under Faded per element on the Opacity page.
 
 **Weapon drawn.** Draw your weapon (or your wand) to bring things up, sheathe it to send them
 away. QuietHUD asks the game whether a weapon is out, so it stays right through fights and the wand.

@@ -88,6 +88,9 @@ local PAGES = {
 			right = { "peekTapCtrl", "Tap Ctrl to toggle", PEEK.tapHelp, untick = PEEK.holdKeys } },
 		{ "check", "peekShift", "While I hold Shift", PEEK.holdHelp, untick = PEEK.tapKeys,
 			right = { "peekTapShift", "Tap Shift to toggle", PEEK.tapHelp, untick = PEEK.holdKeys } },
+		-- (only with a controller enabled in the game's options, like the Controller rows)
+		{ "check", "peekPad", "While I hold LB and RB (controller)", "The whole HUD shows while you hold LB and RB together, and fades when you let go. It works whatever the buttons are bound to.", when = function() return ns.padSetUp() end },
+		{ "check", "peekPadTriggers", "While I hold LT and RT (controller)", "The whole HUD shows while you hold LT and RT together, and fades when you let go. It works whatever the triggers are bound to.", when = function() return ns.padSetUp() end },
 		{ "check", "peekLinger", "Stay shown while the mouse moves after I let go", "For the While I hold boxes and the hold key. Let go with the mouse still and the HUD fades after the short wait below. Let go while moving the mouse and it stays shown until the mouse stops, so you can reach a button and click it. Once the mouse is on an element with Mouse over ticked, that keeps it shown." },
 		{ "slider", "peekLingerSeconds", "Wait for the mouse (seconds)", 0.1, 2, 0.05, "%.2f", nil, nil, "With Stay shown while the mouse moves ticked: how long the HUD waits for the mouse to move after you let go, and how long the mouse can stop on the way before the HUD fades. Higher is easier to reach a button, lower fades sooner after a plain look.", 420 },
 		{ "note", "Or bind a key: Esc, Options, Keybindings, AddOns, QuietHUD (one to hold, one to toggle)." },
@@ -110,9 +113,15 @@ local PAGES = {
 		{ "heading", "Global" },
 		{ "slider", "base", "Shown", 0.1, 1, 0.05, "%.2f", nil, true, "How solid an element is while it is shown. Every element set to Global uses this, except one with Fade unticked on the Elements page: on Global that one is fully solid." },
 		-- (the one Faded: every element fades to it)
-		{ "slider", "idle", "Faded", 0, 1, 0.05, "%.2f", "Hidden", true, "How solid every element is while it is faded. 0 hides them completely. Under Shown per element, an element can go below this and still fades, lower by the same share: at a tenth of the Global Shown, it fades to a tenth of this. For an element that should stay at one level all the time, untick its Fade on the Elements page and set its value under Shown per element." },
+		{ "slider", "idle", "Faded", 0, 1, 0.05, "%.2f", "Hidden", true, "How solid every element is while it is faded. 0 hides them completely. For one element that should fade to something else, add it under Faded per element. An element never fades to more than its own Shown. For an element that should stay at one level all the time, untick its Fade on the Elements page and set its value under Shown per element." },
 		{ "heading", "Shown per element" },
 		-- (a slider for every element goes here, in two columns: see below)
+		-- An element's own Faded (a CurseForge ask, Nov 17: his player frame at 0.35 faded, the Global Shown on mouse over). The
+		-- owner: no second bar on every row ("the menu is gonna get really messy"), no page-wide switch, no box per row, and a
+		-- chat command "doesnt sound very user friendly". So the list is empty for everyone, and the button adds one element as
+		-- a row with one bar (makeFadedList). It is the only way to set it.
+		{ "heading", "Faded per element" },
+		{ "fadedlist" },
 		{ "heading", "Windows" },
 		{ "slider", "bagAlpha", "Open bag windows", 0, 1, 0.05, "%.2f", "Global", true, "Your open bags. To move them around, see Open bags on the Extras page." },
 		{ "slider", "tooltipAlpha", "Tooltips", 0, 1, 0.05, "%.2f", "Global", true, "The game's tooltips, like this one." },
@@ -209,6 +218,25 @@ do
 			if not uncounted[label] then count = count + 1 end
 		end
 	end
+	-- The elements that can have a Faded of their own (Faded per element): the Shown per element rows, in their order, without
+	-- the cast bar and the breath bar (up only for a cast or a timer). g: the group, key: its Faded setting (-1 the Global
+	-- Faded), shown: its Shown setting, heading: the group heading it stands under (text or a function).
+	do
+		local gOf = { ["Objective tracker"] = "quest", ["Chat"] = "chat", ["Minimap"] = "map", ["Action bars"] = "bars",
+			["Player frame"] = "player", ["Bags bar"] = "bags", ["Menu bar"] = "micro", ["Added frames"] = "hud",
+			["Guide windows"] = "rxp", ["Arrow"] = "nav" }
+		local skip = {}
+		for _, s in ipairs(SPLIT) do gOf[s.label], skip[s.label] = s.g, s.noGrid end
+		ns.fadedRows = {}
+		for _, group in ipairs(groups) do
+			for _, label in ipairs(group[2]) do
+				if not skip[label] then
+					ns.fadedRows[#ns.fadedRows + 1] = { label = label, g = gOf[label], key = ns.FADED_KEYS[gOf[label]],
+						shown = keyOf[label], heading = group[1], addon = addonOf[label], when = whenOf[label] or group.when }
+				end
+			end
+		end
+	end
 	for _, page in ipairs(PAGES) do
 		for i, item in ipairs(page.items) do
 			if item[1] == "heading" and item[2] == "Shown per element" then -- (the heading's text: rename both together)
@@ -220,6 +248,10 @@ do
 end
 local config
 local pages, tabs, controls = {}, {}, {}
+-- True while a bar is being set by code (its refresh below). In the game SetValue runs the bar's OnValueChanged, and with the
+-- left button down and the mouse near, a bar beside the one being dragged took that for a drag of its own: it wrote its
+-- setting again, started the Shown preview, or pulled a neighbour's Faded down to its Shown (audit Nov 17).
+local settingBar = false
 
 local function syncControls()
 	for _, fn in ipairs(controls) do fn() end
@@ -251,6 +283,15 @@ do
 		end)
 		target:HookScript("OnLeave", function() GameTooltip:Hide() end)
 		return target
+	end
+
+	-- An item for another addon is left out while that addon is not loaded (when the game cannot say, it is shown).
+	local isLoaded = (C_AddOns and C_AddOns.IsAddOnLoaded) or IsAddOnLoaded
+	local function wanted(item)
+		if item.when and not item.when() then return false end -- (the Controller row's slider, without a controller)
+		if not (item.addon and isLoaded) then return true end
+		local ok, loaded = pcall(isLoaded, item.addon)
+		return not ok or loaded and true or false
 	end
 
 	-- x: from the left (12 when not given); untick: setting keys that go off when this box is ticked (a pair that says
@@ -320,6 +361,30 @@ do
 		end
 	end
 
+	-- An element's own Faded (Faded per element; ns.fadedRows). Its Shown: its own, or the Global Shown. The Faded is never
+	-- brighter than that (limit: its bar stops there, as the Global pair carry each other). A row is only on the page while its
+	-- setting is 0 or more; -1, the Global Faded, reads as 0 for a bar nobody sees.
+	local function fadedShown(row)
+		local v = VIRTUAL[row.shown] and VIRTUAL[row.shown].get() or DB[row.shown] or 0
+		return v > 0 and math.max(v, 0.1) or (DB.base or 0.75)
+	end
+	for _, row in ipairs(ns.fadedRows) do
+		VIRTUAL[row.key] = {
+			-- (never above the element's Shown, which is where it really sits when its Shown was lowered after: audit Nov 17)
+			get = function() return math.min(math.max(DB[row.key] or 0, 0), fadedShown(row)) end,
+			set = function(v) DB[row.key] = v end,
+			limit = function() return fadedShown(row) end,
+		}
+	end
+	-- Gives an element its own Faded (v from 0 to 1, no higher than its Shown), or with nil the Global Faded again. Without v
+	-- and with start: where it fades to now, so adding it changes nothing on the screen. Returns what was stored.
+	ns.setFaded = function(row, v, start)
+		if start then v = woc.fadedFloor(row.g) end
+		DB[row.key] = v and math.max(0, math.min(v, fadedShown(row))) or -1
+		settingChanged()
+		syncControls()
+		return DB[row.key]
+	end
 	-- compact puts the label to the left of the slider on one short row (the Opacity page), instead of above it. compact "column" is
 	-- a narrower row in one of the two columns of the Opacity page (x is where the column starts): the name is white and indented
 	-- under its group heading, like the rows of the Elements grid. help is the tooltip of the name.
@@ -359,14 +424,18 @@ do
 		local readout = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 		readout:SetPoint("LEFT", s, "RIGHT", 12, 0)
 		s:SetScript("OnValueChanged", function(self, val)
+			if settingBar then return end
 			-- The mouse can drift off the thin bar while you drag, so the check is generous: 80 units above, below and to the sides.
 			local okOver, over = pcall(self.IsMouseOver, self, 80, -80, -80, 80)
 			local dragging = IsMouseButtonDown and IsMouseButtonDown("LeftButton") and (over or (not okOver and self:IsMouseOver()))
 			if not dragging then return end
 			val = math.floor(val / stepV + 0.5) * stepV
-			-- (an element's own Shown may go below the Global Faded: it then fades lower by the same share, woc.fadedFloor, so
-			-- it still fades. It used to stop at the Global Faded; 2026-11-16, a CurseForge ask for a player frame fainter than
-			-- the rest)
+			-- (an element's own Faded stops at its Shown; the thumb is put back there below)
+			local limit, stopped = VIRTUAL[key] and VIRTUAL[key].limit, false
+			if limit and val > limit() + 0.001 then val, stopped = limit(), true end
+			-- (an element's own Shown may go below the Global Faded: it then stays at its Shown, since nothing fades to more
+			-- than its Shown; to fade it lower it gets a Faded of its own, Faded per element. It used to stop at the Global
+			-- Faded, and in 1.7.3 faded lower by a share nobody could see)
 			if VIRTUAL[key] then VIRTUAL[key].set(val) else DB[key] = val end
 			readout:SetText((zeroText and val == 0) and zeroText or string.format(fmt, val))
 			-- (a Shown bar shows the HUD while it is dragged and 3 seconds after, so the change can be seen: standing still with
@@ -384,12 +453,14 @@ do
 				DB.idle, carried = val, true
 			end
 			settingChanged()
-			if carried then syncControls() end
+			if carried or stopped then syncControls() end
 		end)
 		controls[#controls + 1] = function()
 			local v = VIRTUAL[key] and VIRTUAL[key].get() or DB[key]
 			if v == nil then v = minV end
+			settingBar = true
 			s:SetValue(v)
+			settingBar = false
 			readout:SetText((zeroText and v == 0) and zeroText or string.format(fmt, v))
 		end
 		controls[#controls]()
@@ -554,16 +625,19 @@ do
 			-- thing", Nov 10): one way by name, two as "A or B", more as "your keys"; a bound key reads "key" in the heading (its
 			-- name can be long) and by name in the hover text.
 			local mods, keys = {}, {}
+			local short = {} -- (each one's name for the heading: Alt, Ctrl, Shift, LB+RB)
 			for _, m in ipairs({ { "Alt", "peekAlt", "peekTapAlt" }, { "Ctrl", "peekCtrl", "peekTapCtrl" },
-				{ "Shift", "peekShift", "peekTapShift" } }) do
-				if DB[m[2]] then mods[#mods + 1] = "hold " .. m[1] elseif DB[m[3]] then mods[#mods + 1] = "tap " .. m[1] end
+				{ "Shift", "peekShift", "peekTapShift" }, { "LB+RB", "peekPad", pad = true },
+				{ "LT+RT", "peekPadTriggers", pad = true } }) do
+				local way = (DB[m[2]] and (not m.pad or ns.padSetUp())) and "hold " or (m[3] and DB[m[3]]) and "tap " or nil
+				if way then mods[#mods + 1], short[#short + 1] = way .. m[1], m[1] end
 			end
 			for _, b in ipairs({ "QUIETHUD_PEEK", "QUIETHUD_PEEKTOGGLE" }) do
 				local key = GetBindingKey and GetBindingKey(b)
 				if key and key ~= "" then keys[#keys + 1] = (GetBindingText and GetBindingText(key)) or key end
 			end
 			local items = {}
-			for _, m in ipairs(mods) do items[#items + 1] = m:match("%u%l+$") end
+			for _, m in ipairs(short) do items[#items + 1] = m end
 			if #keys > 0 then items[#items + 1] = "key" end
 			local on = #items > 0
 			local all = {}
@@ -730,7 +804,6 @@ do
 		-- An addon's own rows (grid.extra) go at the end under its name, only while it is loaded. (A client that cannot say
 		-- gets them, as the pages' addon items do.)
 		-- A row of its own for an addon (row.addon, Dominos in the Bars group) is left out the same way.
-		local isLoaded = (C_AddOns and C_AddOns.IsAddOnLoaded) or IsAddOnLoaded
 		local function loaded(addon)
 			if not (addon and isLoaded) then return true end
 			local ok, yes = pcall(isLoaded, addon)
@@ -911,6 +984,159 @@ do
 		return math.max(16, math.ceil(note:GetStringHeight())) + 8
 	end
 
+	-- Faded per element (the Opacity page): the elements with a Faded of their own, one row each (one bar, and a button that
+	-- takes the element off the list again), and under them the button that adds one from a list of the elements. Empty for
+	-- everyone until they add one: the owner, Nov 17, wanted no second bar on every row. A row is made the first time its
+	-- element is added, and the rows stand in the page's order. moved(height): the rows take that much room now, so what is
+	-- below them moves down (buildConfig). Returns the height it takes without rows.
+	-- Cost: nothing outside the open window; with it open, one pass over the elements each time a setting changes.
+	local function makeFadedList(parent, y, moved)
+		local ROW = 22
+		local list = CreateFrame("Frame", nil, parent)
+		list:SetPoint("TOPLEFT", 0, y)
+		list:SetPoint("TOPRIGHT", 0, y)
+		list:SetHeight(ROW)
+		local add = CreateFrame("Button", nil, list, "UIPanelButtonTemplate")
+		add:SetSize(130, 22)
+		add:SetText("Add an element")
+		addHelp(list, add, "Add an element", "Pick an element to give it a Faded of its own. It gets a row here with one bar, and the rest keep fading to the Global Faded.")
+		local hint = list:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		hint:SetPoint("LEFT", add, "RIGHT", 10, 0)
+		hint:SetTextColor(0.75, 0.75, 0.75)
+		local rows = {}
+		local function makeRow(row)
+			local r = CreateFrame("Frame", nil, list)
+			r:SetHeight(ROW)
+			makeSlider(r, 0, row.label, row.key, 0, 1, 0.05, "%.2f", "Hidden", true, nil,
+				"How solid this element is while it is faded, in place of the Global Faded. 0 hides it completely. It stops at the element's Shown. It only counts while the element's Fade is ticked on the Elements page.")
+			local off = CreateFrame("Button", nil, r, "UIPanelCloseButton")
+			off:SetSize(20, 20)
+			off:SetPoint("TOPLEFT", 500, 2)
+			off:SetScript("OnClick", function() ns.setFaded(row) end)
+			addHelp(r, off, "Take off the list", row.label .. " fades to the Global Faded again.")
+			return r
+		end
+
+		-- The list to pick from: a box under the button with every element under its group heading, in two columns. An element
+		-- already on the list is grey. A click anywhere else closes it (the box sits on a button the size of the screen).
+		local picker
+		local function showPicker()
+			if not picker then
+				local LINE, COLW, PAD = 18, 160, 8
+				picker = CreateFrame("Button", nil, config)
+				picker:SetFrameStrata("FULLSCREEN_DIALOG")
+				picker:SetAllPoints(UIParent)
+				picker:SetScript("OnClick", function(self) self:Hide() end)
+				-- (closed with the window, so it is not there again when the window is next opened)
+				picker:SetScript("OnHide", function(self) if self:IsShown() then self:Hide() end end)
+				local box = CreateFrame("Frame", nil, picker)
+				box:EnableMouse(true)
+				box:SetClampedToScreen(true)
+				box:SetPoint("TOPLEFT", add, "BOTTOMLEFT", 0, -2)
+				local edge = box:CreateTexture(nil, "BACKGROUND")
+				edge:SetPoint("TOPLEFT", -1, 1)
+				edge:SetPoint("BOTTOMRIGHT", 1, -1)
+				edge:SetColorTexture(0.45, 0.45, 0.45, 1)
+				local bg = box:CreateTexture(nil, "BORDER")
+				bg:SetAllPoints()
+				bg:SetColorTexture(0.05, 0.05, 0.05, 1)
+				local lines = {}
+				picker.fill = function()
+					-- (only what is on the page now: an addon's rows while it is loaded, the controller's with a controller)
+					local want, last = {}, nil
+					for _, row in ipairs(ns.fadedRows) do
+						if wanted(row) then
+							if row.heading ~= last then
+								last = row.heading
+								want[#want + 1] = { heading = type(last) == "function" and last() or last }
+							end
+							want[#want + 1] = { row = row }
+						end
+					end
+					-- (the right column starts at the first heading past the middle)
+					local col, top, tallest = 0, 0, 0
+					for i, w in ipairs(want) do
+						if w.heading then
+							if col == 0 and i > #want / 2 then col, top = 1, 0 end
+							if top > 0 then top = top + 4 end
+						end
+						local b = lines[i]
+						if not b then
+							b = CreateFrame("Button", nil, box)
+							b:SetSize(COLW, LINE)
+							b.text = b:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+							local glow = b:CreateTexture(nil, "HIGHLIGHT")
+							glow:SetAllPoints()
+							glow:SetColorTexture(1, 1, 1, 0.12)
+							b:SetScript("OnClick", function(self)
+								picker:Hide()
+								-- (it starts where the element fades to now, so nothing changes on the screen until its bar is dragged)
+								if self.row then ns.setFaded(self.row, nil, true) end
+							end)
+							lines[i] = b
+						end
+						local added = w.row and (DB[w.row.key] or -1) >= 0
+						b.row = w.row
+						b.text:ClearAllPoints()
+						b.text:SetPoint("LEFT", w.heading and 0 or 8, 0)
+						b.text:SetText(w.heading or w.row.label)
+						if w.heading then
+							b.text:SetTextColor(1, 0.82, 0)
+						elseif added then
+							b.text:SetTextColor(0.5, 0.5, 0.5)
+						else
+							b.text:SetTextColor(1, 1, 1)
+						end
+						b:EnableMouse(not w.heading and not added)
+						b:ClearAllPoints()
+						b:SetPoint("TOPLEFT", PAD + col * COLW, -PAD - top)
+						b:Show()
+						top = top + LINE
+						tallest = math.max(tallest, top)
+					end
+					for i = #want + 1, #lines do lines[i]:Hide() end
+					box:SetSize(PAD * 2 + COLW * 2, PAD * 2 + tallest)
+				end
+			end
+			picker.fill()
+			picker:Show()
+		end
+		add:SetScript("OnClick", showPicker)
+
+		local count = -1
+		local function refresh()
+			local n = 0
+			for _, row in ipairs(ns.fadedRows) do
+				local on = (DB[row.key] or -1) >= 0 and wanted(row)
+				local r = rows[row.key]
+				if on and not r then
+					r = makeRow(row)
+					rows[row.key] = r
+				end
+				if r then
+					r:SetShown(on)
+					if on then
+						r:ClearAllPoints()
+						r:SetPoint("TOPLEFT", 0, -n * ROW)
+						r:SetPoint("TOPRIGHT", 0, -n * ROW)
+						n = n + 1
+					end
+				end
+			end
+			if n == count then return end
+			count = n
+			local taken = n * ROW + (n > 0 and 4 or 0)
+			add:ClearAllPoints()
+			add:SetPoint("TOPLEFT", 16, -taken)
+			hint:SetText(n > 0 and "Everything else fades to the Global Faded."
+				or "Everything fades to the Global Faded. Add an element to give it a Faded of its own.")
+			moved(taken)
+		end
+		controls[#controls + 1] = refresh
+		refresh()
+		return ROW + 6
+	end
+
 	local function showPage(index)
 		for i, frame in ipairs(pages) do
 			frame:SetShown(i == index)
@@ -986,19 +1212,16 @@ do
 		-- The tallest page sets the window's height. A page sits between the tabs (pageTop from the top) and the buttons
 		-- (pageBottom from the bottom); the notes are only measured here, with the game's own font.
 		local pageTop, pageBottom = framed and 62 or 68, framed and 30 or 44
-		local tabX, tallest = 12, 0
-		-- An item for another addon is left out while that addon is not loaded (when the game cannot say, it is shown).
-		local isLoaded = (C_AddOns and C_AddOns.IsAddOnLoaded) or IsAddOnLoaded
-		local function wanted(item)
-			if item.when and not item.when() then return false end -- (the Controller row's slider, without a controller)
-			if not (item.addon and isLoaded) then return true end
-			local ok, loaded = pcall(isLoaded, item.addon)
-			return not ok or loaded and true or false
-		end
+		local tabX = 12
+		-- (each page's height as built, and how much a Faded per element list on it has grown since: sizeConfig below)
+		local heights, grown, sizeConfig = {}, {}, nil
 		for i, page in ipairs(PAGES) do
-			local frame = CreateFrame("Frame", nil, config)
-			frame:SetPoint("TOPLEFT", 0, -pageTop)
-			frame:SetPoint("BOTTOMRIGHT", 0, pageBottom)
+			local pageFrame = CreateFrame("Frame", nil, config)
+			pageFrame:SetPoint("TOPLEFT", 0, -pageTop)
+			pageFrame:SetPoint("BOTTOMRIGHT", 0, pageBottom)
+			-- What the items are built on: the page, and after a Faded per element list its tail, a frame at the page's top left
+			-- that moves down as the list grows. The items after the list keep their page coordinates and move with it.
+			local frame = pageFrame
 			local y = -4
 			local items = {}
 			for _, item in ipairs(page.items) do
@@ -1053,6 +1276,17 @@ do
 						lowest = math.min(lowest, cy)
 					end
 					y = lowest
+				elseif item[1] == "fadedlist" then
+					local tail = CreateFrame("Frame", nil, pageFrame)
+					tail:SetHeight(1)
+					y = y - makeFadedList(pageFrame, y, function(taken)
+						tail:ClearAllPoints()
+						tail:SetPoint("TOPLEFT", 0, -taken)
+						tail:SetPoint("TOPRIGHT", 0, -taken)
+						grown[i] = taken
+						if sizeConfig then sizeConfig() end
+					end)
+					frame = tail
 				elseif item[1] == "about" then
 					y = y - makeAbout(frame, y, titleText)
 				elseif item[1] == "button" then
@@ -1064,8 +1298,8 @@ do
 					y = y - (item[9] and 22 or 46)
 				end
 			end
-			pages[i] = frame
-			tallest = math.max(tallest, -y)
+			pages[i] = pageFrame
+			heights[i] = -y
 			local tab
 			if framed then
 				-- The game's top tabs size themselves to their text and sit on the inset, after the portrait (as in the macro window).
@@ -1092,7 +1326,15 @@ do
 			tabsRight = 51 + 3 * (#tabs - 1) + 7 -- the first tab's place, the gaps, and the last tab's art past its edge
 			for _, tab in ipairs(tabs) do tabsRight = tabsRight + tab:GetWidth() end
 		end
-		config:SetSize(math.max(WIN.width, math.ceil(tabsRight + 10)), pageTop + tallest + pageBottom + 6)
+		local width = math.max(WIN.width, math.ceil(tabsRight + 10))
+		-- (again when a Faded per element list gains or loses a row: the window grows only once that page is the tallest)
+		sizeConfig = function()
+			local tallest = 0
+			for n, h in ipairs(heights) do tallest = math.max(tallest, h + (grown[n] or 0)) end
+			config:SetSize(width, pageTop + tallest + pageBottom + 6)
+			fitConfig()
+		end
+		sizeConfig()
 
 		-- The buttons sit in the window's button bar (framed) or above the bottom edge (plain).
 		local buttonH, buttonY, buttonX = framed and 22 or 24, framed and 4 or 14, framed and 4 or 16

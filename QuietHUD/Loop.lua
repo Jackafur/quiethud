@@ -120,11 +120,51 @@ local function holdText(fs)
 	textHeld[fs] = textPass
 end
 
+-- While I hold LB and RB / LT and RT (the Show when page, peekPad and peekPadTriggers; a controller player on CurseForge,
+-- Nov 17: "hold L1+R1 and the hidden UI elements would show"). In controller mode the game keeps the shoulder buttons and the
+-- triggers for itself, so a key binding on them never runs, and its own switches for them (GamepadMode, Blizzard_Gamepad)
+-- were never called on the owner's setup either (a probe printed nothing). So the buttons are read as they are, whatever
+-- they are bound to: the controller's state (C_GamePad.GetDeviceMappedState). No event says a controller button went down.
+-- Cost: one state read per tenth of a second (also while a fade runs every frame), only while a controller is what you play
+-- with (ns.padActive) and one of the two boxes is ticked, plus one name lookup per button held; nothing for anyone else.
+-- (on woc, not a local: update() is at Lua 5.1's limit of 60 outside names)
+do
+	local padAt, hud, trig = -1, false, false
+	woc.padHeld = function(now)
+		if not (ns.padActive and (DB.peekPad or DB.peekPadTriggers) and C_GamePad and C_GamePad.GetDeviceMappedState) then
+			hud, trig = false, false
+			return false, false
+		end
+		if now - padAt < 0.1 and now >= padAt then return hud, trig end
+		padAt = now
+		local lb, rb, lt, rt = false, false, false, false
+		local ok, state = pcall(C_GamePad.GetDeviceMappedState)
+		if ok and type(state) == "table" and type(state.buttons) == "table" then
+			for i, on in ipairs(state.buttons) do
+				if on == true then
+					local okN, name = pcall(C_GamePad.ButtonIndexToConfigName, i - 1) -- (0 based)
+					if okN then
+						if name == "PADLSHOULDER" then lb = true elseif name == "PADRSHOULDER" then rb = true
+						elseif name == "PADLTRIGGER" then lt = true elseif name == "PADRTRIGGER" then rt = true end
+					end
+				end
+			end
+		end
+		local wasHud, wasTrig = hud, trig
+		hud, trig = lb and rb, lt and rt
+		-- (a let-go, for Stay shown while the mouse moves after I let go)
+		if woc.peekLetGo and ((wasHud and not hud and DB.peekPad) or (wasTrig and not trig and DB.peekPadTriggers)) then
+			woc.peekLetGo()
+		end
+		return hud, trig
+	end
+end
+
 local function update(dt)
 	local now = GetTime()
-	-- Edit Mode, or Naowh's HUD Editor (its mover plates sit inside the frames, so a faded frame would hide its plate; see
-	-- rebuildLists in Core.lua): everything is shown in full and the pixel shift puts every frame back.
-	local edit = (EditModeManagerFrame and EditModeManagerFrame:IsShown()) or ns.naowhEditing or false
+	-- Edit Mode, Naowh's HUD Editor (its mover plates sit inside the frames, so a faded frame would hide its plate; see
+	-- rebuildLists in Core.lua) or Nock's edit mode: everything is shown in full and the pixel shift puts every frame back.
+	local edit = (EditModeManagerFrame and EditModeManagerFrame:IsShown()) or ns.naowhEditing or ns.nockEditing or false
 	local combat = UnitAffectingCombat("player") and true or false
 	local enabled = DB.enabled
 
@@ -232,8 +272,10 @@ local function update(dt)
 		vis.nav = ns.navForce or triggered(DB.trigNav, wake, moved, false, combat, inside, LISTS.nav)
 		vis.rxp = triggered(DB.trigRxp, wake, moved, now < ns.questUntil, combat, inside, LISTS.rxp, true)
 	end
+	local padHud, padTrig = woc.padHeld(now)
 	local showAll = edit or now < ns.peekUntil or (DB.peekAlt and IsAltKeyDown()) or (DB.peekCtrl and IsControlKeyDown())
-		or (DB.peekShift and IsShiftKeyDown()) or now < ns.peekLingerUntil
+		or (DB.peekShift and IsShiftKeyDown()) or (DB.peekPad and padHud)
+		or (DB.peekPadTriggers and padTrig) or now < ns.peekLingerUntil
 	-- (the bars as if the whole HUD were not shown, for a bar with Show with unticked: woc.barsCurOwn below)
 	local barsOwnWanted = vis.bars and true or false
 	if showAll then
@@ -245,7 +287,6 @@ local function update(dt)
 	flags.bags, flags.micro = DB.fadeBags, DB.fadeMicro
 	for _, s in ipairs(SPLIT) do flags[s.g] = gFade(s) end
 	if DB.hidePanel then flags.panel = true end
-	local idle = DB.idle or 0
 	-- Hide in combat (bit 5): in a fight the element goes all the way to 0, whatever its Faded opacity. Only worked out in a
 	-- fight: one bit per element per update then, nothing outside one.
 	local goneNow = combat and gone or nil
@@ -296,10 +337,9 @@ local function update(dt)
 			if g == "bars" then woc.barsPeak = peak end
 			-- (the map's "up" opacity: the Arrow cover and the darkened map's Faded measure "faded" against it, Minimap.lua)
 			if g == "map" then woc.mapPeak = peak end
-			-- Everything fades to the Global Faded, lower for an element whose Shown is set below it (woc.fadedFloor).
-			local floor = idle
-			if goneNow and goneNow[g] then floor = 0 end
-			floor = woc.fadedFloor(floor, peak)
+			-- Everything fades to the Global Faded, an element with a Faded of its own to that, and to 0 while Hide in combat
+			-- holds it (woc.fadedFloor). Never above its Shown.
+			local floor = woc.fadedFloor(g, goneNow and goneNow[g])
 			local low = math.min(floor, peak)
 			if g == "bars" then
 				-- (the bars' fade for a bar of its own, ActionBars.lua applyBars: Show with Alt unticked,

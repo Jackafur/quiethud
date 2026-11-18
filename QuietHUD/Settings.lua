@@ -74,6 +74,8 @@ local DEFAULTS = {
 	peekTapAlt = false, -- a tap of Alt on its own toggles the whole HUD (the Tap boxes and the hold boxes untick each other)
 	peekTapCtrl = false,
 	peekTapShift = false,
+	peekPad = false, -- holding LB and RB together on a controller shows the whole HUD (Loop.lua)
+	peekPadTriggers = false, -- the same for LT and RT
 	peekLinger = false, -- let go of a hold key (or the hold binding): the whole HUD stays while the cursor moves (Loop.lua)
 	peekLingerSeconds = 0.4, -- (how long it waits for the cursor to move, at the let-go and between moves)
 	bagAlpha = 1, -- (0 = Global; solid by default, as the tooltips)
@@ -88,11 +90,15 @@ local DEFAULTS = {
 	hidePanel = false, -- hide the party panel completely
 	-- Own opacity for an element (0 = follow the Global Shown). The split groups' are added with SPLIT below.
 	ovBars = 0, ovPlayer = 0, ovCast = 0, ovHud = 0, ovQuest = 0, ovMap = 0, ovBagsBar = 0, ovMicro = 0,
+	-- An element's own Faded, in place of the Global Faded (-1 = the Global Faded; 0 is a level of its own: hidden). Set under
+	-- Faded per element on the Opacity page. The split groups' are added with SPLIT below (FADED_KEYS).
+	fdBars = -1, fdPlayer = -1, fdHud = -1, fdQuest = -1, fdMap = -1, fdBagsBar = -1, fdMicro = -1, fdChat = -1, fdRxp = -1,
+	fdNav = -1,
 }
 -- The saved file's version. A file from before the launch build has none and is not read: everyone starts on these
 -- defaults. A later change that renames or removes a setting, or changes what one means, adds a step to MIGRATIONS and
 -- raises this number (see initDB in Core.lua).
-local SETTINGS_VERSION = 5
+local SETTINGS_VERSION = 6
 
 -- The unit frame, aura and alert rows, the cast bar and the breath bar, and Dominos. Each has its own frames, its own row in
 -- the trigger grid (Fade and triggers) and its own opacity; their settings are named after the group (fadeTarget,
@@ -194,8 +200,30 @@ local SPLIT = {
 	-- QuietHUD writes it directly (no host); Spy makes it after QuietHUD loads, the CreateFrame hook (Core.lua) catches it.
 	{ g = "spy", label = "Spy", frames = { "Spy_MainWindow" }, addon = "Spy", uncounted = true,
 		cols = { 7, 8, 9, 10, 2, 3, 4, 5, 6 }, trig = 78, info = "spyUntil" },
+	-- Nock, the hunter HUD (WoW Forever and TBC), in one row on the Elements and Opacity pages only while it is loaded (the
+	-- owner runs it on his hunter, Nov 17: "its getting qhud support"). NockHUD is its HUD box: the swing and Auto Shot bars,
+	-- the range ladder, mana, the cast bar, the cooldown grid, the pet row, the aspect and Hunter's Mark corners and the buff
+	-- row are all inside it. (Its stand-alone panels, the buff and debuff trackers, the helpers and Misdirection, are not
+	-- loaded on WoW Forever, Nock_Camelot.toc, so they are not named.) Nock sets the box's opacity itself at each pull
+	-- (its own In combat and Out of combat opacity), and QuietHUD's write on change puts its own back (keep, Core.lua).
+	-- Left alone: Nock's warnings, the aggro flash and its banners (they are the warning), and its windows.
+	-- hover: the corners and the buff row stand outside the box, so mouse over looks at them too (by name: listing them as
+	-- frames would fade them twice, inside a faded box). Nock's own edit mode shows everything in full, like Edit Mode
+	-- (ns.nockEditing, Core.lua).
+	{ g = "nock", label = "Nock", frames = { "NockHUD" }, addon = "Nock", uncounted = true, ownedHover = true,
+		hover = { "NockHUD", "NockReactAspectIcon", "NockReactMarkIcon", "NockReactBuffs" } },
+	-- Nock's alerts, see-through like Naowh's (Fade unticked, Shown 0.50; the owner, Nov 17, "yea probably", seeing its Ammo
+	-- low square): the warning squares (ammo, pet, tracking, aspect...), the aggro flash and the eating and drinking banner
+	-- (its boss alert, Ripper countdown and PvP tag are not loaded on WoW Forever). Nock shows and hides them itself and
+	-- animates their parts, so
+	-- they are hosted like Naowh's alerts (the host fades, the opacities multiply; host, Guides.lua).
+	{ g = "nockAlerts", label = "Nock alerts", frames = { "NockWarnings", "NockAggroWarning", "NockConsumeBanner" },
+		addon = "Nock", host = true, uncounted = true, fade = false, ov = 0.5 },
 }
 local SPLIT_BY = {}
+-- The setting that holds each group's own Faded (the groups of FADE_ORDER, Frames.lua, and the split groups).
+local FADED_KEYS = { bars = "fdBars", player = "fdPlayer", hud = "fdHud", quest = "fdQuest", map = "fdMap", bags = "fdBagsBar",
+	micro = "fdMicro", chat = "fdChat", rxp = "fdRxp", nav = "fdNav" }
 for _, s in ipairs(SPLIT) do
 	local cap = s.g:sub(1, 1):upper() .. s.g:sub(2)
 	s.fadeKey, s.trigKey, s.ovKey = "fade" .. cap, "trig" .. cap, "ov" .. cap
@@ -204,6 +232,8 @@ for _, s in ipairs(SPLIT) do
 	if not s.follows then
 		DEFAULTS[s.fadeKey], DEFAULTS[s.trigKey], DEFAULTS[s.ovKey] = s.fade ~= false, s.trig or DEFAULTS.trigUnits, s.ov or 0
 	end
+	s.fdKey = "fd" .. cap
+	DEFAULTS[s.fdKey], FADED_KEYS[s.g] = -1, s.fdKey
 	SPLIT_BY[s.g] = s
 end
 -- The trigger rows that are settings of their own (the split groups above have theirs in s.trigKey).
@@ -218,8 +248,10 @@ SPLIT.groups = {
 	{ "Unit frames", { "Player frame", "Target and focus", "Pet frame", "Party and raid", "Party panel" } },
 	{ "Auras and alerts", { "Buffs", "Debuffs", "Cooldown trackers", "Alerts" } },
 	{ "Info", { "Objective tracker", "Chat", "Minimap" } },
-	{ "Other", { "Damage meter", "Added frames", "Naowh", "Naowh alerts", "Flight timer", "Spy" } },
+	{ "Other", { "Damage meter", "Added frames", "Naowh", "Naowh alerts", "Flight timer", "Nock", "Nock alerts", "Spy" } },
 }
 
 -- For the files after this one (QuietHUD.toc).
 ns.DEFAULTS, ns.SETTINGS_VERSION, ns.SPLIT, ns.SPLIT_BY = DEFAULTS, SETTINGS_VERSION, SPLIT, SPLIT_BY
+ns.FADED_KEYS = FADED_KEYS
+ns.padSetUp = padSetUp -- (the Show when page's controller box: Config.lua)

@@ -34,9 +34,14 @@ local function applyHosted(g, a)
 					spare[f] = host
 					host:SetAllPoints(UIParent)
 					local original = f:GetParent()
+					-- A frame takes its new parent's strata, so the host gets the frame's first: an alert its addon put above
+					-- the rest (Nock's warnings, HIGH) stays above it (Nov 17).
+					local okS, strata = pcall(f.GetFrameStrata, f)
+					strata = okS and type(strata) == "string" and strata or nil
+					if strata and host.SetFrameStrata then pcall(host.SetFrameStrata, host, strata) end
 					f:SetParent(host)
 					if f:GetParent() ~= host then error("the game did not move it into its container", 0) end
-					return { host = host, parent = original }
+					return { host = host, parent = original, strata = strata }
 				end)
 				if okHost then
 					rec = made
@@ -69,9 +74,14 @@ releaseHosted = function(g, wanted)
 			rec.host:SetAlpha(1)
 			local back = rec.parent or UIParent
 			if not (InCombatLockdown() and f.IsProtected and f:IsProtected()) then
+				-- (its strata right now, which its addon may have changed while it was hosted: kept through the move)
+				local okS, strata = pcall(f.GetFrameStrata, f)
+				strata = okS and type(strata) == "string" and strata or rec.strata
 				local ok, err = pcall(f.SetParent, f, back)
 				rec.tries = (rec.tries or 0) + 1
 				if f:GetParent() == back then
+					-- (back at its own strata: the old parent's would have come with the move)
+					if strata and f.SetFrameStrata then pcall(f.SetFrameStrata, f, strata) end
 					hosts[g][f] = nil
 				elseif rec.tries >= 3 then
 					-- (outside combat it should never fail; given up rather than tried on every update)
