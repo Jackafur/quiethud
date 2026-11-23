@@ -219,6 +219,19 @@ local SPLIT = {
 	-- they are hosted like Naowh's alerts (the host fades, the opacities multiply; host, Guides.lua).
 	{ g = "nockAlerts", label = "Nock alerts", frames = { "NockWarnings", "NockAggroWarning", "NockConsumeBanner" },
 		addon = "Nock", host = true, uncounted = true, fade = false, ov = 0.5 },
+	-- Rogue Resources (Konchius; WoW Forever), in one row on the Elements and Opacity pages only while it is loaded (the owner
+	-- runs it on his rogue, Nov 18: "lets add rogue resources to qhud. not just a /add. like add it"). Its bar (energy, combo
+	-- points, Slice and Dice, the cooldown icons) is one frame on UIParent with NO name, on purpose (its author: a named movable
+	-- frame is put back by the game's own layout file), it takes no mouse while locked and its table is private, so /qhud add
+	-- cannot reach it: QuietHUD finds it once by what it carries and names it QuietHUDRogueResources (woc.nameRogueResources,
+	-- Core.lua). Rogue Resources only shows and hides the bar (its Show only in combat) and never sets its opacity, so QuietHUD
+	-- writes it directly (no host).
+	-- Left alone: its weapon poison icons (they pulse red while a weapon has no poison: that is the warning), the Riposte
+	-- pop-up and the diminishing returns row, each a frame of its own. Unlocked (/rr, its Lock button) everything is shown in
+	-- full, like Edit Mode, so the bar can be found and dragged (ns.rogueEditing, Core.lua). Not in the pixel shift: it saves
+	-- the spot it is dragged to, which the shift would creep into.
+	{ g = "rogueRes", label = "Rogue Resources", frames = { "QuietHUDRogueResources" }, addon = "RogueResources",
+		uncounted = true },
 }
 local SPLIT_BY = {}
 -- The setting that holds each group's own Faded (the groups of FADE_ORDER, Frames.lua, and the split groups).
@@ -248,7 +261,7 @@ SPLIT.groups = {
 	{ "Unit frames", { "Player frame", "Target and focus", "Pet frame", "Party and raid", "Party panel" } },
 	{ "Auras and alerts", { "Buffs", "Debuffs", "Cooldown trackers", "Alerts" } },
 	{ "Info", { "Objective tracker", "Chat", "Minimap" } },
-	{ "Other", { "Damage meter", "Added frames", "Naowh", "Naowh alerts", "Flight timer", "Nock", "Nock alerts", "Spy" } },
+	{ "Other", { "Damage meter", "Added frames", "Naowh", "Naowh alerts", "Flight timer", "Nock", "Nock alerts", "Rogue Resources", "Spy" } },
 }
 
 -- For the files after this one (QuietHUD.toc).

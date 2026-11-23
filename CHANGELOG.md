@@ -1,15 +1,16 @@
 # Changelog
 
-## 1.7.4-beta1
+## 1.7.4
 
-A test build. Your settings carry over.
+Your settings carry over.
 
 ### Added
 
 - **Nock.** While Nock is loaded, its HUD has a row on the Elements page and fades like the rest of your HUD. Its warnings, aggro flash and eating and drinking banner get a Nock alerts row, see-through at 50% by default. Nock's edit mode shows everything at full while you move its pieces, and its HUD and alerts move with the pixel shift.
 - **A Faded for one element.** The Opacity page has a new list, Faded per element. It's empty until you click Add an element and pick one. That element gets a row with one bar, its own Faded, and the rest keep fading to the Global Faded. The x on the row takes it off again. So your player frame can fade to 0.35 while everything else fades to 0.50, and still come up to the same Shown.
+- **Rogue Resources.** While it's loaded, its bar has a row on the Elements page (under Other) and fades like the rest of your HUD. While you have it unlocked to move it, it shows at full. Its poison icons, Riposte pop-up and diminishing returns row are left as they are.
 - **Polestar's target list** fades with its target and item buttons.
-- **Hold LB and RB, or LT and RT, to show the whole HUD** on a controller (two boxes on the Show when page, listed while a controller is enabled in the game's options). The game keeps the shoulder buttons and triggers for itself, so a key binding on them never worked. Stay shown while the mouse moves after I let go counts for them too.
+- **Hold LB and RB, or LT and RT, to show the whole HUD** on a controller (two boxes on the Show when page, listed while a controller is enabled in the game's options). A key binding can't be two buttons held together, so this needs the boxes. One button on its own can still be bound to the hold key. Stay shown while the mouse moves after I let go counts for them too.
 
 ### Changed
 
@@ -20,6 +21,8 @@ A test build. Your settings carry over.
 - **The game's minimap icons** (your arrow, town icons, party dots, tracked herbs and ore) stayed at full until the minimap was gone. They now shrink with the map as it fades and grow back with it.
 - **Pixel shift** moves by whole screen pixels, so an addon that keeps its frames on whole pixels no longer pulls them back.
 - **Alerts QuietHUD fades through a holder of its own** (Naowh's alerts, the guide arrows) keep their own layer instead of dropping behind other windows.
+- **Guild OS:** a black box could cover half the screen around the minimap, often after an alt-tab, while a guildmate was in your zone. Guild OS's dots under the minimap keep their thin border now.
+- **Chattynator:** since its latest update, its chat window's background stayed up when the chat faded. It fades with the chat again.
 
 ## 1.7.3
 

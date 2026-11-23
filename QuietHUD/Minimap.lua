@@ -611,6 +611,18 @@ do
 	end)
 end
 
+-- Guild OS (since about 1.33, Nov 18) puts a row of guildmate dots under the minimap, each with a black border one screen
+-- pixel wide, and works that pixel out again on every alt-tab, UI scale change or scale change of its own window
+-- (GuildOS.UI:RefreshHairlines). Done while the faded minimap is shrunk to 0.001, "one pixel" came out a thousand times too
+-- big: when the map grew back, the borders made a black box across half the screen (a CurseForge comment, 2026-11-22,
+-- with a screenshot; only while a guildmate is in the zone, often right after an alt-tab). So when the minimap grows back
+-- Guild OS works its pixels out again at the real scale. Only while Guild OS is loaded; one call per grow-back.
+local function refreshGuildOSPixels()
+	local g = _G.GuildOS
+	local ui = type(g) == "table" and g.UI
+	if type(ui) == "table" and type(ui.RefreshHairlines) == "function" then pcall(ui.RefreshHairlines, ui) end
+end
+
 local function setMinimapVisible(visible, alpha)
 	if not MinimapCluster then return true end
 	if not canScaleMap() then return false end
@@ -618,6 +630,7 @@ local function setMinimapVisible(visible, alpha)
 		if ns.mapSavedScale then
 			setMapScale(ns.mapSavedScale)
 			ns.mapSavedScale = nil
+			refreshGuildOSPixels()
 			unpinMapNeighbours()
 			guardOversizedMinimapKids()
 			-- Our mask is set again at its new size, now and once more when the size has settled.

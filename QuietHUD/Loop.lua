@@ -163,8 +163,10 @@ end
 local function update(dt)
 	local now = GetTime()
 	-- Edit Mode, Naowh's HUD Editor (its mover plates sit inside the frames, so a faded frame would hide its plate; see
-	-- rebuildLists in Core.lua) or Nock's edit mode: everything is shown in full and the pixel shift puts every frame back.
-	local edit = (EditModeManagerFrame and EditModeManagerFrame:IsShown()) or ns.naowhEditing or ns.nockEditing or false
+	-- rebuildLists in Core.lua), Nock's edit mode or Rogue Resources unlocked: everything is shown in full and the pixel shift
+	-- puts every frame back.
+	local edit = (EditModeManagerFrame and EditModeManagerFrame:IsShown()) or ns.naowhEditing or ns.nockEditing
+		or ns.rogueEditing or false
 	local combat = UnitAffectingCombat("player") and true or false
 	local enabled = DB.enabled
 

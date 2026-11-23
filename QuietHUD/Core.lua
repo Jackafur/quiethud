@@ -348,6 +348,47 @@ woc.watchWarlockHud = function()
 	findWarlockHud()
 	woc.watchWarlockMulti()
 end
+-- Rogue Resources' bar has no name and its table is private (Settings.lua, the Rogue Resources row), so it is found by what
+-- it carries: its list of cooldown icons, its Slice and Dice icon, its panel and the panel's outline. One pass over
+-- UIParent's children; nothing in the loop. It builds the bar in its own PLAYER_LOGIN, after QuietHUD's (Q loads before R),
+-- and only on a rogue, so a pass that finds nothing is tried again two seconds later, ROGUE_LOOKS times, then never
+-- again (another class, or a version built differently: the row then does nothing). Its lock is the bar taking the mouse
+-- (its SetLocked: EnableMouse(not locked)), heard through that one frame's EnableMouse, hooked once, no polling: while it
+-- is unlocked everything is shown as in Edit Mode (Loop.lua), and it is read once here for a bar left unlocked at the
+-- last logout.
+local ROGUE_LOOKS = 5
+woc.nameRogueResources = function()
+	if _G.QuietHUDRogueResources then return true end
+	if (woc.rogueLooks or 0) >= ROGUE_LOOKS or not (UIParent and UIParent.GetChildren) then return false end
+	for _, f in ipairs({ UIParent:GetChildren() }) do
+		if type(f) == "table" and type(rawget(f, "icons")) == "table" and rawget(f, "snd") and rawget(f, "panel")
+			and rawget(f, "panelOutline") then
+			_G.QuietHUDRogueResources = f
+			if type(f.EnableMouse) == "function" then
+				hooksecurefunc(f, "EnableMouse", function(_, on)
+					ns.rogueEditing = on and true or false
+					wakeLoop()
+				end)
+				local ok, on = pcall(f.IsMouseEnabled, f)
+				ns.rogueEditing = (ok and on) and true or false
+			end
+			return true
+		end
+	end
+	-- (one look to come at a time, however often the lists are made in between)
+	if not woc.rogueRetry and C_Timer and C_Timer.After then
+		woc.rogueRetry = true
+		C_Timer.After(2, function()
+			woc.rogueRetry = nil
+			woc.rogueLooks = (woc.rogueLooks or 0) + 1
+			if woc.nameRogueResources() then
+				woc.forget() -- (the Rogue Resources row is written again, with the bar)
+				wakeLoop()
+			end
+		end)
+	end
+	return false
+end
 -- RestedXP's timer bars (a flight's time left, "Undercity, Tirisfal 1:30") are LibCandyBar bars: no name, made on UIParent and
 -- only placed over the guide window's footer, so they stayed solid while the window faded (the owner, 2026-11-06, a
 -- screenshot). Named here while RestedXP runs them (QuietHUDRXPTimer1 to 4) and listed with the guide window. Found when
@@ -658,6 +699,12 @@ local function rebuildLists()
 			end)
 		end
 	end
+	-- Rogue Resources' bar (no name, see woc.nameRogueResources): looked for only while that addon is loaded
+	do
+		local isOn = (C_AddOns and C_AddOns.IsAddOnLoaded) or IsAddOnLoaded
+		local ok, yes = pcall(isOn or function() end, "RogueResources")
+		if ok and yes then woc.nameRogueResources() end
+	end
 	if not _G.QuietHUDNaowhJourney then
 		local editor = type(_G.NaowhForever) == "table" and _G.NaowhForever.HudEditor
 		local item = type(editor) == "table" and type(editor.placement) == "table" and type(editor.placement.byLabel) == "table"
@@ -885,6 +932,20 @@ local function rebuildLists()
 			-- Chattynator's chat window hangs off this frame (it has no size of its own, its windows are its children).
 			-- Skipped when that addon is not there.
 			add("ChattynatorHyperlinkHandler")
+			-- Chattynator 240 (Nov 21) lays that frame over its first window at opacity 0 and makes the window ignore its
+			-- parent's opacity, so the window stopped following the chat's fade (the owner, 2026-11-21: "qhud isnt hiding
+			-- chattys black back box thing"; its text fades by itself, its background stayed). A window that ignores its
+			-- parent's opacity is faded by its own name; the others still follow the frame above (both would fade them twice).
+			-- Windows are looked for as the lists are built, like the pixel shift's (nameChattynator).
+			local okC, chatty = pcall(isLoaded or function() end, "Chattynator")
+			if okC and chatty then
+				woc.nameChattynator()
+				for i = 1, 10 do
+					local w = woc.chattyWindows[i]
+					local okI, own = pcall(function() return w and w.IsIgnoringParentAlpha and w:IsIgnoringParentAlpha() end)
+					if okI and own then add("QuietHUDChattynator" .. i) end
+				end
+			end
 		end
 		-- (a name whose global is not a frame, a function or a number, is left out: /qhud add refuses one, a file changed by
 		-- hand can still hold one)
