@@ -127,7 +127,7 @@ local PAGES = {
 		{ "slider", "tooltipAlpha", "Tooltips", 0, 1, 0.05, "%.2f", "Global", true, "The game's tooltips, like this one." },
 		-- (its Shown is the Minimap row under Shown per element)
 		{ "heading", "Minimap" },
-		{ "check", "mapDarken", "Darken the minimap instead of making it see-through", "Unticked (default): as the minimap fades it turns see-through. The little icons on it (your arrow, quest and party icons) stay bright, because the game does not let addons fade them.\nTicked: as the minimap fades it turns darker instead, and the icons darken with it." },
+		{ "check", "mapDarken", "Darken the minimap instead of making it see-through", "Unticked (default): as the minimap fades it turns see-through. The game does not let addons fade the little icons on it (your arrow, quest and party icons), so they get smaller as it fades instead. To keep them full size on a see-through minimap: add the Minimap under Faded per element and untick Shrink its icons on its row.\nTicked: as the minimap fades it turns darker instead, and the icons keep their size and darken with it." },
 		{ "slider", "mapDarkFloor", "Darkened map's Faded", 0, 0.9, 0.05, "%.2f", "Global", true, "With Darken the minimap ticked: how bright the map stays while it is faded, so it does not turn into a black hole on the screen. Global (default): as dark as the Global Faded.\nOnly the map and the icons on it. The ring and buttons around it fade to the Global Faded. With the Global Faded at 0 the minimap still goes away when faded." },
 		{ "slider", "mapCover", "Arrow cover", 0, 1, 0.05, "%.2f", "Off", true, "A small dark circle over the middle of the minimap while it is faded, to take the edge off your bright arrow (the game does not let addons fade the arrow itself). This sets how dark the circle is. Off (default): no circle." },
 		{ "slider", "mapCoverSize", "Arrow cover size", 8, 48, 1, "%d", nil, true, "How big the circle is, to fit over your arrow." },
@@ -1012,8 +1012,26 @@ do
 			local off = CreateFrame("Button", nil, r, "UIPanelCloseButton")
 			off:SetSize(20, 20)
 			off:SetPoint("TOPLEFT", 500, 2)
-			off:SetScript("OnClick", function() ns.setFaded(row) end)
-			addHelp(r, off, "Take off the list", row.label .. " fades to the Global Faded again.")
+			off:SetScript("OnClick", function()
+				-- (the minimap's row takes its box with it: left unticked it would make the icons jump to full the next time the
+				-- minimap is added, when adding is meant to change nothing on the screen; audit Nov 24)
+				if row.key == "fdMap" then DB.mapShrinkIcons = true end
+				ns.setFaded(row)
+			end)
+			addHelp(r, off, "Take off the list", row.label .. " fades to the Global Faded again."
+				.. (row.key == "fdMap" and " Its icons shrink with it again." or ""))
+			-- The minimap's row has a box beside it (Nov 24; the owner: "maybe in that section if you use the sliders like that for
+			-- the map"): on a map kept partly shown the game's icons sat small all the time (sizeIcons, Minimap.lua). On this row
+			-- it costs the window no height, and it counts only while the minimap is on the list. It stands clear of the x (ends at
+			-- 520): a slip onto the x takes the row off and loses its level.
+			if row.key == "fdMap" then
+				-- (the last line only for someone who turned the own arrow on: it owns the icons' size then, Minimap.lua)
+				local check = makeCheck(r, 3, "Shrink its icons", "mapShrinkIcons", function()
+					return "Ticked (default): the little icons the game draws on the minimap (your arrow, quest and party icons) get smaller as the minimap fades. The game does not let addons fade them, so they shrink instead.\nUnticked: they keep their full size on the faded minimap, so you can still read them. They go only when the minimap is gone.\nWith Darken the minimap ticked they never shrink, they darken with the map."
+						.. (DB.mapArrow and "\nYour own arrow is on (/qhud myarrow), so this box only counts while you track herbs, ore or creatures. The rest of the time your own arrow stands in for the game's icons." or "")
+				end, 548)
+				check:SetSize(24, 24)
+			end
 			return r
 		end
 

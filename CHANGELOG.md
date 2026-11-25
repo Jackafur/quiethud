@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.7.5-beta1
+
+A test build. Your settings carry over.
+
+### Added
+
+- **Your own minimap arrow, for Questie players** (`/qhud myarrow on`, off unless you turn it on, a chat command only). The game's arrow can't be faded, so this hides it and draws QuietHUD's own arrow and party dots, which fade with the minimap. Know the cost before you turn it on. Hiding the game's arrow hides the game's other minimap icons too (flight master, innkeeper and other town icons) unless your minimap's Shown is 1.00. Quest icons stay because Questie draws them, and it refuses to turn on without Questie. Herbs, ore and anything else you track still show, the arrow steps aside while a tracking spell is on. `/qhud myarrow size 24` makes the arrow smaller or bigger (12 to 48, it starts at 32). If the game's bright arrow is still there, `/qhud myarrow` tells you what's in the way. `/qhud myarrow off` puts everything back.
+- **Shrink its icons**, a box on the Minimap's row in the Faded per element list (Opacity page), ticked by default. Since 1.7.4 the game's icons on the minimap get smaller as it fades. If you keep your minimap partly shown and still read it, add the Minimap to that list and untick the box. The icons then keep their full size on the faded map, as they did before. They still go when the minimap is gone.
+
+### Changed
+
+- **QuietHUD's keys have their own section in Keybindings**, like Bagnon's, instead of sitting loose in AddOns where "Toggle the whole HUD" could be mistaken for the game's own. The names are shorter too: Weapon drawn (toggle), Show all (hold), Show all (toggle), Target highlighted quest mob. Keys you already bound stay bound.
+
+### Fixed
+
+- **Forever Dual Gathering:** each time it scanned for herbs or ore the minimap flashed to full for about two seconds, and the game's icons came back smaller after every scan. The minimap stays faded through its scans now and the icons keep their size.
+
 ## 1.7.4
 
 Your settings carry over.

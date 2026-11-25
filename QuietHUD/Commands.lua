@@ -198,6 +198,75 @@ SlashCmdList["QUIETHUD"] = function(msg)
 	elseif cmd == "arrow" then
 		ns.navForce = not ns.navForce
 		print("QuietHUD: the nav group (the arrow) is now " .. (ns.navForce and "kept ON until you use /qhud arrow again" or "back to its automatic behavior"))
+	elseif cmd == "myarrow" then
+		-- QuietHUD's own minimap arrow and party dots with Questie (Minimap.lua). Kept out of the settings window and the help on
+		-- purpose (the owner, Nov 13: people "dont read shit and cant find minerals and try to message me about it"): while it
+		-- is on, the game's own minimap icons (town icons) are off whenever the map is below full; while a tracking spell is on
+		-- (herbs, ore, creatures) it steps aside and the game's icons stay.
+		if rest == "test" then
+			if not (ns.arrowTest and pcall(GetPlayerFacing) and GetPlayerFacing()) then
+				print("QuietHUD: the test needs the open world (the game does not say which way you face in here)")
+				return
+			end
+			ns.arrowTest()
+			print("QuietHUD: test party for 30 seconds: your own arrow and four made-up party dots around you (a mage, a warrior, a priest, a hunter). Your setting is unchanged.")
+			return
+		end
+		-- Idiot proof (the owner, Nov 24, with it going into the release: "so we need to be as idiot proof and explain it as
+		-- clearly as possible", "maybe it should only work if you have questie installed"): only "on" turns it on, never a bare
+		-- /qhud myarrow; without Questie it is refused, so a forgotten setting cannot start with a later Questie install; and
+		-- turning it on says what you get, what you lose and how to turn it off, one thing per line.
+		local isLoaded = (C_AddOns and C_AddOns.IsAddOnLoaded) or rawget(_G, "IsAddOnLoaded")
+		local okQ, questie = pcall(isLoaded, "Questie")
+		questie = okQ and questie and true or false
+		local sized = rest:match("^size%s*(.*)$")
+		if sized then
+			-- /qhud myarrow size <12 to 48>: the arrow's size, at once (Minimap.lua, sizeArrow). Without a number: what it is now.
+			local n = tonumber(sized)
+			if n then
+				DB.mapArrowSize = math.max(12, math.min(math.floor(n + 0.5), 48))
+				settingChanged()
+				if ns.sizeArrow then ns.sizeArrow() end
+			end
+			print("QuietHUD: your own minimap arrow's size is " .. (n and "now " or "") .. tostring(DB.mapArrowSize) .. ". /qhud myarrow size 24 changes it: 12 is the smallest, 48 the biggest, 32 is what it starts at.")
+			if not DB.mapArrow then print("  Your own arrow is OFF, so you will not see it until you turn it on: /qhud myarrow on") end
+			return
+		end
+		if rest == "off" then
+			DB.mapArrow = false
+			settingChanged()
+			print("QuietHUD: your own minimap arrow is OFF. The game's minimap icons are back.")
+		elseif rest == "on" then
+			if not questie then
+				DB.mapArrow = false
+				settingChanged()
+				print("QuietHUD: your own minimap arrow needs the Questie addon, and Questie is not loaded. It stays OFF. (Without Questie you would lose the quest icons on your minimap.)")
+				return
+			end
+			DB.mapArrow = true
+			settingChanged()
+			print("QuietHUD: your own minimap arrow is ON.")
+			print("  You get: QuietHUD's own arrow and party dots, which fade with the minimap. The game's bright arrow is hidden.")
+			print("  You lose: the game's other minimap icons, hidden with its arrow. That is the flight master, innkeeper and other town icons. They only show while the minimap is at full opacity (its Shown at 1.00 on the Opacity page), so at any lower Shown they are always hidden.")
+			print("  You keep: quest icons (Questie draws them), and herbs, ore and anything else you track. The arrow steps aside while a tracking spell is on.")
+			local why = ns.arrowWhy and ns.arrowWhy()
+			if why then print("  It is not showing right now: " .. why .. ".") end
+			print("  Arrow too big or too small: /qhud myarrow size 24 (12 to 48, it is " .. tostring(DB.mapArrowSize) .. " now)")
+			print("  To turn it off: /qhud myarrow off")
+		else
+			print("QuietHUD: your own minimap arrow is " .. (DB.mapArrow and "ON" or "OFF") .. ". /qhud myarrow on turns it on and tells you what changes, /qhud myarrow off turns it off, /qhud myarrow size 24 sets its size, /qhud myarrow test shows it for 30 seconds.")
+			-- (while it is ON: is it on the map right now, and if not, what is in its way; Minimap.lua, ns.arrowWhy)
+			if DB.mapArrow and ns.arrowWhy then
+				local why, showing = ns.arrowWhy()
+				if why then
+					print("  It is not showing right now: " .. why .. ".")
+				elseif showing then
+					print("  It is showing right now.")
+				else
+					print("  It is not showing right now and QuietHUD cannot tell why. Please report this.")
+				end
+			end
+		end
 	elseif cmd == "nav" then
 		print("QuietHUD nav group: " .. (#LISTS.nav == 0 and "empty, add a frame with /qhud add nav <frame name>" or table.concat(LISTS.nav, ", ")))
 		for _, name in ipairs(LISTS.nav) do

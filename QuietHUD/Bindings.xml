@@ -1,12 +1,12 @@
 <Bindings>
-	<Binding name="QUIETHUD_TOGGLE" header="QUIETHUD" category="ADDONS">
+	<Binding name="QUIETHUD_TOGGLE" category="QuietHUD">
 		SlashCmdList["QUIETHUD"]("toggle")
 	</Binding>
-	<Binding name="QUIETHUD_PEEK" runOnUp="true" category="ADDONS">
+	<Binding name="QUIETHUD_PEEK" runOnUp="true" category="QuietHUD">
 		SlashCmdList["QUIETHUD"]("peek " .. keystate)
 	</Binding>
-	<Binding name="QUIETHUD_PEEKTOGGLE" category="ADDONS">
+	<Binding name="QUIETHUD_PEEKTOGGLE" category="QuietHUD">
 		SlashCmdList["QUIETHUD"]("peek toggle")
 	</Binding>
-	<Binding name="CLICK QuietHUDTargetButton:LeftButton" category="ADDONS"></Binding>
+	<Binding name="CLICK QuietHUDTargetButton:LeftButton" category="QuietHUD"></Binding>
 </Bindings>

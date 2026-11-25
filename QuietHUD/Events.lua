@@ -221,7 +221,7 @@ ev:SetScript("OnEvent", function(_, event, arg1, _, _, arg4)
 end)
 
 BINDING_HEADER_QUIETHUD = "QuietHUD"
-BINDING_NAME_QUIETHUD_TOGGLE = "Toggle Weapon drawn"
-BINDING_NAME_QUIETHUD_PEEK = "Hold to show the whole HUD"
-BINDING_NAME_QUIETHUD_PEEKTOGGLE = "Toggle the whole HUD"
+BINDING_NAME_QUIETHUD_TOGGLE = "Weapon drawn (toggle)"
+BINDING_NAME_QUIETHUD_PEEK = "Show all (hold)"
+BINDING_NAME_QUIETHUD_PEEKTOGGLE = "Show all (toggle)"
 _G["BINDING_NAME_CLICK QuietHUDTargetButton:LeftButton"] = "Target highlighted quest mob"

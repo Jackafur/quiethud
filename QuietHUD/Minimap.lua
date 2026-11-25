@@ -21,6 +21,10 @@ do
 	local mapOverlay, mapParts, mapPartSet, mapDimApplied, mapAncestors, mapCover
 	local mapDimFloor = 0 -- (the darkened map's own Faded the dark layer was last set with, see applyMinimapAlpha)
 	local mapDimPartsAt = 0 -- (the dark layer's next look at the parts, see applyMinimapAlpha)
+	-- Forever Dual Gathering takes the map out of the cluster for its scans (see mapMoved, below). mapLifted: the map is out;
+	-- mapBackAt: the time of the frame it was handed back in (what it puts back in that frame is its saved copy, not news).
+	local mapLifted, mapBackAt = false, nil
+	local function mapOut() return mapLifted or mapBackAt == GetTime() end
 	-- An addon that sets a part's opacity while the map is faded (RestedXP sets its step pin again as it redraws) would
 	-- show it at that opacity until the next half-second pass, which looks like blinking. So each part's SetAlpha is hooked
 	-- once, and an outside change is adopted as the part's own opacity and multiplied at once, before the frame is drawn.
@@ -33,8 +37,10 @@ do
 		return ok and p ~= nil and (p == Minimap or p == MinimapCluster or (mapAncestors and mapAncestors[p])) and true or false
 	end
 	local function keepMapPart(part, a)
+		-- (not while Forever Dual Gathering has the map out, or as it hands it back: it hides the clock and others for its
+		-- scan, then puts back the faded opacity it saved, which is not their own; see mapMoved)
 		if mapBusy or not mapFactor or not mapParts or type(a) ~= "number" or (issecretvalue and issecretvalue(a))
-			or not onMap(part) then return end
+			or not onMap(part) or mapOut() then return end
 		if mapPartSet[part] and math.abs(a - mapPartSet[part]) < 0.01 then return end
 		mapParts[part] = a
 		local want = a * mapFactor
@@ -124,17 +130,22 @@ do
 		mapPartSet[part] = want
 	end
 
-	local function fadeMapParts(frame, factor)
+	-- Every part of a frame: its regions, and its child frames except the map and our own layers (the frames between the
+	-- cluster and the map are gone through, not taken as parts).
+	local function eachMapPart(frame, fn)
 		for _, child in ipairs({ frame:GetChildren() }) do
 			if child ~= Minimap and child ~= mapOverlay and child ~= mapCover then
 				if mapAncestors[child] then
-					fadeMapParts(child, factor)
+					eachMapPart(child, fn)
 				else
-					fadeMapPart(child, factor)
+					fn(child)
 				end
 			end
 		end
-		for _, region in ipairs({ frame:GetRegions() }) do fadeMapPart(region, factor) end
+		for _, region in ipairs({ frame:GetRegions() }) do fn(region) end
+	end
+	local function fadeMapParts(frame, factor)
+		eachMapPart(frame, function(part) fadeMapPart(part, factor) end)
 	end
 
 	-- Puts back the parts' own opacity, except on a part whose owner has changed it since.
@@ -158,10 +169,14 @@ do
 			clusterFree = true
 		end
 		mapFactor = a
-		local ok, err = pcall(function()
-			fadeMapParts(MinimapCluster, a)
-			fadeMapParts(Minimap, a)
-		end)
+		-- (not while Forever Dual Gathering has the map out: it hides some parts for its scan; mapMoved puts them back after)
+		local ok, err = true, nil
+		if not mapLifted then
+			ok, err = pcall(function()
+				fadeMapParts(MinimapCluster, a)
+				fadeMapParts(Minimap, a)
+			end)
+		end
 		if not ok then mapLog("could not fade the minimap parts: " .. tostring(err)) end
 		for _, name in ipairs(LISTS.map) do
 			local f = name ~= "MinimapCluster" and _G[name]
@@ -269,6 +284,12 @@ do
 				if mapMaskFading and asset ~= mapMaskSetting then maskFought(asset) end
 				return
 			end
+			-- (set while Forever Dual Gathering has the map out, or put back as it hands it over: the faded mask of ours it saved
+			-- at the start, not the map's own; ours is set again at the next update)
+			if mapOut() then
+				if mapMaskStep then mapMaskStep = -1 end
+				return
+			end
 			mapMaskOrig = asset
 			if mapMaskStep then mapMaskStep = -1 end
 		end)
@@ -287,15 +308,18 @@ do
 		local shape = mapShape()
 		if a >= 0.995 then
 			if mapMaskStep then
-				mapMaskStep, mapMaskFactor = nil, nil
-				setMapMask(originalMask(mapMaskShape or shape))
+				-- (while Forever Dual Gathering has the map out the mask waits: mapMaskStep stays, so it is set at the hand-back)
+				if not mapLifted then
+					mapMaskStep, mapMaskFactor = nil, nil
+					setMapMask(originalMask(mapMaskShape or shape))
+				end
 				restoreMapParts()
 			end
 			applyMapList(1)
 			return
 		end
 		local level = math.max(0, math.floor(a * 20 + 0.5))
-		if level ~= mapMaskStep or shape ~= mapMaskShape then
+		if (level ~= mapMaskStep or shape ~= mapMaskShape) and not mapLifted then
 			mapMaskStep, mapMaskShape = level, shape
 			local prefix = shape == "SQUARE" and "s" or "m"
 			setMapMask(level >= 20 and originalMask(shape) or ("Interface\\AddOns\\QuietHUD\\masks\\" .. prefix .. level * 5 .. ".tga"), level < 20)
@@ -305,6 +329,283 @@ do
 		if mapMaskFactor and math.abs(mapMaskFactor - a) < 0.004 and now < mapMaskPartsAt then return end
 		mapMaskFactor, mapMaskPartsAt = a, now + 0.5
 		fadeMapAround(a)
+	end
+
+	-- Our own player arrow, for Questie players (the owner, Nov 13: "so lets draw our own mini map marker?"). The game draws
+	-- its arrow and its other icons on the map (quest givers, herbs and ore, party members) itself, and they ignore opacity and
+	-- the mask; its only control over them is Minimap:SetIconScale, which sizes them all at once. With /qhud myarrow on
+	-- (mapArrow, off by default; a command only, no box, so nobody misses their herbs by accident) and Questie loaded,
+	-- while the map is below full opacity (fading, or up at a Shown below 1: the owner's map is up at 0.65 and fades out in 0.35 seconds, so an
+	-- arrow only while it fades was never seen) the game's icons are sized to nothing and this arrow stands in for the
+	-- game's. It is a child of the map like a pin, so it fades with the other parts; Questie's own minimap icons (its "!" and "?", addon frames) fade with them too,
+	-- so the quest givers stay on the map. Tried once before (Oct 22) and taken out: without Questie the quest "!" was lost
+	-- (the game tells addons nothing about quest givers). Not with the dark layer (it dims the game's icons), not at full
+	-- opacity, and not where the game does not say which way you face (GetPlayerFacing is nil in dungeons).
+	-- Cost: while the arrow shows, one GetPlayerFacing per map update, and every frame only while you turn (the turning and
+	-- mouse-look messages) or have lost control of your character (a flight, a fear).
+	local ARROW_SIZE = 32 -- (a guess at the game's arrow at icon size 1, to be matched in game)
+	local arrow, arrowOn, arrowFacing, iconsSetting, iconScale, questie = nil, false, nil, false, nil, nil
+	local iconStep, iconsShrunk = nil, false -- (the game's icons sized with the fade while our arrow is not up: sizeIcons)
+	local iconPrev, iconAt = nil, nil -- (the size before the last one taken from outside, and when: see mapMoved)
+	local turning = {}
+
+	local function questieLoaded()
+		if questie == nil then
+			local isLoaded = (C_AddOns and C_AddOns.IsAddOnLoaded) or rawget(_G, "IsAddOnLoaded")
+			local ok, v = pcall(isLoaded, "Questie")
+			if not ok then return false end
+			questie = v and true or false
+		end
+		return questie
+	end
+
+	-- Tracking (the owner, Nov 13: herb and ore nodes, "yellow circles with a c in them", show only while you track): while a
+	-- tracking spell is on (Find Herbs, Find Minerals, Find Treasure, a hunter's tracks, Sense Demons or Undead), the game's
+	-- icons stay and our arrow stands aside, so nothing you track goes missing. (Since Nov 17 they are sized with the map's
+	-- fade like every game icon, sizeIcons: whole while the map is up, going out with it; the owner: "same for when it IS
+	-- on".) The town ticks in the tracking menu (flight masters, innkeepers) are not spells and do not count. Read once, again only after the game says tracking changed.
+	local tracking, trackingName -- (nil: read it at the next update; the spell's name, for /qhud myarrow)
+	local function trackingOn()
+		if tracking == nil then
+			tracking = false
+			local api = rawget(_G, "C_Minimap")
+			local okN, n = false, nil
+			if type(api) == "table" then okN, n = pcall(api.GetNumTrackingTypes) end
+			if okN and type(n) == "number" then
+				for i = 1, n do
+					-- (a table on this client; name, texture, active, kind on older ones)
+					local ok, info, _, active, kind = pcall(api.GetTrackingInfo, i)
+					if ok and type(info) == "table" then active, kind = info.active, info.type end
+					if ok and active and kind == "spell" then
+						tracking, trackingName = true, type(info) == "table" and info.name or info
+						break
+					end
+				end
+			end
+		end
+		return tracking
+	end
+
+	-- The game's own icon size: the last one anyone but QuietHUD set (Edit Mode's), or else Edit Mode's setting.
+	local function gameIconScale()
+		if iconScale then return iconScale end
+		local ok, v = pcall(function()
+			local key = Enum.EditModeMinimapSetting.IconScale
+			if MinimapCluster:HasSetting(key) then return MinimapCluster:GetSettingValue(key) / 100 end
+		end)
+		return ok and type(v) == "number" and v > 0 and v or 1
+	end
+
+	local function setIconScale(scale)
+		iconsSetting = true
+		if not pcall(Minimap.SetIconScale, Minimap, scale) and scale == 0 then pcall(Minimap.SetIconScale, Minimap, 0.01) end
+		iconsSetting = false
+	end
+
+	local function getArrow()
+		if arrow then return arrow end
+		arrow = CreateFrame("Frame", nil, Minimap)
+		arrow:SetPoint("CENTER", Minimap, "CENTER")
+		arrow:SetFrameLevel(Minimap:GetFrameLevel() + 5)
+		arrow.tex = arrow:CreateTexture(nil, "OVERLAY")
+		arrow.tex:SetAllPoints()
+		arrow.tex:SetTexture("Interface\\Minimap\\MinimapArrow")
+		arrow:Hide()
+		return arrow
+	end
+
+	-- Its size is a setting since Nov 24 (mapArrowSize, /qhud myarrow size; the owner: "Can we just give him a smaller arrow
+	-- that we draw?", "lets add the size"): a player's ask for a smaller arrow with the other icons left alone, and the way
+	-- to match the guess above in game. A command like the rest of the own arrow, no bar: the arrow has no box on purpose.
+	local function sizeArrow()
+		local own = tonumber(DB.mapArrowSize) or ARROW_SIZE
+		local size = math.max(12, math.min(own, 48)) * gameIconScale()
+		getArrow():SetSize(size, size)
+	end
+	ns.sizeArrow = function() if arrow then sizeArrow() end end -- (for the command: the arrow, once made, at its new size)
+
+	-- Points the arrow the way you face (straight up on a minimap that turns with you). False where the game does not say.
+	local function turnArrow()
+		local ok, facing = pcall(GetPlayerFacing)
+		if not (ok and type(facing) == "number") then return false end
+		local okR, rotates = pcall(C_CVar.GetCVarBool, "rotateMinimap")
+		if okR and rotates then facing = 0 end
+		if facing ~= arrowFacing then
+			arrowFacing = facing
+			getArrow().tex:SetRotation(facing)
+		end
+		return true
+	end
+
+	if Minimap and Minimap.SetIconScale then
+		hooksecurefunc(Minimap, "SetIconScale", function(_, scale)
+			if iconsSetting or type(scale) ~= "number" then return end
+			-- (Forever Dual Gathering's scan hides the icons, and as it hands the map back it puts back the size it saved at
+			-- the start, which was QuietHUD's shrunk one: not the icons' own size; ours is set again at the next update)
+			if mapOut() then
+				iconStep = nil
+				if arrowOn and not mapLifted then setIconScale(0) end -- (handed back with our arrow up: the game's stay off)
+				return
+			end
+			iconPrev, iconAt = iconScale, GetTime()
+			iconScale = scale
+			iconStep = nil -- (Edit Mode set a size: the shrink goes on from that one at the next update)
+			if arrowOn then -- (Edit Mode set a size while the map is faded: the game's icons stay off, ours takes the size)
+				sizeArrow()
+				setIconScale(0)
+			end
+		end)
+	end
+
+	-- Every frame only while you turn: the game says when turning with the keys or the mouse starts and stops, and when it
+	-- takes control of your character.
+	local arrowDriver = CreateFrame("Frame")
+	local turnEvents = {
+		PLAYER_STARTED_TURNING = "keys", PLAYER_STOPPED_TURNING = "keys",
+		PLAYER_STARTED_LOOKING = "mouse", PLAYER_STOPPED_LOOKING = "mouse",
+		PLAYER_CONTROL_LOST = "control", PLAYER_CONTROL_GAINED = "control",
+	}
+	local function watchTurning()
+		arrowDriver:SetScript("OnUpdate", (arrowOn and next(turning)) and turnArrow or nil)
+	end
+	local watchDots -- (the party dots, below)
+	arrowDriver:SetScript("OnEvent", function(_, event)
+		if event == "GROUP_ROSTER_UPDATE" then if watchDots then watchDots() end return end
+		if event == "MINIMAP_UPDATE_TRACKING" then tracking = nil return end -- (the map group is applied every update: it follows)
+		turning[turnEvents[event]] = (event:find("STARTED", 1, true) or event:find("LOST", 1, true)) and true or nil
+		if arrowOn then turnArrow() end
+		watchTurning()
+	end)
+	for e in pairs(turnEvents) do pcall(arrowDriver.RegisterEvent, arrowDriver, e) end
+
+	-- Party and raid dots of our own while the game's icons are off (the owner, Nov 13: "can we draw the party dots to"):
+	-- the game says where group members are in the open world (UnitPosition), so each gets a dot in its class colour at its
+	-- spot, placed the way HereBeDragons places map pins (yards from you over the map's view radius). Children of the map
+	-- like the arrow, so they fade with it. Someone past the edge is not shown. Cost: a pass ten times a second, only while
+	-- our arrow shows and you are in a group.
+	local dots, dotTicker = {}, nil
+	-- /qhud myarrow test (the owner, Nov 13: "can you do a test party to see"): for 30 seconds our arrow shows and four
+	-- made-up members stand around you (yards from you, the way UnitPosition gives them), so the sizes can be seen solo.
+	local testUntil
+	local TEST_PARTY = { { 30, 0, "MAGE" }, { 0, -40, "WARRIOR" }, { -25, 25, "PRIEST" }, { 45, 35, "HUNTER" } }
+	local DOT_SIZE = 18 -- (the owner, Nov 13, after the test party: 10 "kinda small", then 13, 15, then his "do 18")
+	local function getDot(i)
+		if dots[i] then return dots[i] end
+		local d = CreateFrame("Frame", nil, Minimap)
+		d:SetSize(DOT_SIZE, DOT_SIZE)
+		d:SetFrameLevel(Minimap:GetFrameLevel() + 4)
+		d.tex = d:CreateTexture(nil, "OVERLAY")
+		d.tex:SetAllPoints()
+		d.tex:SetTexture("Interface\\WorldMap\\WorldMapPartyIcon")
+		d:Hide()
+		dots[i] = d
+		-- (a new dot takes the map's opacity at once, not at the next pass over the parts)
+		if mapFactor and mapParts then pcall(fadeMapPart, d, mapFactor) end
+		return d
+	end
+	local function hideDots(from)
+		for i = from or 1, #dots do dots[i]:Hide() end
+	end
+	local function placeDots()
+		local okP, py, px, _, pInst = pcall(UnitPosition, "player")
+		local okR, radius = pcall(function() return C_Minimap.GetViewRadius() end)
+		if not (okP and px and py and okR and type(radius) == "number" and radius > 0) then hideDots() return end
+		local w, h = Minimap:GetWidth() / 2, Minimap:GetHeight() / 2
+		local okRot, rotates = pcall(function() return C_CVar.GetCVarBool("rotateMinimap") end)
+		local sinF, cosF
+		if okRot and rotates then
+			local okF, facing = pcall(GetPlayerFacing)
+			if not (okF and type(facing) == "number") then hideDots() return end
+			sinF, cosF = math.sin(facing), math.cos(facing)
+		end
+		local square = mapShape() == "SQUARE"
+		local testing = testUntil and GetTime() < testUntil
+		local raid = not testing and IsInRaid and IsInRaid()
+		local n = testing and #TEST_PARTY or raid and GetNumGroupMembers() or GetNumSubgroupMembers()
+		local used = 0
+		for i = 1, n do
+			local unit = (raid and "raid" or "party") .. i
+			if testing or not UnitIsUnit(unit, "player") then
+				local fake = testing and TEST_PARTY[i]
+				local ok, uy, ux, _, uInst
+				if fake then ok, uy, ux, uInst = true, py - fake[2], px - fake[1], pInst
+				else ok, uy, ux, _, uInst = pcall(UnitPosition, unit) end
+				if ok and ux and uy and uInst == pInst then
+					local xd, yd = px - ux, py - uy
+					if sinF then xd, yd = xd * cosF - yd * sinF, xd * sinF + yd * cosF end
+					local dx, dy = xd / radius, yd / radius
+					local dist = square and math.max(dx * dx, dy * dy) or (dx * dx + dy * dy)
+					if dist <= 0.81 then
+						used = used + 1
+						local d = getDot(used)
+						local class = fake and fake[3] or select(2, UnitClass(unit))
+						local c = class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]
+						if c then d.tex:SetVertexColor(c.r, c.g, c.b) else d.tex:SetVertexColor(1, 1, 1) end
+						d:ClearAllPoints()
+						d:SetPoint("CENTER", Minimap, "CENTER", dx * w, -dy * h)
+						d:Show()
+					end
+				end
+			end
+		end
+		hideDots(used + 1)
+	end
+	watchDots = function()
+		local want = arrowOn and ((testUntil and GetTime() < testUntil) or (IsInGroup and IsInGroup()))
+		if want and not dotTicker then
+			placeDots()
+			dotTicker = C_Timer.NewTicker(0.1, placeDots)
+		elseif not want and dotTicker then
+			dotTicker:Cancel()
+			dotTicker = nil
+			hideDots()
+		end
+	end
+	pcall(arrowDriver.RegisterEvent, arrowDriver, "GROUP_ROSTER_UPDATE")
+	pcall(arrowDriver.RegisterEvent, arrowDriver, "MINIMAP_UPDATE_TRACKING")
+
+	local function showArrow(want)
+		if want and not turnArrow() then want = false end
+		if want == arrowOn then return end
+		arrowOn = want
+		iconStep, iconsShrunk = nil, false -- (the arrow sets the icons' size itself; the shrink starts again from it)
+		if want then
+			sizeArrow()
+			getArrow():Show()
+			setIconScale(0)
+		else
+			getArrow():Hide()
+			setIconScale(gameIconScale())
+		end
+		mapLog(want and "QuietHUD's arrow stands in for the game's minimap icons" or "the game's minimap icons are back")
+		watchTurning()
+		watchDots()
+	end
+
+	-- Without our arrow up (the command off, a tracking spell on, no Questie), the game's icons on the map (your arrow, town
+	-- icons, party members, what you track) ignore opacity and the mask, so they stayed whole while the map faded and went only
+	-- when it was gone. Their size is the one control, so while the map fades they are sized with it: whole at the map's up
+	-- opacity, gone at 0, going out together with the map (the owner, Nov 17: "if myarrow isnt on i want the icons and the map
+	-- to fade at the same time", "that should always be like that"). Not with the dark layer, which dims them already. Put back
+	-- only after QuietHUD changed it. Cost: in 20 steps, written on change, so at most 20 calls a fade, none while it holds.
+	-- "Shrink its icons" unticked (mapShrinkIcons, Nov 24, a player who keeps the map faded at 0.35 and still reads it: his
+	-- quest icons sat at a third of their size; the owner: "yea lets make a tick box for it then"): the icons stay whole while
+	-- any of the map shows and go only with it, as before 1.7.4. The box is on the minimap's row of the Faded per element
+	-- list (Config.lua) and counts only while the minimap is on that list: off the list there is no box, so no effect.
+	local function sizeIcons(a, mode)
+		local peak = woc.mapPeak or 1
+		local share = (mode ~= "dark" and peak > 0) and math.max(0, math.min(1, a / peak)) or 1
+		local step = math.floor(share * 20 + 0.5)
+		if step > 0 and DB.mapShrinkIcons == false and (DB.fdMap or -1) >= 0 then step = 20 end -- (whole until the map is gone)
+		if step == iconStep then return end
+		iconStep = step
+		if step >= 20 then
+			if iconsShrunk then setIconScale(gameIconScale()) end
+			iconsShrunk = false
+		else
+			setIconScale(gameIconScale() * step / 20)
+			iconsShrunk = true
+		end
 	end
 
 	-- The arrow cover (a player's ask, Nov 13, the owner: "we can put on his dumb circle over the arrow"): the game's arrow
@@ -345,53 +646,111 @@ do
 		end
 	end
 
-	-- The game's own icons on the map (your arrow, town icons, party members, what you track) ignore opacity and the mask, so
-	-- they stayed whole while the map faded and went only when it was gone. The one control the game gives addons is their
-	-- size, all at once (Minimap:SetIconScale). So while the map fades they are sized with it: whole at the map's up opacity,
-	-- gone at 0, going out together with the map (the owner, Nov 17: "i want the icons and the map to fade at the same time",
-	-- "that should always be like that"). Not with the dark layer, which dims them with the map already. Their own size is the
-	-- last one anyone but QuietHUD set (Edit Mode's Icon Size), else Edit Mode's setting; it is put back only after QuietHUD
-	-- changed it. Cost: in 20 steps, written on change, so at most 20 calls a fade and none while the map holds.
-	local iconScale, iconsSetting, iconStep, iconsShrunk = nil, false, nil, false
-	local function gameIconScale()
-		if iconScale then return iconScale end
-		local ok, v = pcall(function()
-			local key = Enum.EditModeMinimapSetting.IconScale
-			if MinimapCluster:HasSetting(key) then return MinimapCluster:GetSettingValue(key) / 100 end
-		end)
-		return ok and type(v) == "number" and v > 0 and v or 1
-	end
-	local function setIconScale(scale)
-		iconsSetting = true
-		if not pcall(Minimap.SetIconScale, Minimap, scale) and scale == 0 then pcall(Minimap.SetIconScale, Minimap, 0.01) end
-		iconsSetting = false
-	end
-	if Minimap and Minimap.SetIconScale then
-		hooksecurefunc(Minimap, "SetIconScale", function(_, scale)
-			if iconsSetting or type(scale) ~= "number" then return end
-			iconScale = scale
-			iconStep = nil -- (Edit Mode set a size: the shrink goes on from that one at the next update)
-		end)
-	end
-	local function sizeIcons(a, mode)
-		local peak = woc.mapPeak or 1
-		local share = (mode ~= "dark" and peak > 0) and math.max(0, math.min(1, a / peak)) or 1
-		local step = math.floor(share * 20 + 0.5)
-		if step == iconStep then return end
-		iconStep = step
-		if step >= 20 then
-			if iconsShrunk then setIconScale(gameIconScale()) end
-			iconsShrunk = false
-		else
-			setIconScale(gameIconScale() * step / 20)
-			iconsShrunk = true
-		end
-	end
-
 	-- How the minimap is faded: with the mask; with the dark layer for the "darken" option; and for a minimap that is neither
 	-- round nor square, the dark layer in buildings and cities and plain opacity in the open world.
+	-- Forever Dual Gathering (2.7.0, its auto scanning): after each herb or ore switch it takes the map out of the cluster for
+	-- about two seconds, invisible, to read the herbs and ore under the cursor, and draws a picture of the map in its place
+	-- (FDGTerrainMinimap, set back to full opacity every tenth of a second), which showed at full over the faded map. The
+	-- picture fades with the map here, its player arrow too (that ignores the picture's opacity); a set back to full is
+	-- undone at once by woc.write's hook. While the map is out QuietHUD leaves the map's mask and icon size alone (the scan
+	-- hides the icons), takes nothing set then as the map's own, and sets its own again once the map is back. Only while
+	-- Forever Dual Gathering is loaded. Cost: a few calls per scan, when the map moves; one comparison per update while it
+	-- is out.
+	local mapA, standInA = nil, nil -- (the map's opacity at the last update; the picture's, last written)
+	local function fadeStandIn(a)
+		-- (FDG makes the picture a moment after it takes the map, on the first scan of a session: until then each update tries)
+		local f = rawget(_G, "FDGTerrainMinimap")
+		if type(f) ~= "table" or not f.SetAlpha then return end
+		standInA = a
+		woc.write(f, a)
+		local ok, kids = pcall(function() return { f:GetChildren() } end)
+		if not ok then return end
+		for _, c in ipairs(kids) do
+			local okI, own = pcall(c.IsIgnoringParentAlpha, c)
+			if okI and own then woc.write(c, a) end
+		end
+	end
+	local function underCluster()
+		local f = Minimap:GetParent()
+		for _ = 1, 20 do
+			if not f or f == UIParent then return false end
+			if f == MinimapCluster then return true end
+			f = f:GetParent()
+		end
+		return false
+	end
+	-- The parts' own opacity when the map was taken out. FDG hides some of them (the clock, the calendar, the map's border)
+	-- for its scan and, as it hands the map back, puts back the opacity it saved, which was QuietHUD's faded one. A frame
+	-- later, when it is done, each gets its own back (faded again if the map is faded).
+	local liftOwn
+	local function rememberParts()
+		prepMapParts()
+		liftOwn = {}
+		local function remember(part)
+			local own = mapParts[part]
+			if own == nil then
+				local ok, a = pcall(part.GetAlpha, part)
+				if ok and type(a) == "number" and not (issecretvalue and issecretvalue(a)) then own = a end
+			end
+			if own ~= nil then liftOwn[part] = own end
+		end
+		pcall(eachMapPart, MinimapCluster, remember)
+		pcall(eachMapPart, Minimap, remember)
+	end
+	local function putPartsBack()
+		local own = liftOwn
+		liftOwn = nil
+		if not own or mapLifted then return end
+		mapBusy = true
+		for part, a in pairs(own) do
+			if mapFactor then
+				mapParts[part] = a
+				mapPartSet[part] = a * mapFactor
+				pcall(part.SetAlpha, part, a * mapFactor)
+			else
+				pcall(part.SetAlpha, part, a)
+			end
+		end
+		mapBusy = false
+	end
+	local fdgSaid = false
+	local function mapMoved()
+		local isLoaded = (C_AddOns and C_AddOns.IsAddOnLoaded) or rawget(_G, "IsAddOnLoaded")
+		local okL, fdg = pcall(isLoaded, "ForeverDualGathering")
+		if not (okL and fdg) then return end
+		local out = not underCluster()
+		if out == mapLifted then return end
+		mapLifted = out
+		if out then
+			-- (its scan hid the icons just before it took the map, in the same frame: that was not the icons' own size. Its HUD
+			-- does not hide them, and keeps the map out for as long as it is on: there they get their own size back meanwhile)
+			if iconAt == GetTime() then
+				iconScale = iconPrev
+				if arrowOn then sizeArrow() end -- (our arrow took that 0 as its size too)
+			elseif iconsShrunk then
+				setIconScale(gameIconScale())
+				iconsShrunk = false
+			end
+			rememberParts()
+			fadeStandIn(mapA or 1)
+			if not fdgSaid then
+				fdgSaid = true
+				mapLog("Forever Dual Gathering took the minimap out for a scan: its picture of the map fades with the map")
+			end
+		else
+			mapBackAt = GetTime()
+			mapMaskStep = -1 -- (our mask, or the map's own at full, set again at the next update)
+			iconStep = nil
+			C_Timer.After(0, putPartsBack)
+		end
+		if ns.wakeLoop then ns.wakeLoop() end
+	end
+	if Minimap and Minimap.SetParent then hooksecurefunc(Minimap, "SetParent", mapMoved) end
+
 	local mapMode
 	applyMap = function(a)
+		mapA = a
+		if mapLifted and a ~= standInA then fadeStandIn(a) end
 		local mode = "alpha"
 		if DB.mapDarken or mapMaskContested then
 			mode = "dark"
@@ -408,7 +767,13 @@ do
 		if mode ~= "mask" and mapMaskStep then applyMinimapMask(1) end
 		if mode ~= "dark" and mapDimApplied then applyMinimapAlpha(1) end
 		applyCover(a)
-		sizeIcons(a, mode)
+		-- (before the parts are faded, so a new arrow fades with them)
+		-- (not while Forever Dual Gathering has the map out: its scan keeps the game's icons hidden; see mapMoved)
+		if not mapLifted then
+			showArrow(((testUntil and GetTime() < testUntil) or (DB.mapArrow and mode ~= "dark" and a < 0.995 and questieLoaded()
+				and not trackingOn())) and true or false)
+			if not arrowOn then sizeIcons(a, mode) end
+		end
 		if mode == "mask" then
 			applyMinimapMask(a)
 		elseif mode == "dark" then
@@ -416,6 +781,51 @@ do
 		else
 			applyMapList(a)
 		end
+	end
+
+	-- /qhud myarrow test: the arrow and the made-up party for 30 seconds, then back to what the setting says.
+	ns.arrowTest = function()
+		testUntil = GetTime() + 30
+		if arrowOn then watchDots() end
+		C_Timer.After(30.1, function()
+			testUntil = nil
+			if watchDots then watchDots() end
+			if ns.wakeLoop then ns.wakeLoop() end
+		end)
+		if ns.wakeLoop then ns.wakeLoop() end
+	end
+
+	-- Why the own arrow is not showing right now, in words for the player (nil: nothing is in its way), and whether it shows
+	-- (/qhud myarrow says it; the owner, Nov 24, on a flight with the game's bright arrow: "i think myarrow isnt actually on").
+	-- The same conditions as applyMap's, in the order a player can do something about them.
+	ns.arrowWhy = function()
+		local why
+		if not DB.mapArrow then
+			why = "it is OFF"
+		elseif not questieLoaded() then
+			why = "Questie is not loaded"
+		elseif DB.enabled == false then
+			why = "QuietHUD is switched off"
+		elseif DB.fadeMinimap == false then
+			why = "Fade is unticked on the Minimap row (Elements page), so the minimap stays as the game draws it"
+		elseif DB.mapDarken then
+			why = "Darken the minimap is ticked (Opacity page), and the dark layer dims the game's arrow already"
+		elseif mapMaskContested then
+			why = "another addon holds the minimap's shape, so the minimap is darkened and the dark layer dims the game's arrow"
+		elseif trackingOn() then
+			why = "a tracking spell is on (" .. tostring(trackingName or "see the tracking button on the minimap")
+				.. "), and it steps aside so what you track stays on the map"
+		elseif mapLifted then
+			why = "Forever Dual Gathering is scanning with the minimap"
+		else
+			local ok, facing = pcall(GetPlayerFacing)
+			if not (ok and type(facing) == "number") then
+				why = "the game does not say which way you face here (a dungeon or raid)"
+			elseif (mapA or 1) >= 0.995 then
+				why = "the minimap is at full opacity right now"
+			end
+		end
+		return why, arrowOn
 	end
 
 	-- After the map was shrunk or moved: our mask, if it is on, is set again at the next update.

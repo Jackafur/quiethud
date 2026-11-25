@@ -107,11 +107,25 @@ opacity the minimap is see-through everywhere. The game draws a blank map in bui
 frame is partly transparent, and when it's hidden and shown again, so QuietHUD keeps the frame solid and makes the
 map see-through with its round mask instead (the ring, buttons and map pins follow it), and a faded-out minimap is
 shrunk to almost nothing rather than hidden. The game's own icons on the map (the player arrow, quest, tracking and
-party icons) stay solid, because the game doesn't let addons change their opacity; they only go away when the
-minimap fades out completely. "Darken the minimap instead of making it see-through" (on the Opacity page) dims the map with a dark layer instead, which
-dims those icons too, but the map isn't see-through. "Darkened map's Faded" under it sets how bright the darkened map stays while faded, so it doesn't turn into a black hole (Global, the default, darkens it as far as the Global Faded). "Arrow cover" puts a small dark circle of its own opacity and size over the middle of the faded map, to tone down the bright arrow (Off by default). Use whichever you prefer. A square minimap (Leatrix Plus has
+party icons) can't be faded, because the game doesn't let addons change their opacity. They get smaller as the map
+fades instead, and go out with it. If you keep your minimap partly shown and still read it, add the Minimap under Faded per element
+(on the Opacity page) and untick "Shrink its icons" on its row. They keep their full size on the faded map then. "Darken the minimap instead of making it see-through" (on the Opacity page) dims the map with a dark layer instead, which
+dims those icons too and leaves their size alone, but the map isn't see-through. "Darkened map's Faded" under it sets how bright the darkened map stays while faded, so it doesn't turn into a black hole (Global, the default, darkens it as far as the Global Faded). "Arrow cover" puts a small dark circle of its own opacity and size over the middle of the faded map, to tone down the bright arrow (Off by default). Use whichever you prefer. A square minimap (Leatrix Plus has
 that option) works the same way with square masks, and gets a square dark layer. A minimap of another shape keeps its
 own mask: it uses real transparency outdoors and the dark layer in buildings and cities.
+
+**Your own arrow (only with Questie).** The game doesn't let addons fade its arrow, so it stays bright on a faded map.
+`/qhud myarrow on` swaps it for an arrow QuietHUD draws itself, which fades with the map. Party dots too. It's off unless
+you turn it on, and there's no box for it on purpose. Read this before you do:
+
+- It hides the game's arrow by hiding every icon the game draws on the minimap. That takes the flight master, innkeeper
+  and other town icons with it. They only show while the minimap is at full opacity (its Shown at 1.00 on the Opacity
+  page). At any lower Shown they are always hidden.
+- Quest icons stay because Questie draws them. Without Questie the command refuses to turn on.
+- Herbs, ore and anything else you track still show. The arrow steps aside while a tracking spell is on.
+- It does nothing while "Darken the minimap" is ticked or in a dungeon. The game's own icons show there as usual.
+- `/qhud myarrow size 24` sets how big the arrow is, from 12 to 48. It starts at 32. The other icons aren't touched.
+- `/qhud myarrow off` turns it off and the game's icons are back.
 
 **A note on the minimap.** Finding a good way to fade the minimap has been an ongoing source of frustration. The game
 blanks the map in buildings and cities when it's partly transparent, the player arrow and the quest icons ignore
@@ -169,7 +183,8 @@ the nameplates to show. The message "quest targeting is off" means the Extras ch
 | --- | --- |
 | `/qhud` | Open the settings menu |
 | `/qhud toggle` | Flip the "weapon drawn" state by hand, until you next draw or sheathe (not in Ghost Wolf or a druid form) |
-| `/qhud peek` | Show the whole HUD for two minutes, or until you use it again. The "Hold to show the whole HUD" key uses `peek down` and `peek up`; `peek toggle` (the "Toggle the whole HUD" key) stays on until you use it again |
+| `/qhud myarrow on` or `off` | QuietHUD's own minimap arrow for Questie players. It hides the game's town icons, so read "Your own arrow" above first |
+| `/qhud peek` | Show the whole HUD for two minutes, or until you use it again. The "Show all (hold)" key uses `peek down` and `peek up`; `peek toggle` (the "Toggle the whole HUD" key) stays on until you use it again |
 | `/qhud shift [on\|off\|now]` | Pixel shift (experimental): show what it's doing, turn it on or off, or move to its next position now. Off puts every frame back where it was |
 | `/qhud reset` | Reset all settings to defaults |
 | `/qhud quest`, `/qhud map`, `/qhud chat` | Show that element for a few seconds |
@@ -200,8 +215,8 @@ replacement addon: find the frame with `/qhud find <text from a chat message>`, 
 over it and run the command with the group you want it to fade with (or `hidden` to always hide it). `/qhud add hud`
 puts it on the Added frames row.
 
-Keybinds: Esc, Options, Keybindings, AddOns, QuietHUD. You can bind "Toggle Weapon drawn" (the same as `/qhud toggle`), "Hold to show the whole
-HUD" (hold it to see everything at once, let go and it fades again), "Toggle the whole HUD" (press it once to see
+Keybinds: Esc, Options, Keybindings, QuietHUD (its own section). You can bind "Weapon drawn (toggle)" (the same as `/qhud toggle`), "Show all
+(hold)" (hold it to see everything at once, let go and it fades again), "Show all (toggle)" (press it once to see
 everything, press it again to go back), and, if you turn the feature on, "Target highlighted
 quest mob". If you'd rather not use a key binding, the Show when page has boxes that show the whole HUD while you hold Alt, Ctrl
 or Shift, or toggle it when you tap one on its own (Alt+1 and Alt+click don't count, so your keybinds still work). Hold
@@ -226,6 +241,7 @@ QuietHUD only changes opacity, and hides what you ask it to hide, so it sits nex
 - **Animated Blizzard Portraits:** the 3D portraits it draws on the unit frames (and on RestedXP's target buttons) fade with the frame they sit in. The game doesn't pass a frame's opacity on to a 3D model, so QuietHUD sets the model's own opacity to match.
 - **Leatrix Plus:** its square minimap fades, see Minimap above.
 - **Guild OS:** its guildmate dots under the minimap fade with the minimap.
+- **Forever Dual Gathering:** the minimap stays faded while it scans for herbs and ore.
 - **EllesmereUI:** it's a full UI with its own fading for its bars, so QuietHUD leaves those alone, and it doesn't bring back the game's bars that EllesmereUI hides. It also moves the minimap somewhere QuietHUD's minimap fade doesn't reach (the arrow and its mail button stay), so for its minimap use EllesmereUI's own visibility setting and untick Fade on QuietHUD's Minimap row.
 
 In general, buttons that another addon moves out of their bar are faded by name, so they follow the Action bars page like the rest, and the checkbox on the Extras page hides the minimap buttons other addons add.
